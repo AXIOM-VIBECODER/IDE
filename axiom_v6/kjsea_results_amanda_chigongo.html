@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025 KJSEA Results - AMANDA CHIGONGO MWASAHA</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f6f8;
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+            color: #333;
+        }
+
+        .no-print {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        button {
+            background-color: #1a7f45; /* KNEC Green */
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 6px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: background-color 0.2s;
+        }
+        button:hover { background-color: #145e35; }
+
+        /* A4 Page Container */
+        .page {
+            background-color: white;
+            width: 210mm;
+            min-height: 297mm;
+            padding: 15mm 20mm; 
+            box-sizing: border-box;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+            border-radius: 8px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #1a7f45;
+            padding-bottom: 20px;
+        }
+        .logo {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 15px;
+            background: #1a7f45;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 24px;
+        }
+        .header h1 {
+            color: #1a7f45;
+            font-size: 22px;
+            margin: 0 0 5px 0;
+            font-weight: 700;
+        }
+        .header h2 {
+            font-size: 20px;
+            margin: 0;
+            color: #000;
+            font-weight: 800;
+        }
+
+        /* Student Info Box */
+        .info-box {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid #dee2e6;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #666;
+            font-weight: 600;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-value {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1a7f45;
+        }
+
+        /* Results Table */
+        .results-section {
+            margin-bottom: 30px;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a7f45;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #eefdf5;
+            padding-bottom: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        
+        thead {
+            background: linear-gradient(135deg, #eefdf5 0%, #d4f4e2 100%);
+        }
+        
+        th {
+            text-align: left;
+            padding: 18px 15px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #1a7f45;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #f8f9fa;
+            font-size: 14px;
+            color: #444;
+        }
+
+        tr:hover {
+            background-color: #fafbfc;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .performance-level {
+            font-weight: 700;
+            color: #1a7f45;
+            background: #eefdf5;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .points {
+            font-weight: 700;
+            color: #d63384;
+            font-size: 16px;
+        }
+
+        /* Summary Box */
+        .summary-box {
+            background: linear-gradient(135deg, #1a7f45 0%, #145e35 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 30px 0;
+            text-align: center;
+        }
+        .total-points {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        .summary-text {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            font-size: 12px;
+            color: #888;
+            border-top: 2px solid #eee;
+            padding-top: 20px;
+        }
+        .generated-info {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+        }
+
+        /* Print Styles */
+        @media print {
+            body { 
+                background-color: white; 
+                padding: 0; 
+            }
+            .no-print { 
+                display: none; 
+            }
+            .page { 
+                width: 100%; 
+                margin: 0; 
+                padding: 10mm; 
+                box-shadow: none; 
+                border: none; 
+            }
+            * { 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+            }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            body {
+                padding: 20px;
+            }
+            .page {
+                width: 100%;
+                padding: 20px;
+            }
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+            th, td {
+                padding: 10px 8px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print">
+        <button onclick="window.print()">📄 Download PDF</button>
+    </div>
+
+    <div class="page">
+        <div class="header">
+            <div class="logo">KNEC</div>
+            <h1>The Kenya National Examinations Council</h1>
+            <h2>2025 KJSEA Results</h2>
+        </div>
+
+        <div class="info-box">
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Assessment Number</span>
+                    <span class="info-value">A000801318</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Full Name</span>
+                    <span class="info-value">AMANDA CHIGONGO MWASAHA</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Gender</span>
+                    <span class="info-value">F</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Centre Code</span>
+                    <span class="info-value">27570242</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Centre Name</span>
+                    <span class="info-value">ROOTS ACADEMY</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="results-section">
+            <h3 class="section-title">📊 Subject Performance</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Subject Code</th>
+                        <th>Subject Name</th>
+                        <th>Performance Level</th>
+                        <th>Points</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>901</strong></td>
+                        <td>English</td>
+                        <td><span class="performance-level">EE1</span></td>
+                        <td><span class="points">8</span></td>
+                        <td>Exceeding Expectation</td>
+                    </tr>
+                    <tr>
+                        <td><strong>902</strong></td>
+                        <td>Kiswahili</td>
+                        <td><span class="performance-level">EE1</span></td>
+                        <td><span class="points">8</span></td>
+                        <td>Exceeding Expectation</td>
+                    </tr>
+                    <tr>
+                        <td><strong>903</strong></td>
+                        <td>Mathematics</td>
+                        <td><span class="performance-level">EE2</span></td>
+                        <td><span class="points">7</span></td>
+                        <td>Exceeding Expectation</td>
+                    </tr>
+                    <tr>
+                        <td><strong>905</strong></td>
+                        <td>Integrated Science</td>
+                        <td><span class="performance-level">EE2</span></td>
+                        <td><span class="points">7</span></td>
+                        <td>Exceeding Expectation</td>
+                    </tr>
+                    <tr>
+                        <td><strong>906</strong></td>
+                        <td>Agriculture</td>
+                        <td><span class="performance-level">EE1</span></td>
+                        <td><span class="points">8</span></td>
+                        <td>Exceeding Expectation</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="summary-box">
+            <div class="total-points">Total Points: 38</div>
+            <div class="summary-text">Excellent Performance - Exceeding Expectations</div>
+        </div>
+
+        <div class="footer">
+            <div>
+                <strong>The Kenya National Examinations Council</strong><br>
+                P.O. Box 73598-00200, Nairobi | Tel: +254-20-3749900
+            </div>
+            <div class="generated-info">
+                Generated on April 21, 2026 at 11:14 AM EAT | 
+                Built with AXIOM 🇰🇪
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-focus print button for quick access
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('KJSEA Results loaded successfully! 🎉');
+        });
+        
+        // Keyboard shortcut for printing (Ctrl+P)
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                window.print();
+            }
+        });
+    </script>
+</body>
+</html>

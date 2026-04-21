@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AXIOM Admin — Platform Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet"/>
+<style>
+/* ══════════ AXIOM ADMIN DESIGN SYSTEM ══════════ */
+/* Matches AXIOM IDE Zed-inspired dark theme       */
+
+:root {
+  --bg:       #1e2024;
+  --panel:    #24262a;
+  --surface:  #2a2c30;
+  --elevated: #313338;
+  --border:   rgba(255,255,255,.06);
+  --border2:  rgba(255,255,255,.10);
+  --tx:       #e0e0e4;
+  --tx2:      #6e7681;
+  --tx3:      #484d56;
+  --ac:       #d4a574;
+  --ac2:      #b8895c;
+  --ac3:      rgba(212,165,116,.12);
+  --ac4:      rgba(212,165,116,.06);
+  --green:    #8dbe6e;
+  --red:      #d9616a;
+  --yellow:   #d4a574;
+  --blue:     #5ea4e6;
+  --purple:   #b381d1;
+  --cyan:     #4db8c4;
+  --orange:   #c48a56;
+  --radius:   8px;
+  --radius-lg:12px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--tx); font-family: 'Geist', -apple-system, sans-serif; font-size: 13px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.15); }
+a { color: var(--ac); text-decoration: none; }
+button { cursor: pointer; font-family: 'Geist', sans-serif; }
+input, textarea, select { font-family: 'Geist', sans-serif; }
+code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ── LOGIN SCREEN ── */
+#login-screen {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999; flex-direction: column; gap: 20px;
+}
+.login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.login-mark {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; color: var(--bg);
+}
+.login-name { font-size: 24px; font-weight: 600; letter-spacing: .08em; color: var(--ac); }
+.login-sub { font-size: 12px; color: var(--tx2); margin-bottom: 4px; }
+.login-card {
+  background: var(--panel); border: 1px solid var(--border2);
+  border-radius: var(--radius-lg); padding: 28px 32px; width: 420px; max-width: 92vw;
+}
+.login-card h2 { font-size: 15px; font-weight: 500; margin-bottom: 4px; color: var(--tx); }
+.login-card p { font-size: 12px; color: var(--tx2); margin-bottom: 18px; line-height: 1.7; }
+.login-input {
+  width: 100%; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--radius); color: var(--ac); font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; outline: none; margin-bottom: 12px; transition: border-color .2s;
+}
+.login-input:focus { border-color: var(--ac2); }
+.login-btn {
+  width: 100%; padding: 11px; background: linear-gradient(135deg, var(--ac2), var(--ac));
+  border: none; border-radius: var(--radius); color: var(--bg);
+  font-size: 13px; font-weight: 600; transition: opacity .2s;
+}
+.login-btn:hover { opacity: .9; }
+.login-err { color: var(--red); font-size: 11px; text-align: center; margin-top: 8px; min-height: 16px; }
+
+/* ── APP LAYOUT ── */
+#app { display: none; height: 100vh; }
+#app.ready { display: flex; }
+
+/* Sidebar */
+.sidebar {
+  width: 220px; min-width: 220px; background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0;
+}
+.sb-brand { display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.sb-mark {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: var(--bg);
+}
+.sb-title { font-size: 14px; font-weight: 600; color: var(--ac); letter-spacing: .06em; }
+.sb-badge {
+  margin-left: auto; background: var(--ac3); color: var(--ac);
+  font-size: 9px; padding: 2px 7px; border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace; font-weight: 500;
+}
+.sb-nav { flex: 1; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.sb-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border-radius: var(--radius); border: none; background: transparent;
+  color: var(--tx2); font-size: 12px; font-weight: 400; text-align: left;
+  transition: all .15s; width: 100%;
+}
+.sb-item:hover { color: var(--tx); background: var(--surface); }
+.sb-item.active { color: var(--ac); background: var(--ac3); font-weight: 500; }
+.sb-item svg { width: 16px; height: 16px; flex-shrink: 0; opacity: .7; }
+.sb-item.active svg { opacity: 1; }
+.sb-footer { padding: 12px 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.sb-footer-btn {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  border-radius: var(--radius); border: 1px solid var(--border2);
+  background: transparent; color: var(--tx2); font-size: 11px; transition: all .15s;
+}
+.sb-footer-btn:hover { color: var(--ac); border-color: var(--ac3); }
+.sb-status { display: flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 10px; color: var(--tx3); }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+/* Main content */
+.main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.main-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel);
+  position: sticky; top: 0; z-index: 50;
+}
+.main-title { font-size: 16px; font-weight: 600; }
+.main-actions { display: flex; align-items: center; gap: 8px; }
+.header-btn {
+  padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border2);
+  background: transparent; color: var(--tx2); font-size: 11px;
+  font-family: 'JetBrains Mono', monospace; transition: all .15s;
+}
+.header-btn:hover { color: var(--ac); border-color: var(--ac3); }
+.header-btn.primary {
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+  border: none; color: var(--bg); font-weight: 600; font-family: 'Geist', sans-serif;
+}
+.header-btn.primary:hover { opacity: .9; }
+.main-body { flex: 1; padding: 24px; overflow-y: auto; }
+
+/* Pages */
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── KPI CARDS ── */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.kpi-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 18px 20px; position: relative; overflow: hidden; transition: border-color .2s;
+}
+.kpi-card:hover { border-color: var(--border2); }
+.kpi-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.kpi-card.accent::before { background: var(--ac); }
+.kpi-card.green::before { background: var(--green); }
+.kpi-card.blue::before { background: var(--blue); }
+.kpi-card.purple::before { background: var(--purple); }
+.kpi-card.red::before { background: var(--red); }
+.kpi-label {
+  font-size: 10px; color: var(--tx2); text-transform: uppercase; letter-spacing: .1em;
+  font-family: 'JetBrains Mono', monospace; margin-bottom: 8px;
+}
+.kpi-value { font-size: 28px; font-weight: 600; line-height: 1; margin-bottom: 4px; }
+.kpi-sub { font-size: 11px; color: var(--tx3); }
+
+/* ── CHART CARDS ── */
+.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+@media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+.chart-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 18px 20px; overflow: hidden;
+}
+.chart-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
+}
+.chart-title {
+  font-size: 11px; font-weight: 500; color: var(--tx2); text-transform: uppercase;
+  letter-spacing: .08em; font-family: 'JetBrains Mono', monospace;
+}
+.chart-value { font-size: 12px; font-weight: 500; }
+.chart-canvas { width: 100%; height: 140px; display: block; }
+
+/* ── TWO COLUMN ── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+/* ── CARDS / TABLES ── */
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden; margin-bottom: 14px;
+}
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.card-title {
+  font-size: 11px; font-weight: 600; color: var(--tx2); text-transform: uppercase;
+  letter-spacing: .08em; font-family: 'JetBrains Mono', monospace;
+}
+.card-actions { display: flex; gap: 6px; align-items: center; }
+.card-btn {
+  padding: 4px 12px; background: transparent; border: 1px solid var(--border2);
+  border-radius: 6px; color: var(--tx2); font-size: 11px;
+  font-family: 'JetBrains Mono', monospace; transition: all .15s;
+}
+.card-btn:hover { color: var(--ac); border-color: var(--ac3); }
+.card-btn.primary {
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+  border: none; color: var(--bg); font-weight: 500;
+}
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th {
+  padding: 10px 16px; font-size: 10px; color: var(--tx3); text-transform: uppercase;
+  letter-spacing: .07em; text-align: left; background: var(--surface);
+  font-family: 'JetBrains Mono', monospace; white-space: nowrap; font-weight: 500;
+}
+td {
+  padding: 10px 16px; font-size: 12px; border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,.015); }
+
+/* Badges */
+.plan-badge {
+  display: inline-block; padding: 2px 9px; border-radius: 12px;
+  font-size: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 500;
+}
+.plan-free    { background: rgba(110,118,129,.15); color: #9ca3af; }
+.plan-starter { background: rgba(179,129,209,.15); color: var(--purple); }
+.plan-pro     { background: rgba(94,164,230,.15); color: var(--blue); }
+.plan-team    { background: rgba(212,165,116,.15); color: var(--ac); }
+.status-badge {
+  display: inline-block; padding: 2px 9px; border-radius: 12px;
+  font-size: 10px; font-family: 'JetBrains Mono', monospace;
+}
+.status-active, .status-succeeded { background: rgba(141,190,110,.12); color: var(--green); }
+.status-failed { background: rgba(217,97,106,.12); color: var(--red); }
+
+/* Filters */
+.filter-bar {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.f-input {
+  padding: 7px 12px; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--radius); color: var(--tx); font-size: 12px; outline: none;
+  min-width: 220px; transition: border-color .2s;
+}
+.f-input:focus { border-color: var(--ac2); }
+.f-select {
+  padding: 7px 12px; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--radius); color: var(--tx); font-size: 12px; outline: none;
+}
+.f-count { margin-left: auto; font-size: 11px; color: var(--tx3); font-family: 'JetBrains Mono', monospace; }
+
+/* Action buttons in tables */
+.act-btn {
+  padding: 3px 10px; background: transparent; border: 1px solid var(--border2);
+  border-radius: 5px; color: var(--tx2); font-size: 10px; cursor: pointer;
+  transition: all .15s; font-family: 'JetBrains Mono', monospace;
+}
+.act-btn:hover { color: var(--ac); border-color: var(--ac3); }
+.act-btn.danger:hover { color: var(--red); border-color: rgba(217,97,106,.3); }
+
+/* ── DONUT (Canvas) ── */
+.donut-wrap { display: flex; align-items: center; gap: 20px; padding: 18px; }
+.donut-canvas-wrap { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+.donut-canvas-wrap canvas { width: 100%; height: 100%; }
+.donut-center-label {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; pointer-events: none;
+}
+.donut-center-num { font-size: 22px; font-weight: 600; color: var(--tx); }
+.donut-center-text { font-size: 10px; color: var(--tx3); }
+.plan-legend { display: flex; flex-direction: column; gap: 6px; }
+.legend-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--tx2); }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── TOP USERS LIST ── */
+.top-user-row {
+  display: flex; align-items: center; gap: 12px; padding: 9px 16px;
+  border-bottom: 1px solid var(--border); transition: background .15s;
+}
+.top-user-row:last-child { border-bottom: none; }
+.top-user-row:hover { background: rgba(255,255,255,.015); }
+.top-user-rank {
+  width: 22px; height: 22px; border-radius: 6px; background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600; color: var(--tx3);
+  font-family: 'JetBrains Mono', monospace; flex-shrink: 0;
+}
+.top-user-info { flex: 1; min-width: 0; }
+.top-user-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-user-email { font-size: 10px; color: var(--tx3); font-family: 'JetBrains Mono', monospace; }
+.top-user-amount { font-size: 13px; font-weight: 600; color: var(--ac); font-family: 'JetBrains Mono', monospace; }
+
+/* ── NL QUERY / AI CHAT ── */
+.nl-section { margin-bottom: 24px; }
+.nl-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 22px 24px; margin-bottom: 16px;
+}
+.nl-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+.nl-sub { font-size: 12px; color: var(--tx2); margin-bottom: 16px; line-height: 1.7; }
+.nl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.nl-chip {
+  padding: 5px 14px; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 20px; font-size: 11px; color: var(--tx2); cursor: pointer;
+  transition: all .15s;
+}
+.nl-chip:hover { color: var(--ac); border-color: var(--ac3); background: var(--ac4); }
+.nl-input-row { display: flex; gap: 8px; }
+.nl-input {
+  flex: 1; padding: 11px 16px; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--radius); color: var(--tx); font-size: 13px; outline: none;
+  transition: border-color .2s;
+}
+.nl-input:focus { border-color: var(--ac2); }
+.nl-btn {
+  padding: 11px 20px; background: linear-gradient(135deg, var(--ac2), var(--ac));
+  border: none; border-radius: var(--radius); color: var(--bg);
+  font-size: 13px; font-weight: 600; transition: opacity .2s; white-space: nowrap;
+}
+.nl-btn:hover { opacity: .9; }
+.nl-result {
+  margin-top: 16px; display: none; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--radius); padding: 16px; animation: fadeIn .2s;
+}
+.nl-result.visible { display: block; }
+.nl-answer-main { font-size: 14px; font-weight: 500; color: var(--ac); margin-bottom: 8px; }
+.nl-answer-detail { font-size: 12px; color: var(--tx); line-height: 1.7; }
+.nl-enhanced { margin-top: 8px; font-size: 10px; color: var(--tx3); font-family: 'JetBrains Mono', monospace; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* Chat */
+.chat-container {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.chat-messages { height: 380px; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.chat-msg { display: flex; gap: 10px; animation: fadeIn .2s; }
+.chat-msg.user { flex-direction: row-reverse; }
+.chat-avatar {
+  width: 28px; height: 28px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+}
+.chat-avatar.ai { background: linear-gradient(135deg, var(--ac2), var(--ac)); color: var(--bg); }
+.chat-avatar.human { background: var(--surface); color: var(--tx3); }
+.chat-bubble {
+  max-width: 85%; padding: 10px 14px; border-radius: var(--radius);
+  font-size: 12px; line-height: 1.7; border: 1px solid var(--border);
+}
+.chat-msg.ai .chat-bubble { background: var(--surface); }
+.chat-msg.user .chat-bubble { background: var(--ac4); border-color: var(--ac3); color: #e8ddc8; }
+.chat-input-bar {
+  display: flex; gap: 8px; padding: 14px 16px; border-top: 1px solid var(--border);
+}
+.chat-input {
+  flex: 1; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--radius); color: var(--tx); font-size: 12px; outline: none;
+}
+.chat-input:focus { border-color: var(--ac2); }
+.chat-send-btn {
+  padding: 10px 18px; background: linear-gradient(135deg, var(--ac2), var(--ac));
+  border: none; border-radius: var(--radius); color: var(--bg);
+  font-size: 12px; font-weight: 600;
+}
+.typing-dots { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+.typing-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--ac); animation: dotBounce 1.2s infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: .2s; }
+.typing-dot:nth-child(3) { animation-delay: .4s; }
+@keyframes dotBounce { 0%,80%,100% { opacity: .2; } 40% { opacity: 1; } }
+
+/* ── MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 1000;
+  display: none; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px); animation: fadeIn .15s;
+}
+.modal-overlay.open { display: flex; }
+.modal-panel {
+  background: var(--panel); border: 1px solid var(--border2);
+  border-radius: var(--radius-lg); width: 640px; max-width: 95vw;
+  max-height: 88vh; overflow-y: auto;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--panel); z-index: 1;
+}
+.modal-header h3 { font-size: 14px; font-weight: 500; }
+.modal-close {
+  background: none; border: none; color: var(--tx3); font-size: 18px;
+  cursor: pointer; padding: 0 4px; transition: color .15s;
+}
+.modal-close:hover { color: var(--tx); }
+.modal-body { padding: 20px; }
+.modal-section { margin-bottom: 18px; }
+.modal-section h4 {
+  font-size: 10px; color: var(--tx3); text-transform: uppercase; letter-spacing: .1em;
+  margin-bottom: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 600;
+}
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.info-item { background: var(--surface); border-radius: var(--radius); padding: 10px 14px; }
+.info-label { font-size: 10px; color: var(--tx3); margin-bottom: 3px; font-family: 'JetBrains Mono', monospace; }
+.info-value { font-size: 13px; font-weight: 500; }
+
+/* Form modal */
+.form-group { display: flex; flex-direction: column; gap: 10px; }
+.form-input {
+  width: 100%; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--radius); color: var(--tx); font-size: 13px; outline: none;
+}
+.form-input:focus { border-color: var(--ac2); }
+.form-submit {
+  padding: 11px; background: linear-gradient(135deg, var(--ac2), var(--ac));
+  border: none; border-radius: var(--radius); color: var(--bg);
+  font-size: 13px; font-weight: 600;
+}
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 20px; right: 20px; background: var(--surface);
+  border: 1px solid var(--border2); border-radius: var(--radius); padding: 10px 16px;
+  font-size: 12px; z-index: 2000; transform: translateY(12px); opacity: 0;
+  transition: all .25s; pointer-events: none;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.ok { border-left: 3px solid var(--green); color: var(--green); }
+.toast.err { border-left: 3px solid var(--red); color: var(--red); }
+.toast.info { border-left: 3px solid var(--ac); color: var(--ac); }
+
+/* Empty state */
+.empty-state { padding: 32px; text-align: center; font-size: 12px; color: var(--tx3); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .charts-grid, .two-col { grid-template-columns: 1fr; }
+  .info-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════ LOGIN SCREEN ════════════ -->
+<div id="login-screen">
+  <div class="login-brand">
+    <div class="login-mark">AX</div>
+    <span class="login-name">AXIOM</span>
+  </div>
+  <p class="login-sub">Platform Administration Dashboard</p>
+  <div class="login-card">
+    <h2>Admin Access</h2>
+    <p>Enter your session token printed in the terminal when you run <code style="color:var(--ac);font-size:11px;">bash start.sh</code></p>
+    <input type="password" class="login-input" id="token-input" placeholder="Paste admin token..." autocomplete="off"/>
+    <button class="login-btn" id="login-btn">Enter Dashboard</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- ════════════ APP SHELL ════════════ -->
+<div id="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sb-brand">
+      <div class="sb-mark">AX</div>
+      <span class="sb-title">AXIOM</span>
+      <span class="sb-badge">Admin</span>
+    </div>
+    <nav class="sb-nav">
+      <button class="sb-item active" data-page="overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Overview
+      </button>
+      <button class="sb-item" data-page="users">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Users
+      </button>
+      <button class="sb-item" data-page="payments">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Payments
+      </button>
+      <button class="sb-item" data-page="query">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        AI Query
+      </button>
+    </nav>
+    <div class="sb-footer">
+      <a href="/" class="sb-footer-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        Back to IDE
+      </a>
+      <div class="sb-status">
+        <div class="live-dot"></div>
+        <span>Live — auto-refresh 30s</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="main-header">
+      <div class="main-title" id="page-title">Overview</div>
+      <div class="main-actions">
+        <span id="last-refresh" style="font-size:10px;color:var(--tx3);font-family:'JetBrains Mono',monospace;"></span>
+        <button class="header-btn" id="refresh-btn">Refresh</button>
+        <button class="header-btn" id="logout-btn">Logout</button>
+      </div>
+    </div>
+    <div class="main-body">
+
+      <!-- ═══ OVERVIEW PAGE ═══ -->
+      <div class="page active" id="page-overview">
+        <div class="kpi-grid" id="kpi-grid"></div>
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-header">
+              <span class="chart-title">Revenue — Last 30 Days</span>
+              <span class="chart-value" id="rev-chart-total" style="color:var(--ac);"></span>
+            </div>
+            <canvas class="chart-canvas" id="revenue-canvas"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-header">
+              <span class="chart-title">Signups — Last 30 Days</span>
+              <span class="chart-value" id="sig-chart-total" style="color:var(--green);"></span>
+            </div>
+            <canvas class="chart-canvas" id="signups-canvas"></canvas>
+          </div>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-header"><span class="card-title">Plan Distribution</span></div>
+            <div class="donut-wrap">
+              <div class="donut-canvas-wrap">
+                <canvas id="donut-canvas" width="240" height="240"></canvas>
+                <div class="donut-center-label">
+                  <div class="donut-center-num" id="donut-total">0</div>
+                  <div class="donut-center-text">users</div>
+                </div>
+              </div>
+              <div class="plan-legend" id="plan-legend"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">Top Users by Revenue</span></div>
+            <div id="top-revenue-list"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Recent Payments</span>
+            <div class="card-actions"><button class="card-btn" onclick="navigateTo('payments')">View all</button></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>User</th><th>Plan</th><th>Amount</th><th>Type</th><th>Date</th><th>Status</th></tr></thead>
+              <tbody id="recent-payments-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ USERS PAGE ═══ -->
+      <div class="page" id="page-users">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">All Users</span>
+            <div class="card-actions">
+              <button class="card-btn" id="export-users-btn">Export CSV</button>
+              <button class="card-btn primary" id="add-user-btn">+ Add User</button>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <input type="text" class="f-input" id="user-search" placeholder="Search name or email..."/>
+            <select class="f-select" id="user-plan-filter">
+              <option value="">All plans</option>
+              <option value="free">Free</option>
+              <option value="starter">Starter</option>
+              <option value="pro">Pro</option>
+              <option value="team">Team</option>
+            </select>
+            <span class="f-count" id="user-count">0 users</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Total Paid</th><th>Chats</th><th>Joined</th><th>Last Seen</th><th>Actions</th></tr></thead>
+              <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ PAYMENTS PAGE ═══ -->
+      <div class="page" id="page-payments">
+        <div class="kpi-grid" id="payments-kpi"></div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">All Payments</span>
+            <div class="card-actions">
+              <button class="card-btn" id="export-payments-btn">Export CSV</button>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <select class="f-select" id="pay-days-filter">
+              <option value="">All time</option>
+              <option value="1">Today</option>
+              <option value="7">Last 7 days</option>
+              <option value="30" selected>Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+            <span class="f-count" id="pay-count"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>User</th><th>Email</th><th>Plan</th><th>Amount</th><th>Type</th><th>Status</th><th>Stripe ID</th><th>Date</th></tr></thead>
+              <tbody id="payments-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ AI QUERY PAGE ═══ -->
+      <div class="page" id="page-query">
+        <div style="max-width:860px;">
+          <div class="nl-section">
+            <div class="nl-card">
+              <div class="nl-title">Natural Language Query</div>
+              <div class="nl-sub">Ask questions about your platform in plain English. AXIOM queries live data and returns real numbers.</div>
+              <div class="nl-chips">
+                <div class="nl-chip" data-q="What's my revenue today?">Revenue today?</div>
+                <div class="nl-chip" data-q="How many new users this month?">New users this month?</div>
+                <div class="nl-chip" data-q="What's my MRR and ARR?">MRR and ARR?</div>
+                <div class="nl-chip" data-q="Show me Pro plan users">Pro plan users</div>
+                <div class="nl-chip" data-q="What's my conversion rate?">Conversion rate?</div>
+                <div class="nl-chip" data-q="Who are my top revenue users?">Top revenue users</div>
+                <div class="nl-chip" data-q="Plan breakdown">Plan breakdown</div>
+                <div class="nl-chip" data-q="Revenue this month">Revenue this month</div>
+              </div>
+              <div class="nl-input-row">
+                <input type="text" class="nl-input" id="nl-query-input" placeholder="e.g. How much did I make last week?"/>
+                <button class="nl-btn" id="nl-query-btn">Ask</button>
+              </div>
+              <div class="nl-result" id="nl-result">
+                <div class="nl-answer-main" id="nl-answer-main"></div>
+                <div class="nl-answer-detail" id="nl-answer-detail"></div>
+                <div class="nl-enhanced" id="nl-enhanced"></div>
+                <div id="nl-data-table" style="margin-top:12px;"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><span class="card-title">Admin AI Chat</span></div>
+            <div class="chat-container">
+              <div class="chat-messages" id="chat-messages">
+                <div class="chat-msg ai">
+                  <div class="chat-avatar ai">AX</div>
+                  <div class="chat-bubble">I am your AXIOM Admin assistant with live access to all platform data. Ask me about revenue trends, user cohorts, churn analysis, growth strategies, or anything about your business.</div>
+                </div>
+              </div>
+              <div class="chat-input-bar">
+                <input type="text" class="chat-input" id="chat-input" placeholder="Ask about your business..."/>
+                <button class="chat-send-btn" id="chat-send-btn">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ MODALS ════════════ -->
+
+<!-- User detail modal -->
+<div class="modal-overlay" id="user-detail-modal">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <h3 id="user-modal-title">User Details</h3>
+      <button class="modal-close" data-close="user-detail-modal">&times;</button>
+    </div>
+    <div class="modal-body" id="user-modal-body"></div>
+  </div>
+</div>
+
+<!-- Add user modal -->
+<div class="modal-overlay" id="add-user-modal">
+  <div class="modal-panel" style="width:440px;">
+    <div class="modal-header">
+      <h3>Add User</h3>
+      <button class="modal-close" data-close="add-user-modal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <input type="text" class="form-input" id="au-name" placeholder="Full name"/>
+        <input type="email" class="form-input" id="au-email" placeholder="Email address"/>
+        <select class="form-input" id="au-plan">
+          <option value="free">Free</option>
+          <option value="starter">Starter ($9/mo)</option>
+          <option value="pro">Pro ($19/mo)</option>
+          <option value="team">Team ($49/mo)</option>
+        </select>
+        <button class="form-submit" id="au-submit">Create User</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+// ════════════ STATE ════════════
+let TOKEN = localStorage.getItem('axiom_admin_token') || '';
+let chatHistory = [];
+let refreshInterval = null;
+
+// ════════════ PLAN PRICES ════════════
+const PLAN_PRICES = { free: 0, starter: 9, pro: 19, team: 49 };
+const PLAN_COLORS = {
+  free:    { bg: 'rgba(110,118,129,.15)', fg: '#9ca3af', fill: '#6e7681' },
+  starter: { bg: 'rgba(179,129,209,.15)', fg: '#b381d1', fill: '#b381d1' },
+  pro:     { bg: 'rgba(94,164,230,.15)',  fg: '#5ea4e6', fill: '#5ea4e6' },
+  team:    { bg: 'rgba(212,165,116,.15)', fg: '#d4a574', fill: '#d4a574' },
+};
+
+// ════════════ AUTHENTICATION ════════════
+const $login   = document.getElementById('login-screen');
+const $app     = document.getElementById('app');
+const $tokInp  = document.getElementById('token-input');
+const $loginBtn= document.getElementById('login-btn');
+const $loginErr= document.getElementById('login-err');
+
+$loginBtn.addEventListener('click', doLogin);
+$tokInp.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+async function doLogin() {
+  const t = $tokInp.value.trim();
+  if (!t) return;
+  $loginBtn.textContent = 'Verifying...';
+  try {
+    const r = await fetch('/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: t })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      TOKEN = t;
+      localStorage.setItem('axiom_admin_token', t);
+      enterApp();
+    } else {
+      $loginErr.textContent = 'Invalid token. Check your terminal output.';
+    }
+  } catch (e) {
+    $loginErr.textContent = 'Connection error: ' + e.message;
+  }
+  $loginBtn.textContent = 'Enter Dashboard';
+}
+
+// Auto-login if token exists
+(async () => {
+  if (!TOKEN) return;
+  try {
+    const r = await fetch('/api/ping', { headers: { 'X-Axiom-Token': TOKEN } });
+    if (r.ok) enterApp();
+    else { TOKEN = ''; localStorage.removeItem('axiom_admin_token'); }
+  } catch (e) { /* server not running */ }
+})();
+
+function enterApp() {
+  $login.style.display = 'none';
+  $app.classList.add('ready');
+  loadOverview();
+  refreshInterval = setInterval(() => {
+    loadOverview();
+    // refresh current page data too
+    const active = document.querySelector('.page.active');
+    if (active && active.id === 'page-users') loadUsers();
+    if (active && active.id === 'page-payments') loadPayments();
+  }, 30000);
+}
+
+// ════════════ API HELPER ════════════
+async function api(method, path, body) {
+  try {
+    const opts = {
+      method,
+      headers: { 'Content-Type': 'application/json', 'X-Axiom-Token': TOKEN }
+    };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(path, opts);
+    if (r.status === 401) {
+      toast('Session expired. Please login again.', 'err');
+      TOKEN = '';
+      localStorage.removeItem('axiom_admin_token');
+      $app.classList.remove('ready');
+      $login.style.display = '';
+      return { error: 'unauthorized' };
+    }
+    return await r.json();
+  } catch (e) {
+    toast('Network error: ' + e.message, 'err');
+    return { error: e.message };
+  }
+}
+
+// ════════════ NAVIGATION ════════════
+const pageTitles = { overview: 'Overview', users: 'Users', payments: 'Payments', query: 'AI Query' };
+
+document.querySelectorAll('.sb-item[data-page]').forEach(btn => {
+  btn.addEventListener('click', () => navigateTo(btn.dataset.page));
+});
+
+function navigateTo(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelector(`.sb-item[data-page="${page}"]`).classList.add('active');
+  document.getElementById('page-title').textContent = pageTitles[page] || page;
+  if (page === 'users') loadUsers();
+  if (page === 'payments') loadPayments();
+}
+
+// ════════════ REFRESH / LOGOUT ════════════
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  loadOverview();
+  const active = document.querySelector('.page.active');
+  if (active && active.id === 'page-users') loadUsers();
+  if (active && active.id === 'page-payments') loadPayments();
+  toast('Data refreshed', 'ok');
+});
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+  TOKEN = '';
+  localStorage.removeItem('axiom_admin_token');
+  clearInterval(refreshInterval);
+  $app.classList.remove('ready');
+  $login.style.display = '';
+  $tokInp.value = '';
+  $loginErr.textContent = '';
+});
+
+// ════════════ OVERVIEW ════════════
+async function loadOverview() {
+  const data = await api('GET', '/api/admin/analytics');
+  if (!data || data.error || !data.overview) return;
+
+  document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+  // KPI cards
+  const ov = data.overview;
+  const rev = data.revenue;
+  const usage = data.usage || {};
+  const convRate = ov.total_users ? ((ov.paying_users / ov.total_users) * 100).toFixed(1) : '0.0';
+
+  const kpis = [
+    { label: 'Total Users',  value: ov.total_users,                    sub: ov.new_today + ' new today',    cls: 'blue',   color: 'var(--blue)' },
+    { label: 'Paying Users', value: ov.paying_users,                   sub: convRate + '% conversion',      cls: 'purple', color: 'var(--purple)' },
+    { label: 'MRR',          value: '$' + fmtNum(rev.mrr),             sub: 'Monthly recurring',            cls: 'accent', color: 'var(--ac)' },
+    { label: 'ARR',          value: '$' + fmtNum(rev.arr),             sub: 'Annual recurring',             cls: 'accent', color: 'var(--ac)' },
+    { label: 'Revenue Today',value: '$' + fmtNum(rev.today),           sub: 'This month: $' + fmtNum(rev.monthly), cls: 'green',  color: 'var(--green)' },
+  ];
+  document.getElementById('kpi-grid').innerHTML = kpis.map(k =>
+    `<div class="kpi-card ${k.cls}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value" style="color:${k.color}">${k.value}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>`
+  ).join('');
+
+  // Revenue chart (canvas)
+  const revEntries = Object.entries(data.charts.dailyRevenue || {});
+  drawBarChart('revenue-canvas', revEntries, '#d4a574', '#b8895c');
+  const revTotal = revEntries.reduce((s, [, v]) => s + v, 0);
+  document.getElementById('rev-chart-total').textContent = '$' + fmtNum(revTotal);
+
+  // Signups chart (canvas)
+  const sigEntries = Object.entries(data.charts.dailySignups || {});
+  drawBarChart('signups-canvas', sigEntries, '#8dbe6e', '#5a8a3a');
+  const sigTotal = sigEntries.reduce((s, [, v]) => s + v, 0);
+  document.getElementById('sig-chart-total').textContent = sigTotal + ' total';
+
+  // Plan donut (canvas)
+  const plans = data.plans || {};
+  const planEntries = Object.entries(plans).filter(([, v]) => v > 0);
+  const totalUsers = planEntries.reduce((s, [, v]) => s + v, 0);
+  drawDonut('donut-canvas', planEntries);
+  document.getElementById('donut-total').textContent = totalUsers;
+  document.getElementById('plan-legend').innerHTML = planEntries.map(([plan, count]) => {
+    const pct = totalUsers ? ((count / totalUsers) * 100).toFixed(0) : 0;
+    const c = PLAN_COLORS[plan] || PLAN_COLORS.free;
+    return `<div class="legend-row">
+      <div class="legend-dot" style="background:${c.fill};"></div>
+      <span>${capitalize(plan)} -- ${count} (${pct}%) -- $${PLAN_PRICES[plan] || 0}/mo</span>
+    </div>`;
+  }).join('');
+
+  // Top users by revenue
+  const topUsers = data.topByRevenue || [];
+  document.getElementById('top-revenue-list').innerHTML = topUsers.length
+    ? topUsers.slice(0, 8).map((u, i) =>
+      `<div class="top-user-row">
+        <div class="top-user-rank">${i + 1}</div>
+        <div class="top-user-info">
+          <div class="top-user-name">${esc(u.name)}</div>
+          <div class="top-user-email">${esc(u.email)}</div>
+        </div>
+        <span class="plan-badge plan-${u.plan}">${u.plan}</span>
+        <span class="top-user-amount">$${fmtNum(u.total_paid || 0)}</span>
+      </div>`
+    ).join('')
+    : '<div class="empty-state">No payment data yet</div>';
+
+  // Recent payments
+  const rp = data.recent_payments || [];
+  document.getElementById('recent-payments-tbody').innerHTML = rp.length
+    ? rp.slice(0, 8).map(p =>
+      `<tr>
+        <td style="font-weight:500;">${esc(p.name || '--')}</td>
+        <td><span class="plan-badge plan-${p.plan}">${p.plan}</span></td>
+        <td style="color:var(--green);font-weight:500;">$${fmtNum(p.amount)}</td>
+        <td style="color:var(--tx2);">${p.type || '--'}</td>
+        <td class="mono" style="color:var(--tx3);font-size:11px;">${fmtDate(p.created_at)}</td>
+        <td><span class="status-badge status-${p.status}">${p.status}</span></td>
+      </tr>`
+    ).join('')
+    : '<tr><td colspan="6" class="empty-state">No payments yet</td></tr>';
+}
+
+// ════════════ CANVAS CHARTS ════════════
+function drawBarChart(canvasId, entries, color1, color2) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !entries.length) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const maxVal = Math.max(...entries.map(([, v]) => v), 1);
+  const barGap = 2;
+  const labelH = 18;
+  const chartH = H - labelH;
+  const barW = Math.max((W - barGap * entries.length) / entries.length, 2);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,.04)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) {
+    const y = chartH * (1 - i / 4);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  // Bars
+  entries.forEach(([date, val], i) => {
+    const x = i * (barW + barGap);
+    const h = Math.max((val / maxVal) * (chartH - 4), 1);
+    const y = chartH - h;
+
+    const grad = ctx.createLinearGradient(x, y, x, chartH);
+    grad.addColorStop(0, color1);
+    grad.addColorStop(1, color2);
+    ctx.fillStyle = grad;
+
+    // Rounded top
+    const r = Math.min(2, barW / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + barW - r, y);
+    ctx.quadraticCurveTo(x + barW, y, x + barW, y + r);
+    ctx.lineTo(x + barW, chartH);
+    ctx.lineTo(x, chartH);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.fill();
+
+    // Label every few bars
+    if (entries.length <= 15 || i % Math.ceil(entries.length / 10) === 0) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,.25)';
+      ctx.font = '8px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      const label = date.slice(5); // MM-DD
+      ctx.fillText(label, x + barW / 2, H - 2);
+      ctx.restore();
+    }
+  });
+}
+
+function drawDonut(canvasId, entries) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const size = 120;
+  canvas.width = size * dpr;
+  canvas.height = size * dpr;
+  canvas.style.width = size + 'px';
+  canvas.style.height = size + 'px';
+  ctx.scale(dpr, dpr);
+
+  const cx = size / 2;
+  const cy = size / 2;
+  const outerR = size / 2 - 4;
+  const innerR = outerR * 0.62;
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+
+  if (total === 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.arc(cx, cy, innerR, 0, Math.PI * 2, true);
+    ctx.fillStyle = 'rgba(255,255,255,.05)';
+    ctx.fill();
+    return;
+  }
+
+  let angle = -Math.PI / 2;
+  entries.forEach(([plan, count]) => {
+    const sweep = (count / total) * Math.PI * 2;
+    const c = PLAN_COLORS[plan] || PLAN_COLORS.free;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, angle, angle + sweep);
+    ctx.arc(cx, cy, innerR, angle + sweep, angle, true);
+    ctx.closePath();
+    ctx.fillStyle = c.fill;
+    ctx.fill();
+    angle += sweep;
+  });
+}
+
+// ════════════ USERS ════════════
+let userSearchTimeout = null;
+document.getElementById('user-search').addEventListener('input', () => {
+  clearTimeout(userSearchTimeout);
+  userSearchTimeout = setTimeout(loadUsers, 300);
+});
+document.getElementById('user-plan-filter').addEventListener('change', loadUsers);
+
+async function loadUsers() {
+  const search = document.getElementById('user-search').value.trim();
+  const plan = document.getElementById('user-plan-filter').value;
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  if (plan) params.set('plan', plan);
+  const data = await api('GET', '/api/admin/users?' + params);
+  if (!data || !data.users) return;
+  document.getElementById('user-count').textContent = (data.total || data.users.length) + ' users';
+  document.getElementById('users-tbody').innerHTML = data.users.length
+    ? data.users.map(u =>
+      `<tr>
+        <td style="font-weight:500;">${esc(u.name || '--')}</td>
+        <td class="mono" style="color:var(--tx2);font-size:11px;">${esc(u.email)}</td>
+        <td><span class="plan-badge plan-${u.plan}">${u.plan}</span></td>
+        <td style="color:var(--green);font-weight:500;">$${fmtNum(u.total_paid || 0)}</td>
+        <td style="color:var(--tx2);">${(u.chat_count || 0).toLocaleString()}</td>
+        <td class="mono" style="color:var(--tx3);font-size:11px;">${fmtDate(u.created_at)}</td>
+        <td class="mono" style="color:var(--tx3);font-size:11px;">${u.last_seen ? fmtDate(u.last_seen) : 'Never'}</td>
+        <td style="white-space:nowrap;">
+          <button class="act-btn" onclick="viewUser('${u.id}')">View</button>
+          <button class="act-btn" onclick="changePlan('${u.id}','${u.plan}')">Plan</button>
+          <button class="act-btn danger" onclick="deleteUser('${u.id}','${esc(u.name)}')">Del</button>
+        </td>
+      </tr>`
+    ).join('')
+    : '<tr><td colspan="8" class="empty-state">No users found</td></tr>';
+}
+
+async function viewUser(id) {
+  const data = await api('GET', '/api/admin/users/' + id);
+  if (!data || !data.user) return;
+  const u = data.user;
+  const payments = data.payments || [];
+  document.getElementById('user-modal-title').textContent = (u.name || 'User') + ' — ' + u.email;
+  document.getElementById('user-modal-body').innerHTML = `
+    <div class="modal-section">
+      <h4>Profile</h4>
+      <div class="info-grid">
+        <div class="info-item"><div class="info-label">name</div><div class="info-value">${esc(u.name)}</div></div>
+        <div class="info-item"><div class="info-label">email</div><div class="info-value mono" style="font-size:11px;">${esc(u.email)}</div></div>
+        <div class="info-item"><div class="info-label">plan</div><div class="info-value"><span class="plan-badge plan-${u.plan}">${u.plan}</span></div></div>
+        <div class="info-item"><div class="info-label">status</div><div class="info-value"><span class="status-badge status-${u.status || 'active'}">${u.status || 'active'}</span></div></div>
+        <div class="info-item"><div class="info-label">joined</div><div class="info-value">${fmtDate(u.created_at)}</div></div>
+        <div class="info-item"><div class="info-label">last_seen</div><div class="info-value">${u.last_seen ? fmtDate(u.last_seen) : 'Never'}</div></div>
+      </div>
+    </div>
+    <div class="modal-section">
+      <h4>Revenue and Usage</h4>
+      <div class="info-grid">
+        <div class="info-item"><div class="info-label">total_paid</div><div class="info-value" style="color:var(--green);">$${fmtNum(u.total_paid || 0)}</div></div>
+        <div class="info-item"><div class="info-label">ai_chats</div><div class="info-value">${(u.chat_count || 0).toLocaleString()}</div></div>
+        <div class="info-item"><div class="info-label">tokens_in</div><div class="info-value">${(u.tokens_in || 0).toLocaleString()}</div></div>
+        <div class="info-item"><div class="info-label">tokens_out</div><div class="info-value">${(u.tokens_out || 0).toLocaleString()}</div></div>
+      </div>
+    </div>
+    ${payments.length ? `
+    <div class="modal-section">
+      <h4>Payments (${payments.length})</h4>
+      <div class="table-wrap" style="max-height:200px;overflow-y:auto;">
+        <table>
+          <thead><tr><th>Plan</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+          <tbody>${payments.map(p => `
+            <tr>
+              <td><span class="plan-badge plan-${p.plan}">${p.plan}</span></td>
+              <td style="color:var(--green);">$${fmtNum(p.amount)}</td>
+              <td class="mono" style="color:var(--tx3);font-size:11px;">${fmtDate(p.created_at)}</td>
+              <td><span class="status-badge status-${p.status}">${p.status}</span></td>
+            </tr>
+          `).join('')}</tbody>
+        </table>
+      </div>
+    </div>` : ''}
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="form-submit" style="flex:none;padding:8px 18px;font-size:12px;" onclick="changePlan('${u.id}','${u.plan}')">Change Plan</button>
+      <button style="padding:8px 18px;background:transparent;border:1px solid rgba(217,97,106,.3);border-radius:var(--radius);color:var(--red);font-size:12px;cursor:pointer;" onclick="deleteUser('${u.id}','${esc(u.name)}')">Delete User</button>
+    </div>`;
+  openModal('user-detail-modal');
+}
+
+async function changePlan(id, current) {
+  const plans = ['free', 'starter', 'pro', 'team'];
+  const plan = prompt('Change plan to (free / starter / pro / team):', current);
+  if (!plan || !plans.includes(plan)) return;
+  const r = await api('PUT', '/api/admin/users/' + id, { plan });
+  if (r && r.user) {
+    toast('Plan updated to ' + plan, 'ok');
+    loadUsers();
+    closeModal('user-detail-modal');
+  } else {
+    toast('Error: ' + (r.error || 'Unknown'), 'err');
+  }
+}
+
+async function deleteUser(id, name) {
+  if (!confirm('Delete user "' + name + '"? This cannot be undone.')) return;
+  const r = await api('DELETE', '/api/admin/users/' + id);
+  if (r && r.ok) {
+    toast('User deleted', 'ok');
+    loadUsers();
+    closeModal('user-detail-modal');
+  } else {
+    toast('Error deleting user', 'err');
+  }
+}
+
+// Add user
+document.getElementById('add-user-btn').addEventListener('click', () => openModal('add-user-modal'));
+document.getElementById('au-submit').addEventListener('click', async () => {
+  const name = document.getElementById('au-name').value.trim();
+  const email = document.getElementById('au-email').value.trim();
+  const plan = document.getElementById('au-plan').value;
+  if (!name || !email) return toast('Name and email are required', 'err');
+  const r = await api('POST', '/api/admin/users', { name, email, plan });
+  if (r && r.user) {
+    toast('User created', 'ok');
+    closeModal('add-user-modal');
+    document.getElementById('au-name').value = '';
+    document.getElementById('au-email').value = '';
+    document.getElementById('au-plan').value = 'free';
+    loadUsers();
+  } else {
+    toast(r.error || 'Error creating user', 'err');
+  }
+});
+
+// Export
+document.getElementById('export-users-btn').addEventListener('click', () => {
+  window.open('/api/admin/users/export?token=' + TOKEN, '_blank');
+  toast('Downloading CSV...', 'info');
+});
+
+// ════════════ PAYMENTS ════════════
+document.getElementById('pay-days-filter').addEventListener('change', loadPayments);
+
+async function loadPayments() {
+  const days = document.getElementById('pay-days-filter').value;
+  const params = new URLSearchParams();
+  if (days) params.set('days', days);
+  const data = await api('GET', '/api/admin/payments?' + params);
+  if (!data || !data.payments) return;
+
+  const sum = data.sum || 0;
+  const total = data.total || data.payments.length;
+  const succeeded = data.payments.filter(p => p.status === 'succeeded').length;
+  const avg = total ? sum / total : 0;
+
+  document.getElementById('pay-count').textContent = total + ' payments -- $' + fmtNum(sum) + ' total';
+
+  document.getElementById('payments-kpi').innerHTML = [
+    { label: 'Total Payments', value: total, cls: 'blue', color: 'var(--blue)' },
+    { label: 'Total Revenue', value: '$' + fmtNum(sum), cls: 'accent', color: 'var(--ac)' },
+    { label: 'Avg Payment', value: '$' + fmtNum(avg), cls: 'green', color: 'var(--green)' },
+    { label: 'Succeeded', value: succeeded, cls: 'purple', color: 'var(--purple)' },
+  ].map(k =>
+    `<div class="kpi-card ${k.cls}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value" style="color:${k.color}">${k.value}</div>
+    </div>`
+  ).join('');
+
+  document.getElementById('payments-tbody').innerHTML = data.payments.length
+    ? data.payments.map(p =>
+      `<tr>
+        <td style="font-weight:500;">${esc(p.name || '--')}</td>
+        <td class="mono" style="color:var(--tx2);font-size:11px;">${esc(p.email || '--')}</td>
+        <td><span class="plan-badge plan-${p.plan}">${p.plan}</span></td>
+        <td style="color:var(--green);font-weight:500;">$${fmtNum(p.amount)}</td>
+        <td style="color:var(--tx2);">${p.type || '--'}</td>
+        <td><span class="status-badge status-${p.status}">${p.status}</span></td>
+        <td class="mono" style="color:var(--tx3);font-size:10px;">${p.stripe_id || '--'}</td>
+        <td class="mono" style="color:var(--tx3);font-size:11px;">${fmtDate(p.created_at)}</td>
+      </tr>`
+    ).join('')
+    : '<tr><td colspan="8" class="empty-state">No payments found</td></tr>';
+}
+
+document.getElementById('export-payments-btn').addEventListener('click', () => {
+  toast('Export not available for payments', 'info');
+});
+
+// ════════════ NL QUERY ════════════
+document.getElementById('nl-query-btn').addEventListener('click', runNLQuery);
+document.getElementById('nl-query-input').addEventListener('keydown', e => { if (e.key === 'Enter') runNLQuery(); });
+
+document.querySelectorAll('.nl-chip[data-q]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.getElementById('nl-query-input').value = chip.dataset.q;
+    runNLQuery();
+  });
+});
+
+async function runNLQuery() {
+  const question = document.getElementById('nl-query-input').value.trim();
+  if (!question) return;
+
+  const $result = document.getElementById('nl-result');
+  const $main   = document.getElementById('nl-answer-main');
+  const $detail = document.getElementById('nl-answer-detail');
+  const $enh    = document.getElementById('nl-enhanced');
+  const $table  = document.getElementById('nl-data-table');
+
+  $main.textContent = 'Querying...';
+  $detail.innerHTML = '<div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+  $enh.textContent = '';
+  $table.innerHTML = '';
+  $result.classList.add('visible');
+
+  const r = await api('POST', '/api/admin/query', { question });
+
+  $main.textContent = r.answer || 'No answer available';
+  $detail.textContent = r.ai_answer || '';
+  $enh.textContent = r.ai_enhanced ? 'Enhanced by AXIOM AI with live data' : '';
+
+  // Render data table if present
+  if (r.type === 'users' && Array.isArray(r.data) && r.data.length) {
+    $table.innerHTML = `<div class="table-wrap" style="max-height:300px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Paid</th><th>Chats</th><th>Joined</th></tr></thead>
+        <tbody>${r.data.map(u => `
+          <tr>
+            <td>${esc(u.name || '--')}</td>
+            <td class="mono" style="color:var(--tx2);font-size:11px;">${esc(u.email || '--')}</td>
+            <td><span class="plan-badge plan-${u.plan}">${u.plan}</span></td>
+            <td style="color:var(--green);">$${fmtNum(u.total_paid || 0)}</td>
+            <td>${u.chat_count || 0}</td>
+            <td class="mono" style="color:var(--tx3);font-size:11px;">${fmtDate(u.created_at)}</td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    </div>`;
+  } else if (r.type === 'payments' && Array.isArray(r.data) && r.data.length) {
+    $table.innerHTML = `<div class="table-wrap" style="max-height:300px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>User</th><th>Plan</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+        <tbody>${r.data.map(p => `
+          <tr>
+            <td>${esc(p.name || p.email || '--')}</td>
+            <td><span class="plan-badge plan-${p.plan}">${p.plan}</span></td>
+            <td style="color:var(--green);">$${fmtNum(p.amount)}</td>
+            <td class="mono" style="color:var(--tx3);font-size:11px;">${fmtDate(p.created_at)}</td>
+            <td><span class="status-badge status-${p.status}">${p.status}</span></td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+}
+
+// ════════════ ADMIN AI CHAT ════════════
+document.getElementById('chat-send-btn').addEventListener('click', sendChat);
+document.getElementById('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  appendChatMsg('user', msg);
+  chatHistory.push({ role: 'user', content: msg });
+
+  // Typing indicator
+  const typingId = 'typing-' + Date.now();
+  const $msgs = document.getElementById('chat-messages');
+  const typingEl = document.createElement('div');
+  typingEl.className = 'chat-msg ai';
+  typingEl.id = typingId;
+  typingEl.innerHTML = `<div class="chat-avatar ai">AX</div><div class="chat-bubble"><div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>`;
+  $msgs.appendChild(typingEl);
+  $msgs.scrollTop = $msgs.scrollHeight;
+
+  try {
+    const res = await fetch('/api/admin/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Axiom-Token': TOKEN },
+      body: JSON.stringify({ messages: chatHistory })
+    });
+
+    // Remove typing indicator
+    const te = document.getElementById(typingId);
+    if (te) te.remove();
+
+    if (!res.ok) {
+      appendChatMsg('ai', 'Error: ' + res.statusText);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let msgEl = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value);
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        try {
+          const d = JSON.parse(line.slice(5));
+          if (d.type === 'content_block_delta' && d.delta && d.delta.text) {
+            fullText += d.delta.text;
+            if (!msgEl) msgEl = appendChatMsg('ai', '');
+            const bubble = msgEl.querySelector('.chat-bubble');
+            if (bubble) bubble.textContent = fullText;
+            $msgs.scrollTop = $msgs.scrollHeight;
+          }
+        } catch (e) { /* skip non-JSON lines */ }
+      }
+    }
+
+    if (fullText) {
+      chatHistory.push({ role: 'assistant', content: fullText });
+    }
+  } catch (e) {
+    const te = document.getElementById(typingId);
+    if (te) te.remove();
+    appendChatMsg('ai', 'Error: ' + e.message);
+  }
+}
+
+function appendChatMsg(role, text) {
+  const $msgs = document.getElementById('chat-messages');
+  const el = document.createElement('div');
+  el.className = 'chat-msg ' + (role === 'user' ? 'user' : 'ai');
+  el.innerHTML = `
+    <div class="chat-avatar ${role === 'user' ? 'human' : 'ai'}">${role === 'user' ? 'You' : 'AX'}</div>
+    <div class="chat-bubble">${esc(text)}</div>
+  `;
+  $msgs.appendChild(el);
+  $msgs.scrollTop = $msgs.scrollHeight;
+  return el;
+}
+
+// ════════════ MODALS ════════════
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Close buttons
+document.querySelectorAll('.modal-close[data-close]').forEach(btn => {
+  btn.addEventListener('click', () => closeModal(btn.dataset.close));
+});
+
+// Click overlay to close
+document.querySelectorAll('.modal-overlay').forEach(ov => {
+  ov.addEventListener('click', e => {
+    if (e.target === ov) ov.classList.remove('open');
+  });
+});
+
+// ════════════ UTILITIES ════════════
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function fmtDate(d) {
+  if (!d) return '--';
+  try {
+    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+  } catch (e) {
+    return String(d).slice(0, 10);
+  }
+}
+
+function fmtNum(n) {
+  if (typeof n !== 'number') n = parseFloat(n) || 0;
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 10000) return (n / 1000).toFixed(1) + 'k';
+  return n.toFixed(2);
+}
+
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+let toastTimer;
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + type + ' show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = 'toast', 3500);
+}
+
+// Handle canvas resize
+window.addEventListener('resize', () => {
+  // Re-render charts on resize with a debounce
+  clearTimeout(window._resizeTimer);
+  window._resizeTimer = setTimeout(loadOverview, 250);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,511 @@
+#!/usr/bin/env node
+'use strict';
+/**
+ * AXIOM v5 — Complete IDE Backend
+ * Real WebSocket terminal · Admin Dashboard · Memory Engine · Zero npm deps
+ */
+const http=require('http'),https=require('https'),fs=require('fs'),path=require('path');
+const os=require('os'),urlMod=require('url'),crypto=require('crypto');
+const {exec,spawn}=require('child_process');
+
+const PORT=5000,DATA=path.join(os.homedir(),'.axiom');
+const KEY_FILE=path.join(DATA,'key'),MEM_FILE=path.join(DATA,'memory.json');
+const CFG_FILE=path.join(DATA,'config.json'),DB_FILE=path.join(DATA,'axiom.db');
+const SNIP_FILE=path.join(DATA,'snippets.json');
+fs.mkdirSync(DATA,{recursive:true,mode:0o700});
+
+// ── Config ──────────────────────────────────────────────────────
+function loadCfg(){try{return JSON.parse(fs.readFileSync(CFG_FILE,'utf8'));}catch(e){}
+  const c={token:crypto.randomBytes(32).toString('hex'),created:new Date().toISOString()};
+  fs.writeFileSync(CFG_FILE,JSON.stringify(c,null,2),{mode:0o600});return c;}
+const CFG=loadCfg();
+
+// ── Rate limiter ─────────────────────────────────────────────────
+const rl=new Map();
+function rateOk(ip){const n=Date.now(),b=rl.get(ip)||{c:0,r:n+60000};if(n>b.r){b.c=0;b.r=n+60000;}b.c++;rl.set(ip,b);return b.c<=400;}
+
+// ── Path sandbox ─────────────────────────────────────────────────
+function safe(p){if(!p)return null;const r=path.resolve((p+'').replace(/^~/,os.homedir()));return[os.homedir(),'/tmp'].some(b=>r.startsWith(path.resolve(b)))?r:null;}
+
+// ── Plans ────────────────────────────────────────────────────────
+const PLANS={free:{name:'Free',price:0},starter:{name:'Starter',price:9},pro:{name:'Pro',price:19},team:{name:'Team',price:49}};
+
+// ── Database (JSON) ──────────────────────────────────────────────
+const DB={
+  _d:null,
+  load(){if(this._d)return this._d;try{this._d=JSON.parse(fs.readFileSync(DB_FILE,'utf8'));}catch(e){this._d={users:[],payments:[],usage:[],created:new Date().toISOString()};}return this._d;},
+  save(){if(this._d)fs.writeFileSync(DB_FILE,JSON.stringify(this._d,null,2),{mode:0o600});},
+  createUser(o){const db=this.load();if(db.users.find(u=>u.email===o.email.toLowerCase()))return{error:'Email exists'};const u={id:crypto.randomUUID(),name:o.name,email:o.email.toLowerCase(),plan:o.plan||'free',role:o.role||'user',status:'active',total_paid:0,total_cost:0,chat_count:0,tokens_in:0,tokens_out:0,last_seen:null,created_at:new Date().toISOString()};db.users.push(u);this.save();return u;},
+  getUser(id){return this.load().users.find(u=>u.id===id);},
+  updateUser(id,p){const db=this.load(),i=db.users.findIndex(u=>u.id===id);if(i===-1)return null;Object.assign(db.users[i],p);this.save();return db.users[i];},
+  getUsers(f={}){let u=this.load().users;if(f.plan)u=u.filter(x=>x.plan===f.plan);if(f.search){const s=f.search.toLowerCase();u=u.filter(x=>x.name?.toLowerCase().includes(s)||x.email?.toLowerCase().includes(s));}return u.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));},
+  recordPayment(o){const db=this.load();const p={id:crypto.randomUUID(),...o,created_at:new Date().toISOString()};db.payments.push(p);const u=db.users.find(x=>x.id===o.user_id);if(u){u.total_paid=(u.total_paid||0)+o.amount;u.plan=o.plan;}this.save();return p;},
+  getPayments(f={}){let p=this.load().payments;if(f.user_id)p=p.filter(x=>x.user_id===f.user_id);if(f.days){const c=new Date(Date.now()-f.days*86400000).toISOString();p=p.filter(x=>x.created_at>=c);}return p.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));},
+  recordUsage(o){const db=this.load();db.usage.push({id:crypto.randomUUID(),...o,created_at:new Date().toISOString()});db.usage=db.usage.slice(-50000);const u=db.users.find(x=>x.id===o.user_id);if(u){u.tokens_in=(u.tokens_in||0)+(o.tokens_in||0);u.tokens_out=(u.tokens_out||0)+(o.tokens_out||0);u.total_cost=+((u.total_cost||0)+(o.cost||0)).toFixed(6);u.chat_count=(u.chat_count||0)+1;u.last_seen=new Date().toISOString();}this.save();},
+  getAnalytics(){
+    const db=this.load(),pays=db.payments.filter(p=>p.status==='succeeded'),usage=db.usage;
+    const today=new Date().toISOString().slice(0,10),month=new Date().toISOString().slice(0,7),last30=new Date(Date.now()-30*86400000).toISOString();
+    const bp={};['free','starter','pro','team'].forEach(p=>bp[p]=db.users.filter(u=>u.plan===p).length);
+    const mrr=Object.entries(PLANS).reduce((s,[k,p])=>s+(p.price||0)*(bp[k]||0),0);
+    const rev={total:pays.reduce((s,p)=>s+(p.amount||0),0),monthly:pays.filter(p=>p.created_at.startsWith(month)).reduce((s,p)=>s+(p.amount||0),0),today:pays.filter(p=>p.created_at.startsWith(today)).reduce((s,p)=>s+(p.amount||0),0),mrr,arr:mrr*12};
+    const dailyRev={},dailySig={};
+    for(let i=29;i>=0;i--){const d=new Date(Date.now()-i*86400000).toISOString().slice(0,10);dailyRev[d]=0;dailySig[d]=0;}
+    pays.filter(p=>p.created_at>=last30).forEach(p=>{const d=p.created_at.slice(0,10);if(dailyRev[d]!==undefined)dailyRev[d]+=p.amount||0;});
+    db.users.filter(u=>u.created_at>=last30).forEach(u=>{const d=u.created_at.slice(0,10);if(dailySig[d]!==undefined)dailySig[d]++;});
+    return{overview:{total_users:db.users.length,paying_users:db.users.filter(u=>u.plan!=='free').length,new_today:db.users.filter(u=>u.created_at.startsWith(today)).length},revenue:rev,plans:bp,usage:{total_tokens:usage.reduce((s,u)=>s+(u.tokens_in||0)+(u.tokens_out||0),0),total_cost:+usage.reduce((s,u)=>s+(u.cost||0),0).toFixed(4),total_chats:usage.filter(u=>u.action==='chat').length},charts:{dailyRevenue:dailyRev,dailySignups:dailySig},topByRevenue:[...db.users].sort((a,b)=>(b.total_paid||0)-(a.total_paid||0)).slice(0,10).map(u=>({id:u.id,name:u.name,email:u.email,plan:u.plan,total_paid:u.total_paid||0})),recent_payments:pays.slice(0,15)};
+  },
+  nlQuery(q){
+    const db=this.load(),low=q.toLowerCase(),pays=db.payments.filter(p=>p.status==='succeeded'),users=db.users,usage=db.usage;
+    if(low.match(/revenue|money|paid|income/)){const s=pays.reduce((a,p)=>a+p.amount,0);return{answer:`Total revenue: $${s.toFixed(2)} from ${pays.length} payments`,data:pays.slice(0,20),type:'payments'};}
+    if(low.match(/mrr|monthly recurring/)){const a=this.getAnalytics();return{answer:`MRR: $${a.revenue.mrr} | ARR: $${a.revenue.arr}`,data:a.plans,type:'summary'};}
+    if(low.match(/user|signup|customer/)){return{answer:`Total users: ${users.length}`,data:users.slice(0,20),type:'users'};}
+    const a=this.getAnalytics();return{answer:`Platform: ${a.overview.total_users} users, $${a.revenue.total.toFixed(2)} revenue, $${a.revenue.mrr}/mo MRR`,data:a,type:'analytics'};
+  },
+  seedDemo(){const db=this.load();if(db.users.length>0)return;[['Amara Osei','amara@example.com','pro'],['Kofi Mensah','kofi@example.com','free'],['Sofia Rodriguez','sofia@startup.io','starter'],['James Chen','james@tech.co','pro'],['Priya Sharma','priya@company.com','team']].forEach(([name,email,plan])=>{const u=this.createUser({name,email,plan});if(plan!=='free'){const price=PLANS[plan]?.price||9;for(let m=0;m<3;m++)this.recordPayment({user_id:u.id,email,name,plan,amount:price,status:'succeeded',type:'subscription'});}});console.log('  Demo data seeded');}
+};
+
+// ── Memory engine ────────────────────────────────────────────────
+const Mem={
+  _d:null,
+  load(){if(this._d)return this._d;try{this._d=JSON.parse(fs.readFileSync(MEM_FILE,'utf8'));}catch(e){this._d={v:5,sessions:0,chats:0,lastSeen:null,identity:{},langs:[],bugs:[],insights:[],decisions:[],todos:[],facts:[],sessionNotes:[],bookmarks:[]};}return this._d;},
+  save(){if(this._d)fs.writeFileSync(MEM_FILE,JSON.stringify(this._d,null,2),{mode:0o600});},
+  get(){return this.load();},patch(p){Object.assign(this.load(),p);this.save();return this._d;},
+  addFact(f){const m=this.load();if(!m.facts.includes(f)){m.facts.unshift(f);m.facts=m.facts.slice(0,400);}this.save();},
+  addBug(e,s,l){const m=this.load();m.bugs.unshift({e:e.slice(0,250),s:s.slice(0,200),l,d:new Date().toISOString()});m.bugs=m.bugs.slice(0,300);this.save();},
+  addLang(n){const m=this.load();const ex=m.langs.find(l=>l.n.toLowerCase()===n.toLowerCase());if(ex)ex.d=new Date().toISOString();else m.langs.push({n,d:new Date().toISOString()});this.save();},
+  addTodo(t){const m=this.load();m.todos.unshift({t,done:false,d:new Date().toISOString()});m.todos=m.todos.slice(0,300);this.save();},
+  addDecision(t){const m=this.load();m.decisions.unshift({t,d:new Date().toISOString()});m.decisions=m.decisions.slice(0,150);this.save();},
+  addInsight(t){const m=this.load();m.insights.unshift({t,d:new Date().toISOString()});m.insights=m.insights.slice(0,200);this.save();},
+  startSession(){const m=this.load();m.sessions=(m.sessions||0)+1;m.lastSeen=new Date().toISOString();this.save();return m;},
+  extract(u,a){
+    const low=u.toLowerCase();
+    ['python','javascript','typescript','go','rust','java','react','vue','next.js','fastapi','django','node','flutter','dart','ruby','bash','sql','kotlin','swift','elixir'].forEach(l=>{if(low.includes(l))this.addLang(l);});
+    if(['error','traceback','exception','not working','bug','broken'].some(w=>low.includes(w))&&a.length>50)this.addBug(u.slice(0,200),a.slice(0,200),'code');
+    if(["i'll use","going with","decided"].some(t=>low.includes(t)))this.addDecision(u.slice(0,200));
+    if(["todo:","i should","need to","remind me"].some(t=>low.includes(t)))this.addTodo(u.slice(0,120));
+    if(["i prefer","i use","my name","i'm using"].some(t=>low.includes(t)))this.addFact(u.slice(0,120));
+    if(["realized","learned","figured out"].some(t=>low.includes(t)))this.addInsight(u.slice(0,150));
+    const m=this.load();m.chats=(m.chats||0)+1;this.save();
+  },
+  context(){
+    const m=this.load();if(!m.sessions||m.sessions<=1)return'';
+    const p=[`\n\n═══ AXIOM MEMORY — Session ${m.sessions} ═══`];
+    if(m.identity?.name)p.push(`Engineer: ${m.identity.name}${m.identity.role?' · '+m.identity.role:''}`);
+    if(m.langs?.length)p.push(`Stack: ${m.langs.slice(0,10).map(l=>l.n).join(', ')}`);
+    if(m.bugs?.length){p.push('Bugs fixed:');m.bugs.slice(0,3).forEach(b=>p.push(`  · [${b.l}] ${b.e.slice(0,80)}`));}
+    if(m.todos?.filter(t=>!t.done).length){p.push('Open TODOs:');m.todos.filter(t=>!t.done).slice(0,4).forEach(t=>p.push(`  · ${t.t.slice(0,100)}`));}
+    if(m.facts?.length){p.push('Facts:');m.facts.slice(0,5).forEach(f=>p.push(`  · ${f}`));}
+    if(m.sessionNotes?.length)p.push(`Last session: ${m.sessionNotes[0].s}`);
+    return p.join('\n');
+  },
+  clear(){this._d={v:5,sessions:0,chats:0,lastSeen:null,identity:{},langs:[],bugs:[],insights:[],decisions:[],todos:[],facts:[],sessionNotes:[],bookmarks:[]};this.save();}
+};
+
+// ── Snippets ─────────────────────────────────────────────────────
+const Snippets={
+  load(){try{return JSON.parse(fs.readFileSync(SNIP_FILE,'utf8'));}catch(e){return[];}},
+  save(s){fs.writeFileSync(SNIP_FILE,JSON.stringify(s,null,2),{mode:0o600});},
+  add(name,code,lang,desc){const s=this.load();s.unshift({id:crypto.randomUUID(),name,code,lang,desc,created:new Date().toISOString()});this.save(s.slice(0,200));},
+  remove(id){this.save(this.load().filter(s=>s.id!==id));}
+};
+
+// ── System prompt ────────────────────────────────────────────────
+function sysPrompt(extra=''){return`You are AXIOM — Zawadi's personal AI software engineer (Claude Sonnet by Anthropic). Principal-level intelligence. Persistent memory. You beat Cursor, Copilot, Windsurf, Zed and Bolt combined.
+
+Expertise: Python, JS/TS, Go, Rust, Java, Kotlin, Swift, React, Next.js, Vue, Svelte, FastAPI, Django, Node, Flutter, PostgreSQL, Redis, Docker, K8s, AWS, Terraform, AI/ML, security, testing.
+
+Always write production-ready code: error handling, types, imports, edge cases. Root cause first when debugging. Push back on bad approaches. Reference memory naturally.${Mem.context()}${extra}`;}
+
+// ── Helpers ──────────────────────────────────────────────────────
+function getKey(k){if(k)return k;if(process.env.ANTHROPIC_API_KEY)return process.env.ANTHROPIC_API_KEY;try{return fs.readFileSync(KEY_FILE,'utf8').trim();}catch(e){return'';}}
+function parseBody(req){return new Promise(r=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>{try{r({text:b,json:JSON.parse(b)});}catch(e){r({text:b,json:{}});}});});}
+function sendJson(res,data,status=200){const j=JSON.stringify(data);res.writeHead(status,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});res.end(j);}
+function cors(res){res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','Content-Type,X-Axiom-Token');res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,DELETE,PATCH,OPTIONS');res.setHeader('X-Content-Type-Options','nosniff');}
+const SKIP=['node_modules','.git','__pycache__','.axiom','dist','build','.next','.nuxt','coverage','.cache'];
+function listDir(dir){const s=safe(dir);if(!s)return[];try{return fs.readdirSync(s,{withFileTypes:true}).filter(e=>!SKIP.includes(e.name)).map(e=>{try{const fp=path.join(s,e.name),st=fs.statSync(fp);return{name:e.name,type:e.isDirectory()?'dir':'file',path:fp,size:st.size,mtime:st.mtime.toISOString(),ext:path.extname(e.name).slice(1)};}catch(e){return null;}}).filter(Boolean).sort((a,b)=>a.type===b.type?a.name.localeCompare(b.name):a.type==='dir'?-1:1);}catch(e){return[];}}
+function runCode(code,lang,stdin=''){return new Promise(resolve=>{const R={python:'python3',javascript:'node',bash:'bash',sh:'bash',ruby:'ruby'};const E={python:'.py',javascript:'.js',bash:'.sh',ruby:'.rb'};const runner=R[lang?.toLowerCase()];if(!runner)return resolve({output:`Language '${lang}' not supported`,error:true});const tmp=path.join(os.tmpdir(),`ax_${Date.now()}${E[lang.toLowerCase()]||'.py'}`);fs.writeFileSync(tmp,code,{mode:0o600});const p=spawn(runner,[tmp],{timeout:30000});let out='',err='';if(stdin){p.stdin.write(stdin);p.stdin.end();}p.stdout.on('data',d=>out+=d);p.stderr.on('data',d=>err+=d);p.on('close',code=>{try{fs.unlinkSync(tmp);}catch(e){}resolve({output:(out+(err?'\n'+err:'')).trim()||'(no output)',exitCode:code,error:code!==0});});p.on('error',e=>{try{fs.unlinkSync(tmp);}catch(x){}resolve({output:'Error: '+e.message,error:true});});});}
+function git(cwd,...args){return new Promise(resolve=>{const s=safe(cwd);if(!s)return resolve({ok:false,out:'Path not allowed'});exec(`git -C "${s}" ${args.join(' ')}`,{timeout:15000,env:{...process.env,GIT_TERMINAL_PROMPT:'0'}},(err,out,se)=>resolve({ok:!err,out:(out||'')+(se&&!out?se:''),err:err?.message||''}));});}
+
+// ════════════════════════════════════════════════════════════════
+// PURE-NODE WEBSOCKET TERMINAL — Real bash shell, no npm needed
+// ════════════════════════════════════════════════════════════════
+const terminals=new Map(); // id -> {shell, sockets}
+
+function wsAccept(key){return crypto.createHash('sha1').update(key+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');}
+
+function decodeWsFrame(buf){
+  try{
+    if(buf.length<2)return null;
+    const fin=(buf[0]&0x80)!==0,opcode=buf[0]&0x0f;
+    const masked=(buf[1]&0x80)!==0;
+    let len=buf[1]&0x7f,offset=2;
+    if(len===126){if(buf.length<4)return null;len=buf.readUInt16BE(2);offset=4;}
+    else if(len===127){if(buf.length<10)return null;len=Number(buf.readBigUInt64BE(2));offset=10;}
+    if(buf.length<offset+(masked?4:0)+len)return null;
+    const mask=masked?buf.slice(offset,offset+4):null;
+    if(masked)offset+=4;
+    const payload=Buffer.from(buf.slice(offset,offset+len));
+    if(masked)for(let i=0;i<payload.length;i++)payload[i]^=mask[i%4];
+    return{opcode,data:payload,totalLen:offset+len};
+  }catch(e){return null;}
+}
+
+function encodeWsFrame(data){
+  const b=Buffer.isBuffer(data)?data:Buffer.from(data,'utf8');
+  if(b.length<126)return Buffer.concat([Buffer.from([0x81,b.length]),b]);
+  if(b.length<65536)return Buffer.concat([Buffer.from([0x81,126,b.length>>8,b.length&0xff]),b]);
+  const h=Buffer.alloc(10);h[0]=0x81;h[1]=127;h.writeBigUInt64BE(BigInt(b.length),2);
+  return Buffer.concat([h,b]);
+}
+
+function handleWsUpgrade(req,socket,path){
+  // Verify token
+  const u=urlMod.parse(req.url,true);
+  if(u.query.token!==CFG.token){socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');socket.destroy();return;}
+
+  const key=req.headers['sec-websocket-key'];
+  socket.write(
+    'HTTP/1.1 101 Switching Protocols\r\n'+
+    'Upgrade: websocket\r\nConnection: Upgrade\r\n'+
+    'Sec-WebSocket-Accept: '+wsAccept(key)+'\r\n\r\n'
+  );
+  socket.setTimeout(0);
+  socket.setNoDelay(true);
+
+  if(path.startsWith('/ws/terminal')){
+    // Real bash shell
+    const cwd=u.query.cwd||os.homedir();
+    const termId=u.query.id||crypto.randomUUID();
+    const shell=spawn('bash',['-i'],{
+      env:{...process.env,TERM:'xterm-256color',COLORTERM:'truecolor',FORCE_COLOR:'1'},
+      cwd:safe(cwd)||os.homedir()
+    });
+
+    const send=(data)=>{try{socket.write(encodeWsFrame(data));}catch(e){}};
+
+    shell.stdout.on('data',d=>send(d));
+    shell.stderr.on('data',d=>send(d));
+    shell.on('close',()=>{send('\r\n\x1b[31m[Process exited]\x1b[0m\r\n');try{socket.destroy();}catch(e){}});
+
+    let buf=Buffer.alloc(0);
+    socket.on('data',chunk=>{
+      buf=Buffer.concat([buf,chunk]);
+      while(buf.length>0){
+        const frame=decodeWsFrame(buf);
+        if(!frame)break;
+        if(frame.opcode===8){try{socket.destroy();}catch(e){}break;}
+        if(frame.opcode===9){socket.write(encodeWsFrame(Buffer.from([0x8a,0])));} // pong
+        if(frame.opcode===1||frame.opcode===2){try{shell.stdin.write(frame.data);}catch(e){}}
+        buf=buf.slice(frame.totalLen);
+      }
+    });
+    socket.on('close',()=>{try{shell.kill();}catch(e){}});
+    socket.on('error',()=>{try{shell.kill();}catch(e){}});
+
+    // Send prompt hint
+    setTimeout(()=>send(`\x1b[2J\x1b[H\x1b[32mAXIOM Terminal\x1b[0m — bash shell\r\nCwd: ${cwd}\r\n\r\n`),100);
+
+  } else {
+    socket.destroy();
+  }
+}
+
+// ── HTTP Server ──────────────────────────────────────────────────
+const server=http.createServer(async(req,res)=>{
+  cors(res);
+  const ip=req.socket.remoteAddress||'';
+  if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
+  if(!rateOk(ip)){res.writeHead(429);res.end(JSON.stringify({error:'Rate limited'}));return;}
+  const parsed=urlMod.parse(req.url,true),route=parsed.pathname,q=parsed.query;
+  const{text:rawBody,json:data}=['POST','PUT','PATCH','DELETE'].includes(req.method)?await parseBody(req):{text:'',json:{}};
+
+  const PUBLIC=['/api/ping','/api/token','/api/billing/webhook','/api/plans'];
+  if(route.startsWith('/api/')&&!PUBLIC.includes(route)){
+    const tok=req.headers['x-axiom-token']||q.token||'';
+    if(tok!==CFG.token){res.writeHead(401);res.end(JSON.stringify({error:'Invalid token'}));return;}
+  }
+
+  if(!route.startsWith('/api/')){
+    const pub=path.join(__dirname,'..','public');
+    let fp=route==='/'?path.join(pub,'index.html'):route==='/admin'||route==='/admin/'?path.join(pub,'admin.html'):path.join(pub,route.slice(1));
+    const rfp=path.resolve(fp);
+    if(!rfp.startsWith(path.resolve(pub))){res.writeHead(403);res.end('Forbidden');return;}
+    if(fs.existsSync(rfp)&&fs.statSync(rfp).isFile()){const mime={'.html':'text/html','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon'};res.writeHead(200,{'Content-Type':mime[path.extname(rfp)]||'text/plain','Cache-Control':'no-store'});res.end(fs.readFileSync(rfp));return;}
+    const idx=path.join(pub,route.startsWith('/admin')?'admin.html':'index.html');
+    res.writeHead(200,{'Content-Type':'text/html','Cache-Control':'no-store'});
+    res.end(fs.existsSync(idx)?fs.readFileSync(idx):Buffer.from('AXIOM'));return;
+  }
+
+  // System
+  if(route==='/api/ping'){const tok=req.headers['x-axiom-token'];return sendJson(res,{ok:true,v:'6.0',ws_terminal:true,auth:tok===CFG.token,hint:!tok?'Pass token in X-Axiom-Token header':null});}
+  if(route==='/api/token'&&req.method==='POST')return sendJson(res,{ok:data.token===CFG.token});
+  if(route==='/api/plans')return sendJson(res,{plans:PLANS});
+
+  // API key
+  if(route==='/api/key'&&req.method==='GET'){const k=getKey();return sendJson(res,{hasKey:!!k,masked:k?k.slice(0,14)+'••••':''});}
+  if(route==='/api/key'&&req.method==='POST'){if(!(data.key||'').startsWith('sk-ant-'))return sendJson(res,{error:'Invalid key'},400);fs.writeFileSync(KEY_FILE,data.key,{mode:0o600});return sendJson(res,{ok:true});}
+
+  // Memory
+  if(route==='/api/memory'){if(req.method==='GET')return sendJson(res,Mem.load());if(req.method==='PUT'){Mem.patch(data);return sendJson(res,{ok:true,memory:Mem.load()});}if(req.method==='DELETE'){Mem.clear();return sendJson(res,{ok:true});}}
+  if(route==='/api/memory/fact'&&req.method==='POST'){Mem.addFact(data.f||data.fact||'');return sendJson(res,{ok:true});}
+  if(route==='/api/memory/insight'&&req.method==='POST'){Mem.addInsight(data.t||'');return sendJson(res,{ok:true});}
+  if(route==='/api/memory/todo'&&req.method==='POST'){Mem.addTodo(data.t||'');return sendJson(res,{ok:true});}
+  if(route==='/api/memory/todo/done'&&req.method==='POST'){const m=Mem.load();const t=m.todos.find(x=>x.t===data.t);if(t)t.done=true;Mem.save();return sendJson(res,{ok:true});}
+  if(route==='/api/memory/export'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'application/json','Content-Disposition':'attachment; filename="axiom_memory.json"','Access-Control-Allow-Origin':'*'});res.end(JSON.stringify(Mem.load(),null,2));return;}
+  if(route==='/api/session/start'&&req.method==='POST'){const m=Mem.startSession();return sendJson(res,{memory:m,sessions:m.sessions});}
+  if(route==='/api/session/end'&&req.method==='POST'){if(data.s){const m=Mem.load();m.sessionNotes.unshift({s:data.s,d:new Date().toISOString()});m.sessionNotes=m.sessionNotes.slice(0,50);Mem.save();}return sendJson(res,{ok:true});}
+
+  // Snippets
+  if(route==='/api/snippets'&&req.method==='GET')return sendJson(res,Snippets.load());
+  if(route==='/api/snippets'&&req.method==='POST'){Snippets.add(data.name||'Untitled',data.code||'',data.lang||'',data.desc||'');return sendJson(res,{ok:true,snippets:Snippets.load()});}
+  if(route.match(/^\/api\/snippets\/[^/]+$/)&&req.method==='DELETE'){Snippets.remove(route.split('/')[3]);return sendJson(res,{ok:true});}
+
+  // Files
+  if(route==='/api/files'&&req.method==='GET'){const d=safe(q.path||os.homedir());if(!d)return sendJson(res,{error:'Not allowed'},403);return sendJson(res,{entries:listDir(d),current:d,home:os.homedir()});}
+  if(route==='/api/file'&&req.method==='GET'){const s=safe(q.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{const st=fs.statSync(s);if(st.size>5*1024*1024)return sendJson(res,{error:'File too large'},400);return sendJson(res,{content:fs.readFileSync(s,'utf8'),path:s});}catch(e){return sendJson(res,{error:e.message},400);}}
+  if(route==='/api/file'&&req.method==='POST'){const s=safe(data.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{fs.mkdirSync(path.dirname(s),{recursive:true});fs.writeFileSync(s,data.content??'');return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
+  if(route==='/api/file'&&req.method==='DELETE'){const s=safe(data.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{fs.unlinkSync(s);return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
+  if(route==='/api/mkdir'&&req.method==='POST'){const s=safe(data.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{fs.mkdirSync(s,{recursive:true});return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
+  if(route==='/api/rename'&&req.method==='POST'){const a=safe(data.from),b=safe(data.to);if(!a||!b)return sendJson(res,{error:'Not allowed'},403);try{fs.renameSync(a,b);return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
+
+  // Search
+  if(route==='/api/search'&&req.method==='POST'){
+    const dir=safe(data.dir||os.homedir());if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    const results=[];
+    (function walk(d,depth){if(depth>6||results.length>120)return;try{fs.readdirSync(d,{withFileTypes:true}).forEach(e=>{if(SKIP.includes(e.name)||e.name.startsWith('.'))return;const fp=path.join(d,e.name);if(e.isDirectory()){walk(fp,depth+1);return;}if(data.filename&&e.name.toLowerCase().includes(data.filename.toLowerCase())){results.push({file:fp,name:e.name,type:'file'});return;}if(data.query){try{const lines=fs.readFileSync(fp,'utf8').split('\n');lines.forEach((line,i)=>{if(results.length>120)return;if(line.toLowerCase().includes(data.query.toLowerCase()))results.push({file:fp,line:i+1,text:line.trim().slice(0,140),name:e.name});});}catch(e){}}});}catch(e){}  })(dir,0);
+    return sendJson(res,{results:results.slice(0,120)});
+  }
+
+  // Git
+  if(route==='/api/git/status'&&req.method==='GET')return sendJson(res,await git(q.dir||os.homedir(),'status','--short','--branch'));
+  if(route==='/api/git/log'&&req.method==='GET')return sendJson(res,await git(q.dir||os.homedir(),'log','--oneline','--decorate','-30'));
+  if(route==='/api/git/diff'&&req.method==='GET')return sendJson(res,await git(q.dir||os.homedir(),'diff'));
+  if(route==='/api/git/branches'&&req.method==='GET')return sendJson(res,await git(q.dir||os.homedir(),'branch','-a'));
+  if(route==='/api/git/stage'&&req.method==='POST')return sendJson(res,await git(data.dir,'add',data.file||'.'));
+  if(route==='/api/git/unstage'&&req.method==='POST')return sendJson(res,await git(data.dir,'restore','--staged',data.file||'.'));
+  if(route==='/api/git/commit'&&req.method==='POST')return sendJson(res,await git(data.dir,'commit','-m',`"${(data.msg||'AXIOM commit').replace(/"/g,"'")}"`));
+  if(route==='/api/git/pull'&&req.method==='POST')return sendJson(res,await git(data.dir,'pull','--rebase'));
+  if(route==='/api/git/push'&&req.method==='POST')return sendJson(res,await git(data.dir,'push'));
+  if(route==='/api/git/checkout'&&req.method==='POST')return sendJson(res,await git(data.dir,'checkout',data.branch));
+  if(route==='/api/git/new-branch'&&req.method==='POST')return sendJson(res,await git(data.dir,'checkout','-b',data.branch));
+  if(route==='/api/git/stash'&&req.method==='POST')return sendJson(res,await git(data.dir,'stash',data.pop?'pop':'push'));
+  if(route==='/api/git/init'&&req.method==='POST')return sendJson(res,await git(data.dir,'init'));
+
+  // Run code
+  if(route==='/api/run'&&req.method==='POST'){if(!data.code||data.code.length>200000)return sendJson(res,{error:'Invalid code'},400);return sendJson(res,await runCode(data.code,data.lang||'python',data.stdin||''));}
+
+  // AI complete
+  if(route==='/api/complete'&&req.method==='POST'){
+    const apiKey=getKey();if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:400,system:'Code completion engine. Return ONLY the completion text. No markdown, no explanation, no backticks.',messages:[{role:'user',content:`Language: ${data.lang||'code'}\nCode before cursor:\n${data.prefix}\nComplete naturally from exactly where the code left off:`}]});
+    try{const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});return sendJson(res,{completion:result.content?.[0]?.text||''});}
+    catch(e){return sendJson(res,{error:e.message},500);}
+  }
+
+  // AI chat streaming
+  if(route==='/api/chat'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key — add in Settings ⚙'},401);
+    const msgs=(data.messages||[]).slice(-50);
+    const fileCtx=data.fileContext?`\n\nFile open: ${data.fileName||'file'}\n\`\`\`${data.fileLang||''}\n${data.fileContext.slice(0,8000)}\n\`\`\``:'';
+    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','Access-Control-Allow-Origin':'*','X-Accel-Buffering':'no'});
+    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,stream:true,system:sysPrompt(fileCtx),messages:msgs});
+    const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},apiRes=>{
+      let full='';apiRes.on('data',chunk=>{res.write(chunk);const s=chunk.toString();const m=s.match(/"text":"((?:[^"\\]|\\.)*)"/);if(m)full+=m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/\\\\/g,'\\');});
+      apiRes.on('end',()=>{res.end();const lastUser=msgs.length?msgs[msgs.length-1].content:'';if(lastUser&&typeof lastUser==='string')Mem.extract(lastUser,full);});
+    });
+    apiReq.on('error',()=>{try{res.end();}catch(x){}});apiReq.write(rb);apiReq.end();return;
+  }
+
+  // Admin routes
+  if(route==='/api/admin/analytics'&&req.method==='GET')return sendJson(res,DB.getAnalytics());
+  if(route==='/api/admin/users'&&req.method==='GET'){const users=DB.getUsers({plan:q.plan,search:q.search});return sendJson(res,{users,total:users.length});}
+  if(route==='/api/admin/users'&&req.method==='POST'){const u=DB.createUser({name:data.name,email:data.email,plan:data.plan||'free'});if(u.error)return sendJson(res,u,409);return sendJson(res,{user:u});}
+  if(route.match(/^\/api\/admin\/users\/[^/]+$/)&&req.method==='GET'){const u=DB.getUser(route.split('/')[4]);if(!u)return sendJson(res,{error:'Not found'},404);return sendJson(res,{user:u,payments:DB.getPayments({user_id:u.id})});}
+  if(route.match(/^\/api\/admin\/users\/[^/]+$/)&&req.method==='PUT'){const u=DB.updateUser(route.split('/')[4],data);return sendJson(res,{user:u});}
+  if(route.match(/^\/api\/admin\/users\/[^/]+$/)&&req.method==='DELETE'){const db=DB.load();db.users=db.users.filter(u=>u.id!==route.split('/')[4]);DB.save();return sendJson(res,{ok:true});}
+  if(route==='/api/admin/payments'&&req.method==='GET'){const pays=DB.getPayments({days:q.days?+q.days:undefined});return sendJson(res,{payments:pays,total:pays.length,sum:pays.reduce((s,p)=>s+(p.amount||0),0)});}
+  if(route==='/api/admin/payments'&&req.method==='POST'){const p=DB.recordPayment({user_id:data.user_id,email:data.email,name:data.name,plan:data.plan,amount:+data.amount||0,status:'succeeded',type:'manual'});return sendJson(res,{payment:p});}
+  if(route==='/api/admin/query'&&req.method==='POST'){
+    const question=data.question||'';if(!question)return sendJson(res,{error:'No question'},400);
+    const local=DB.nlQuery(question);const apiKey=getKey();if(!apiKey)return sendJson(res,{...local,ai_enhanced:false});
+    const a=DB.getAnalytics();
+    const sys=`You are AXIOM Admin AI for Zawadi. Live data: ${a.overview.total_users} users, ${a.overview.paying_users} paying, $${a.revenue.total.toFixed(2)} revenue, $${a.revenue.mrr}/mo MRR. Local query: ${local.answer}. Answer concisely with insights.`;
+    try{const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,system:sys,messages:[{role:'user',content:question}]});const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});return sendJson(res,{...local,ai_answer:result.content?.[0]?.text||local.answer,ai_enhanced:true});}
+    catch(e){return sendJson(res,{...local,ai_enhanced:false});}
+  }
+  if(route==='/api/admin/chat'&&req.method==='POST'){
+    const apiKey=getKey();if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const a=DB.getAnalytics();const msgs=(data.messages||[]).slice(-20);
+    const sys=`You are AXIOM Admin for Zawadi. Live: ${a.overview.total_users} users, $${a.revenue.mrr}/mo MRR, $${a.revenue.total.toFixed(2)} total. Give specific insights and recommendations.`;
+    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','Access-Control-Allow-Origin':'*','X-Accel-Buffering':'no'});
+    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2048,stream:true,system:sys,messages:msgs});
+    const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},apiRes=>{apiRes.on('data',chunk=>res.write(chunk));apiRes.on('end',()=>res.end());});
+    apiReq.on('error',()=>{try{res.end();}catch(x){}});apiReq.write(rb);apiReq.end();return;
+  }
+  if(route==='/api/admin/users/export'&&req.method==='GET'){const users=DB.getUsers();const csv='id,name,email,plan,status,total_paid,chat_count,created_at\n'+users.map(u=>[u.id,u.name,u.email,u.plan,u.status,u.total_paid||0,u.chat_count||0,u.created_at].join(',')).join('\n');res.writeHead(200,{'Content-Type':'text/csv','Content-Disposition':'attachment; filename="axiom_users.csv"','Access-Control-Allow-Origin':'*'});res.end(csv);return;}
+
+  // Lint — basic static analysis for Problems panel
+  if(route==='/api/lint'&&req.method==='POST'){
+    const code=data.code||'',lang=data.lang||'',problems=[];
+    const lines=code.split('\n');
+    lines.forEach((line,i)=>{
+      const ln=i+1,tr=line.trimEnd();
+      // Universal checks
+      if(tr.length>200)problems.push({ln,col:201,msg:'Line too long ('+tr.length+' chars)',sev:'warning'});
+      if(/\t/.test(tr))problems.push({ln,col:line.indexOf('\t')+1,msg:'Tab character (use spaces)',sev:'info'});
+      if(/console\.log\b/.test(tr))problems.push({ln,col:tr.indexOf('console.log')+1,msg:'console.log left in code',sev:'warning'});
+      if(/debugger\b/.test(tr))problems.push({ln,col:tr.indexOf('debugger')+1,msg:'debugger statement',sev:'error'});
+      if(/\beval\s*\(/.test(tr))problems.push({ln,col:tr.indexOf('eval')+1,msg:'eval() is dangerous',sev:'error'});
+      // JS/TS
+      if(['javascript','typescript'].includes(lang)){
+        if(/var\s+/.test(tr))problems.push({ln,col:tr.indexOf('var')+1,msg:"Use 'const' or 'let' instead of 'var'",sev:'warning'});
+        if(/==(?!=)/.test(tr)&&!/===/.test(tr))problems.push({ln,col:tr.indexOf('==')+1,msg:"Use '===' instead of '=='",sev:'warning'});
+        if(/\bwindow\b/.test(tr))problems.push({ln,col:tr.indexOf('window')+1,msg:'Direct window access — consider abstraction',sev:'info'});
+      }
+      // Python
+      if(lang==='python'){
+        if(/\bprint\s*\(/.test(tr)&&code.split('\n').length>10)problems.push({ln,col:tr.indexOf('print')+1,msg:'print() — remove for production',sev:'info'});
+        if(/except:\s*$/.test(tr))problems.push({ln,col:tr.indexOf('except')+1,msg:'Bare except clause catches all errors',sev:'warning'});
+        if(/^\s*pass\s*$/.test(tr))problems.push({ln,col:tr.indexOf('pass')+1,msg:'Empty block with pass',sev:'info'});
+      }
+      // Secrets
+      if(/(?:password|secret|api_?key|token)\s*=\s*['"][^'"]{4,}/i.test(tr))problems.push({ln,col:1,msg:'Possible hardcoded secret/credential',sev:'error'});
+      // TODO
+      if(/\bTODO\b|\bFIXME\b|\bHACK\b/.test(tr)){const m=tr.match(/\b(TODO|FIXME|HACK)\b/);problems.push({ln,col:tr.indexOf(m[0])+1,msg:m[0]+': '+tr.trim(),sev:'info'});}
+    });
+    return sendJson(res,{problems:problems.slice(0,100)});
+  }
+
+
+  // ── USER AUTH ROUTES ──────────────────────────────────────────────
+  if(route==='/api/auth/register'&&req.method==='POST'){
+    if(!data.email||!data.password||data.password.length<6)return sendJson(res,{error:'Email and password (6+ chars) required'},400);
+    const r=UsersDB.register(data.name||'User',data.email,data.password,data.plan||'free');
+    if(r.error)return sendJson(res,r,409);
+    return sendJson(res,r);
+  }
+  if(route==='/api/auth/login'&&req.method==='POST'){
+    if(!data.email||!data.password)return sendJson(res,{error:'Email and password required'},400);
+    const r=UsersDB.login(data.email,data.password);
+    if(r.error)return sendJson(res,r,401);
+    return sendJson(res,r);
+  }
+  if(route==='/api/auth/me'&&req.method==='GET'){
+    const tok=req.headers['x-user-token']||q.token;
+    const u=tok?UsersDB.getByToken(tok):null;
+    if(!u)return sendJson(res,{error:'Not authenticated'},401);
+    return sendJson(res,{user:u});
+  }
+  if(route==='/api/auth/profile'&&req.method==='PUT'){
+    const tok=req.headers['x-user-token'];
+    const me=tok?UsersDB.getByToken(tok):null;
+    if(!me)return sendJson(res,{error:'Not authenticated'},401);
+    const r=UsersDB.updateProfile(me.id,data);
+    return sendJson(res,r);
+  }
+  if(route==='/api/auth/users'&&req.method==='GET'){
+    // admin only
+    return sendJson(res,{users:UsersDB.load().users.map(({hash,salt,...u})=>u)});
+  }
+
+  sendJson(res,{error:'Not found'},404);
+});
+
+// ── WebSocket upgrade handler ────────────────────────────────────
+server.on('upgrade',(req,socket,head)=>{
+  const u=urlMod.parse(req.url,true);
+  if(u.pathname.startsWith('/ws/')){
+    socket.on('error',()=>{});
+    handleWsUpgrade(req,socket,u.pathname);
+  } else {
+    socket.destroy();
+  }
+});
+
+// ── Start ────────────────────────────────────────────────────────
+server.listen(PORT,'127.0.0.1',()=>{
+  DB.seedDemo();const mem=Mem.startSession();const hasKey=!!getKey();
+  console.clear();
+  console.log('\n  ╔══════════════════════════════════════════════════════════════╗');
+  console.log('  ║                    A X I O M  v5                            ║');
+  console.log('  ║   Real Terminal · CodeMirror Editor · Full IDE Features      ║');
+  console.log('  ║   Beats Cursor · Windsurf · Zed · Bolt · Copilot            ║');
+  console.log('  ╚══════════════════════════════════════════════════════════════╝');
+  console.log(`\n  ✦  IDE      →  http://localhost:${PORT}`);
+  console.log(`  ✦  Admin    →  http://localhost:${PORT}/admin`);
+  console.log(`  ✦  Terminal →  WebSocket (ws://localhost:${PORT}/ws/terminal)`);
+  console.log(`  ✦  Session  →  #${mem.sessions}`);
+  console.log(`  ✦  API Key  →  ${hasKey?'✅ Ready':'⚠️  Add in Settings'}`);
+  console.log(`\n  Token: ${CFG.token}\n`);
+  const open=process.platform==='darwin'?'open':process.platform==='win32'?'start':'xdg-open';
+  require('child_process').exec(`${open} http://localhost:${PORT}`);
+});
+
+// ════ USER AUTH — Sign in like Cursor/Windsurf/Zed ════
+const USERS_FILE = path.join(os.homedir(),'.axiom','users.json');
+
+function hashPw(pw,salt){return crypto.createHmac('sha256',salt).update(pw).digest('hex');}
+function makeSalt(){return crypto.randomBytes(16).toString('hex');}
+function makeJWT(payload){
+  const h=Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
+  const p=Buffer.from(JSON.stringify({...payload,iat:Date.now()})).toString('base64url');
+  const sig=crypto.createHmac('sha256',CFG.token).update(h+'.'+p).digest('base64url');
+  return h+'.'+p+'.'+sig;
+}
+function verifyJWT(tok){
+  try{
+    const[h,p,sig]=tok.split('.');
+    const expected=crypto.createHmac('sha256',CFG.token).update(h+'.'+p).digest('base64url');
+    if(sig!==expected)return null;
+    const payload=JSON.parse(Buffer.from(p,'base64url').toString());
+    if(Date.now()-payload.iat > 30*24*60*60*1000)return null; // 30 day expiry
+    return payload;
+  }catch(e){return null;}
+}
+
+const UsersDB={
+  load(){try{return JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));}catch(e){return{users:[]}}},
+  save(d){fs.mkdirSync(path.dirname(USERS_FILE),{recursive:true});fs.writeFileSync(USERS_FILE,JSON.stringify(d,null,2));},
+  register(name,email,pw,plan='free'){
+    const d=this.load();
+    if(d.users.find(u=>u.email.toLowerCase()===email.toLowerCase()))return{error:'Email already registered'};
+    const salt=makeSalt(),hash=hashPw(pw,salt);
+    const u={id:crypto.randomUUID(),name,email:email.toLowerCase(),plan,role:'user',
+      hash,salt,avatar:null,created_at:new Date().toISOString(),last_seen:null,
+      api_key:null,total_cost:0,chat_count:0,settings:{}};
+    d.users.push(u);this.save(d);
+    const{hash:_h,salt:_s,...safe}=u;
+    return{user:safe,token:makeJWT({id:u.id,email:u.email,plan:u.plan})};
+  },
+  login(email,pw){
+    const d=this.load();
+    const u=d.users.find(x=>x.email.toLowerCase()===email.toLowerCase());
+    if(!u)return{error:'No account with that email'};
+    if(hashPw(pw,u.salt)!==u.hash)return{error:'Wrong password'};
+    u.last_seen=new Date().toISOString();this.save(d);
+    const{hash:_h,salt:_s,...safe}=u;
+    return{user:safe,token:makeJWT({id:u.id,email:u.email,plan:u.plan})};
+  },
+  getByToken(tok){
+    const p=verifyJWT(tok);if(!p)return null;
+    const d=this.load();const u=d.users.find(x=>x.id===p.id);
+    if(!u)return null;
+    const{hash:_h,salt:_s,...safe}=u;return safe;
+  },
+  updateProfile(id,patch){
+    const d=this.load();const u=d.users.find(x=>x.id===id);
+    if(!u)return{error:'Not found'};
+    if(patch.name)u.name=patch.name;
+    if(patch.avatar)u.avatar=patch.avatar;
+    if(patch.newPassword&&patch.currentPassword){
+      if(hashPw(patch.currentPassword,u.salt)!==u.hash)return{error:'Wrong current password'};
+      u.salt=makeSalt();u.hash=hashPw(patch.newPassword,u.salt);
+    }
+    this.save(d);
+    const{hash:_h,salt:_s,...safe}=u;return{user:safe};
+  },
+};
+
+// Seed demo user if empty
+(()=>{const d=UsersDB.load();if(!d.users.length){UsersDB.register('Demo User','demo@axiom.dev','axiom123','pro');console.log('  Demo user: demo@axiom.dev / axiom123');}})();
+
