@@ -1239,6 +1239,15 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
 .auth-divider { display:flex;align-items:center;gap:10px;margin:16px 0; }
 .auth-divider::before,.auth-divider::after { content:'';flex:1;height:1px;background:var(--border); }
 .auth-divider span { font-size:11px;color:var(--tx3); }
+.auth-oauth {
+  width:100%;padding:9px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;
+  color:var(--tx);font-size:12px;font-weight:500;cursor:pointer;margin-bottom:6px;
+  display:flex;align-items:center;justify-content:center;gap:4px;transition:all .15s;
+}
+.auth-oauth:hover { background:var(--ac4);border-color:var(--ac);color:var(--tx); }
+.auth-oauth[disabled] { opacity:.5;cursor:not-allowed; }
+.auth-oauth-hint { font-size:10px;color:var(--tx3);text-align:center;margin:4px 0 8px;line-height:1.5; }
+.auth-oauth-hint a { color:var(--ac);cursor:pointer;text-decoration:underline; }
 .auth-demo { width:100%;padding:8px;background:transparent;border:1px solid var(--border2);
   border-radius:7px;color:var(--tx2);font-size:12px;transition:all .15s; }
 .auth-demo:hover { border-color:var(--ac);color:var(--ac);background:var(--ac4); }
@@ -1665,6 +1674,16 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
         <button class="auth-btn" onclick="signIn()">Sign In →</button>
         <div class="auth-err" id="sin-err"></div>
         <div class="auth-divider"><span>or</span></div>
+        <button class="auth-oauth auth-oauth-github" data-provider="github" onclick="oauthLogin('github')">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="margin-right:8px;vertical-align:-2px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          Continue with GitHub
+        </button>
+        <button class="auth-oauth auth-oauth-google" data-provider="google" onclick="oauthLogin('google')">
+          <svg viewBox="0 0 48 48" width="14" height="14" style="margin-right:8px;vertical-align:-2px"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5Z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.6 18.9 12 24 12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7Z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-2.1 14.2-5.5l-6.6-5.4C29.7 34.7 27 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.6 5.1C9.6 39.6 16.2 44 24 44Z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.7 2.1-2 4-3.7 5.3l6.6 5.4C43.7 35 44 29.8 44 24c0-1.3-.1-2.3-.4-3.5Z"/></svg>
+          Continue with Google
+        </button>
+        <div id="oauth-hint" class="auth-oauth-hint" style="display:none"></div>
+        <div class="auth-divider"><span>demo</span></div>
         <button class="auth-demo" onclick="demoLogin()">⚡ Continue with Demo Account</button>
         <div class="auth-footer">Don't have an account? <a onclick="switchAuthTab('signup')">Create one free</a></div>
       </div>
@@ -1700,6 +1719,15 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
         </div>
         <button class="auth-btn" onclick="signUp()">Create Account →</button>
         <div class="auth-err" id="sup-err"></div>
+        <div class="auth-divider"><span>or sign up with</span></div>
+        <button class="auth-oauth auth-oauth-github" data-provider="github" onclick="oauthLogin('github')">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="margin-right:8px;vertical-align:-2px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          Continue with GitHub
+        </button>
+        <button class="auth-oauth auth-oauth-google" data-provider="google" onclick="oauthLogin('google')">
+          <svg viewBox="0 0 48 48" width="14" height="14" style="margin-right:8px;vertical-align:-2px"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5Z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.6 18.9 12 24 12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7Z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-2.1 14.2-5.5l-6.6-5.4C29.7 34.7 27 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.6 5.1C9.6 39.6 16.2 44 24 44Z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.7 2.1-2 4-3.7 5.3l6.6 5.4C43.7 35 44 29.8 44 24c0-1.3-.1-2.3-.4-3.5Z"/></svg>
+          Continue with Google
+        </button>
         <div class="auth-footer">Already have an account? <a onclick="switchAuthTab('signin')">Sign in</a></div>
       </div>
     </div>
@@ -2552,24 +2580,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
           </div>
           <div style="font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;padding:0 4px">Upgrade via M-Pesa</div>
           <div class="billing-plans" id="billing-plans">
-            <div class="billing-plan-card" onclick="selectBillingPlan('starter',this)">
-              <div class="bpc-name">Starter</div>
-              <div class="bpc-price">KES 1,170/mo</div>
-              <div class="bpc-usd">~$9 USD</div>
-              <div class="bpc-feat">5K AI tokens/day</div>
-            </div>
-            <div class="billing-plan-card" onclick="selectBillingPlan('pro',this)">
-              <div class="bpc-name" style="color:var(--ac)">Pro</div>
-              <div class="bpc-price">KES 2,470/mo</div>
-              <div class="bpc-usd">~$19 USD</div>
-              <div class="bpc-feat">Unlimited AI + Priority</div>
-            </div>
-            <div class="billing-plan-card" onclick="selectBillingPlan('team',this)">
-              <div class="bpc-name" style="color:var(--purple)">Team</div>
-              <div class="bpc-price">KES 6,370/mo</div>
-              <div class="bpc-usd">~$49 USD</div>
-              <div class="bpc-feat">5 seats + Admin</div>
-            </div>
+            <div style="color:var(--tx3);padding:8px 0;font-size:11px">Loading plans…</div>
           </div>
           <div id="mpesa-pay-form" style="display:none;margin-top:8px">
             <div style="font-size:12px;font-weight:500;color:var(--tx);margin-bottom:6px">Pay with M-Pesa</div>
@@ -3045,6 +3056,63 @@ async function demoLogin() {
   afterAuth(d);
 }
 
+// Redirect to /api/auth/{provider}/start. The server will 302 to the
+// provider's consent screen and eventually redirect back to `/` with a
+// hash containing the signed JWT and user profile (handled by tryOAuthReturn).
+function oauthLogin(provider) {
+  window.location.href = '/api/auth/' + provider + '/start';
+}
+
+// Discover which OAuth providers are configured server-side and hide the
+// others. If neither is configured, show a small hint with a link to the
+// docs so the developer knows what env vars to set.
+async function refreshOAuthProviders() {
+  try {
+    const r = await fetch('/api/auth/providers');
+    if (!r.ok) return;
+    const d = await r.json();
+    document.querySelectorAll('.auth-oauth').forEach(btn => {
+      const p = btn.getAttribute('data-provider');
+      const enabled = !!d[p];
+      btn.style.display = enabled ? '' : 'none';
+      btn.disabled = !enabled;
+    });
+    const hint = document.getElementById('oauth-hint');
+    if (hint && !d.github && !d.google) {
+      hint.style.display = 'block';
+      hint.innerHTML = 'Set <code>GITHUB_CLIENT_ID</code>/<code>GOOGLE_CLIENT_ID</code> (and secrets) in your environment to enable social login.';
+    }
+  } catch (e) { /* ignore — keep buttons visible so failures are reported on click */ }
+}
+
+// If we were just redirected back from a GitHub/Google callback, the server
+// includes the session in the URL hash (#oauth=<jwt>&user=<b64>). Pull it
+// out, clear the hash, and finish signing the user in.
+function tryOAuthReturn() {
+  const hash = window.location.hash || '';
+  if (!hash) return false;
+  const q = new URLSearchParams(hash.slice(1));
+  if (q.get('oauth_error')) {
+    const el = document.getElementById('sin-err');
+    if (el) el.textContent = 'OAuth error: ' + q.get('oauth_error');
+    history.replaceState(null, '', window.location.pathname);
+    return false;
+  }
+  const tok = q.get('oauth');
+  const userB64 = q.get('user');
+  if (!tok || !userB64) return false;
+  try {
+    const pad = userB64.replace(/-/g,'+').replace(/_/g,'/');
+    const user = JSON.parse(atob(pad + '==='.slice((pad.length + 3) % 4)));
+    history.replaceState(null, '', window.location.pathname);
+    afterAuth({ user, token: tok });
+    return true;
+  } catch (e) {
+    history.replaceState(null, '', window.location.pathname);
+    return false;
+  }
+}
+
 function afterAuth(d) {
   USER = d.user; USER_TOKEN = d.token;
   localStorage.setItem('ax_user_token', USER_TOKEN);
@@ -3481,6 +3549,13 @@ async function deleteAccount() {
     const pingD = await pingR.json().catch(()=>({}));
     if (pingD.token) { TOK = pingD.token; localStorage.setItem('ax_tok', TOK); }
   }
+
+  // Show/hide the GitHub + Google buttons based on server config
+  refreshOAuthProviders();
+
+  // If we just came back from a GitHub/Google callback, finish sign-in now
+  if (tryOAuthReturn()) return;
+
   if (!TOK) { document.getElementById('auth-screen').style.display = 'flex'; return; }
 
   if (USER_TOKEN) {
@@ -6529,10 +6604,44 @@ const PLAN_PRICES = { starter: { USD: 9, KES: 1170, TZS: 23850, UGX: 34200 }, pr
 function selectBillingPlan(plan, el) {
   selectedPlan = plan;
   document.querySelectorAll('.billing-plan-card').forEach(c => c.classList.remove('selected'));
-  el.classList.add('selected');
-  document.getElementById('mpesa-pay-form').style.display = 'block';
+  if (el) el.classList.add('selected');
+  const form = document.getElementById('mpesa-pay-form');
+  // The Free plan isn't purchasable — just mark it current, no M-Pesa form.
+  if (plan === 'free') { if (form) form.style.display = 'none'; return; }
+  if (form) form.style.display = 'block';
   document.getElementById('mpesa-plan-name').textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
   updateMpesaPrice();
+}
+
+// Fetch /api/plans and render all four subscription tiers as cards.
+async function renderBillingPlans() {
+  const host = document.getElementById('billing-plans');
+  if (!host) return;
+  let plans;
+  try {
+    const r = await fetch('/api/plans', { headers: TOK ? {'X-Axiom-Token': TOK} : {} });
+    const d = await r.json();
+    plans = d.plans || {};
+  } catch (e) { plans = {}; }
+  const order = ['free','starter','pro','team'];
+  const accent = { free:'var(--tx2)', starter:'var(--green)', pro:'var(--ac)', team:'var(--purple)' };
+  const currentPlan = (USER && USER.plan) || 'free';
+  host.innerHTML = order.filter(k => plans[k]).map(k => {
+    const p = plans[k];
+    const feats = (p.features||[]).map(f => '<div class="bpc-feat">• ' + esc(f) + '</div>').join('');
+    const priceLine = k === 'free'
+      ? '<div class="bpc-price" style="color:var(--tx)">Free forever</div><div class="bpc-usd">No card required</div>'
+      : '<div class="bpc-price">KES ' + (p.kes||0).toLocaleString() + '/mo</div><div class="bpc-usd">~$' + (p.price||0) + ' USD</div>';
+    const badge = currentPlan === k ? '<span style="font-size:10px;color:var(--green);margin-left:6px">• current</span>' : '';
+    return (
+      '<div class="billing-plan-card" data-plan="' + k + '" onclick="selectBillingPlan(\'' + k + '\',this)">' +
+        '<div class="bpc-name" style="color:' + accent[k] + '">' + esc(p.name) + badge + '</div>' +
+        (p.tagline ? '<div class="bpc-usd" style="margin-bottom:4px">' + esc(p.tagline) + '</div>' : '') +
+        priceLine +
+        '<div style="margin-top:6px">' + feats + '</div>' +
+      '</div>'
+    );
+  }).join('');
 }
 
 function updateMpesaPrice() {
@@ -6575,6 +6684,7 @@ async function loadMpesaTxns() {
   const priceMap = { free: 0, starter: 1170, pro: 2470, team: 6370 };
   const priceEl = document.getElementById('billing-price');
   if (priceEl) priceEl.textContent = 'KES ' + (priceMap[plan] || 0).toLocaleString() + '/mo';
+  renderBillingPlans();
   try {
     const r = await api('GET', '/api/billing/mpesa/transactions');
     const txns = r.transactions || [];

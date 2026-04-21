@@ -255,7 +255,26 @@ function rateOk(ip){const n=Date.now(),b=rl.get(ip)||{c:0,r:n+60000};if(n>b.r){b
 function safe(p){if(!p)return null;const r=path.resolve((p+'').replace(/^~/,os.homedir()));return[os.homedir(),'/tmp'].some(b=>r.startsWith(path.resolve(b)))?r:null;}
 
 // ── Plans ────────────────────────────────────────────────────────
-const PLANS={free:{name:'Free',price:0},starter:{name:'Starter',price:9},pro:{name:'Pro',price:19},team:{name:'Team',price:49}};
+// Four subscription tiers. `price` is USD/month; `kes` is the KES/month
+// shown on the M-Pesa billing panel. `features` drives the plan cards.
+const PLANS={
+  free:{
+    name:'Free',price:0,kes:0,tagline:'For trying out AXIOM',
+    features:['Basic IDE + editor','Community support','1K AI tokens/day','1 workspace']
+  },
+  starter:{
+    name:'Starter',price:9,kes:1170,tagline:'For hobbyists and students',
+    features:['Everything in Free','5K AI tokens/day','GitHub + Google login','Email support']
+  },
+  pro:{
+    name:'Pro',price:19,kes:2470,tagline:'For professional developers',
+    features:['Everything in Starter','Unlimited AI tokens','Priority response times','Advanced debugging + LSP']
+  },
+  team:{
+    name:'Team',price:49,kes:6370,tagline:'For small teams',
+    features:['Everything in Pro','5 seats included','Admin dashboard + analytics','Shared workspaces & billing']
+  }
+};
 
 // ── MySQL Database ───────────────────────────────────────────────
 const dbPool=mysql.createPool({
@@ -735,7 +754,10 @@ const server=http.createServer(async(req,res)=>{
   const parsed=urlMod.parse(req.url,true),route=parsed.pathname,q=parsed.query;
   const{text:rawBody,json:data}=['POST','PUT','PATCH','DELETE'].includes(req.method)?await parseBody(req):{text:'',json:{}};
 
-  const PUBLIC=['/api/ping','/api/token','/api/billing/webhook','/api/plans','/api/auth/auto-login'];
+  const PUBLIC=['/api/ping','/api/token','/api/billing/webhook','/api/plans','/api/auth/auto-login',
+    '/api/auth/providers',
+    '/api/auth/github/start','/api/auth/github/callback',
+    '/api/auth/google/start','/api/auth/google/callback'];
   if(route.startsWith('/api/')&&!PUBLIC.includes(route)){
     const tok=req.headers['x-axiom-token']||q.token||'';
     if(tok!==CFG.token){res.writeHead(401);res.end(JSON.stringify({error:'Invalid token'}));return;}
@@ -953,6 +975,60 @@ const server=http.createServer(async(req,res)=>{
   if(route==='/api/auth/users'&&req.method==='GET'){
     // admin only
     return sendJson(res,{users:UsersDB.load().users.map(({hash,salt,...u})=>u)});
+  }
+
+  // ── OAUTH: GitHub + Google ────────────────────────────────────────
+  // Reports which OAuth providers have credentials configured via env vars.
+  if(route==='/api/auth/providers'&&req.method==='GET'){
+    return sendJson(res,{
+      github:!!(process.env.GITHUB_CLIENT_ID&&process.env.GITHUB_CLIENT_SECRET),
+      google:!!(process.env.GOOGLE_CLIENT_ID&&process.env.GOOGLE_CLIENT_SECRET)
+    });
+  }
+  // Kick off GitHub OAuth authorization flow.
+  if(route==='/api/auth/github/start'&&req.method==='GET'){
+    if(!process.env.GITHUB_CLIENT_ID||!process.env.GITHUB_CLIENT_SECRET)
+      return sendJson(res,{error:'GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.'},501);
+    const state=OAuth.makeState('github');
+    const redirect=OAuth.redirectUri('github',req);
+    const url='https://github.com/login/oauth/authorize?'+urlMod.format({query:{
+      client_id:process.env.GITHUB_CLIENT_ID,redirect_uri:redirect,scope:'read:user user:email',state,allow_signup:'true'
+    }}).slice(1);
+    res.writeHead(302,{Location:url});res.end();return;
+  }
+  // GitHub OAuth callback: exchange code → fetch profile → upsert user → redirect to /.
+  if(route==='/api/auth/github/callback'&&req.method==='GET'){
+    try{
+      if(!OAuth.checkState('github',q.state))throw new Error('Invalid OAuth state');
+      if(!q.code)throw new Error('Missing authorization code');
+      const tok=await OAuth.exchangeGithub(q.code,OAuth.redirectUri('github',req));
+      const profile=await OAuth.fetchGithubProfile(tok);
+      const r=UsersDB.upsertOAuth('github',profile);
+      return OAuth.respondSuccess(res,r);
+    }catch(e){return OAuth.respondError(res,e.message);}
+  }
+  // Kick off Google OAuth authorization flow.
+  if(route==='/api/auth/google/start'&&req.method==='GET'){
+    if(!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET)
+      return sendJson(res,{error:'Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.'},501);
+    const state=OAuth.makeState('google');
+    const redirect=OAuth.redirectUri('google',req);
+    const url='https://accounts.google.com/o/oauth2/v2/auth?'+urlMod.format({query:{
+      client_id:process.env.GOOGLE_CLIENT_ID,redirect_uri:redirect,response_type:'code',
+      scope:'openid email profile',state,access_type:'online',prompt:'select_account'
+    }}).slice(1);
+    res.writeHead(302,{Location:url});res.end();return;
+  }
+  // Google OAuth callback.
+  if(route==='/api/auth/google/callback'&&req.method==='GET'){
+    try{
+      if(!OAuth.checkState('google',q.state))throw new Error('Invalid OAuth state');
+      if(!q.code)throw new Error('Missing authorization code');
+      const tok=await OAuth.exchangeGoogle(q.code,OAuth.redirectUri('google',req));
+      const profile=await OAuth.fetchGoogleProfile(tok);
+      const r=UsersDB.upsertOAuth('google',profile);
+      return OAuth.respondSuccess(res,r);
+    }catch(e){return OAuth.respondError(res,e.message);}
   }
 
   // ── EAST AFRICAN FEATURES ──────────────────────────────────────
@@ -1571,6 +1647,130 @@ const UsersDB={
     this.save(d);
     const{hash:_h,salt:_s,...safe}=u;return{user:safe};
   },
+  // Find-or-create a user from an OAuth provider profile. Matches first by
+  // provider+provider_id, then falls back to email so pre-existing accounts
+  // get linked instead of duplicated.
+  upsertOAuth(provider,profile){
+    if(!profile||!profile.id)return{error:'OAuth profile missing id'};
+    const d=this.load();
+    const pid=String(profile.id);
+    const email=(profile.email||'').toLowerCase();
+    let u=d.users.find(x=>x.oauth&&x.oauth[provider]&&x.oauth[provider].id===pid);
+    if(!u&&email)u=d.users.find(x=>x.email.toLowerCase()===email);
+    if(u){
+      u.oauth=u.oauth||{};
+      u.oauth[provider]={id:pid,username:profile.username||'',linked_at:new Date().toISOString()};
+      if(!u.avatar&&profile.avatar)u.avatar=profile.avatar;
+      u.last_seen=new Date().toISOString();
+    }else{
+      u={id:crypto.randomUUID(),name:profile.name||profile.username||'User',
+        email:email||(pid+'@'+provider+'.oauth'),plan:'free',role:'user',
+        hash:null,salt:null,avatar:profile.avatar||null,
+        created_at:new Date().toISOString(),last_seen:new Date().toISOString(),
+        api_key:null,total_cost:0,chat_count:0,settings:{},
+        oauth:{[provider]:{id:pid,username:profile.username||'',linked_at:new Date().toISOString()}}};
+      d.users.push(u);
+    }
+    this.save(d);
+    const{hash:_h,salt:_s,...safe}=u;
+    return{user:safe,token:makeJWT({id:u.id,email:u.email,plan:u.plan})};
+  },
+};
+
+// ════ OAUTH HELPERS ═══════════════════════════════════════════════
+// Thin wrappers around the GitHub and Google OAuth 2.0 authorization-code
+// flows. State is signed with CFG.token so callbacks can be verified without
+// any server-side session state.
+const OAuth={
+  makeState(provider){
+    const nonce=crypto.randomBytes(12).toString('hex');
+    const payload=provider+'.'+Date.now()+'.'+nonce;
+    const sig=crypto.createHmac('sha256',CFG.token).update(payload).digest('hex').slice(0,32);
+    return Buffer.from(payload+'.'+sig).toString('base64url');
+  },
+  checkState(provider,state){
+    try{
+      const raw=Buffer.from(state||'','base64url').toString();
+      const parts=raw.split('.');if(parts.length!==4)return false;
+      const[prov,ts,nonce,sig]=parts;
+      if(prov!==provider)return false;
+      const expected=crypto.createHmac('sha256',CFG.token).update(prov+'.'+ts+'.'+nonce).digest('hex').slice(0,32);
+      if(sig!==expected)return false;
+      if(Date.now()-parseInt(ts,10)>10*60*1000)return false;  // 10 min TTL
+      return true;
+    }catch(e){return false;}
+  },
+  redirectUri(provider,req){
+    const envKey=provider==='github'?'GITHUB_REDIRECT_URI':'GOOGLE_REDIRECT_URI';
+    if(process.env[envKey])return process.env[envKey];
+    const host=req.headers.host||('localhost:'+PORT);
+    const proto=(req.headers['x-forwarded-proto']||'http').split(',')[0].trim();
+    return proto+'://'+host+'/api/auth/'+provider+'/callback';
+  },
+  _postForm(url,form,headers={}){
+    return new Promise((resolve,reject)=>{
+      const body=Object.entries(form).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');
+      const u=urlMod.parse(url);
+      const req=https.request({method:'POST',host:u.host,path:u.path,headers:{
+        'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json',
+        'Content-Length':Buffer.byteLength(body),'User-Agent':'AXIOM-IDE',...headers
+      }},r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(new Error('Bad OAuth response: '+d.slice(0,200)));}});});
+      req.on('error',reject);req.write(body);req.end();
+    });
+  },
+  _getJson(url,token){
+    return new Promise((resolve,reject)=>{
+      const u=urlMod.parse(url);
+      const req=https.request({method:'GET',host:u.host,path:u.path,headers:{
+        'Authorization':'Bearer '+token,'Accept':'application/json','User-Agent':'AXIOM-IDE'
+      }},r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(new Error('Bad API response: '+d.slice(0,200)));}});});
+      req.on('error',reject);req.end();
+    });
+  },
+  async exchangeGithub(code,redirect_uri){
+    const r=await this._postForm('https://github.com/login/oauth/access_token',{
+      client_id:process.env.GITHUB_CLIENT_ID,client_secret:process.env.GITHUB_CLIENT_SECRET,
+      code,redirect_uri
+    });
+    if(!r.access_token)throw new Error(r.error_description||r.error||'GitHub token exchange failed');
+    return r.access_token;
+  },
+  async fetchGithubProfile(tok){
+    const u=await this._getJson('https://api.github.com/user',tok);
+    let email=u.email;
+    if(!email){
+      try{
+        const emails=await this._getJson('https://api.github.com/user/emails',tok);
+        const primary=(emails||[]).find(e=>e.primary&&e.verified)||(emails||[])[0];
+        if(primary)email=primary.email;
+      }catch(e){}
+    }
+    return{id:u.id,username:u.login,name:u.name||u.login,email:email||'',avatar:u.avatar_url||''};
+  },
+  async exchangeGoogle(code,redirect_uri){
+    const r=await this._postForm('https://oauth2.googleapis.com/token',{
+      client_id:process.env.GOOGLE_CLIENT_ID,client_secret:process.env.GOOGLE_CLIENT_SECRET,
+      code,redirect_uri,grant_type:'authorization_code'
+    });
+    if(!r.access_token)throw new Error(r.error_description||r.error||'Google token exchange failed');
+    return r.access_token;
+  },
+  async fetchGoogleProfile(tok){
+    const u=await this._getJson('https://openidconnect.googleapis.com/v1/userinfo',tok);
+    return{id:u.sub,username:(u.email||'').split('@')[0],name:u.name||'',email:u.email||'',avatar:u.picture||''};
+  },
+  // Redirect the browser back to `/` with the JWT + user profile in the URL
+  // hash so the frontend can pick it up and finish signing in.
+  respondSuccess(res,result){
+    if(result.error){return this.respondError(res,result.error);}
+    const b64=Buffer.from(JSON.stringify(result.user)).toString('base64url');
+    const target='/#oauth='+encodeURIComponent(result.token)+'&user='+encodeURIComponent(b64);
+    res.writeHead(302,{Location:target});res.end();return;
+  },
+  respondError(res,msg){
+    const target='/#oauth_error='+encodeURIComponent(msg||'OAuth failed');
+    res.writeHead(302,{Location:target});res.end();return;
+  }
 };
 
 // Seed demo user if empty
