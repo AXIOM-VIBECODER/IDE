@@ -1056,7 +1056,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
 .ai-panel {
   width: 320px; background: var(--panel); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; flex-shrink: 0;
-  transition: width .2s ease;
+  transition: width .2s ease; position: relative;
 }
 .ai-panel.closed { width: 0; overflow: hidden; border: none; }
 
@@ -1082,6 +1082,63 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
 }
 .proj-ctx-toggle:hover { border-color: var(--ac); color: var(--tx); }
 .proj-ctx-toggle.on { border-color: rgba(141,190,110,.35); background: rgba(141,190,110,.08); color: var(--green); }
+
+/* Agent toggle button */
+.agent-toggle {
+  display: flex; align-items: center; gap: 4px; padding: 2px 7px;
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 4px; color: var(--tx3); cursor: pointer; transition: all .15s;
+  font-family: 'Geist', sans-serif; font-size: 10px; margin-left: 4px;
+}
+.agent-toggle:hover { border-color: var(--ac); color: var(--tx); }
+.agent-toggle.on { border-color: rgba(94,164,230,.4); background: rgba(94,164,230,.08); color: var(--blue); }
+
+/* AI header action buttons */
+.ai-hdr-btn {
+  width: 24px; height: 22px; background: transparent; border: 1px solid var(--border2);
+  border-radius: 4px; color: var(--tx3); cursor: pointer; display: flex;
+  align-items: center; justify-content: center; font-size: 13px; transition: all .12s;
+  flex-shrink: 0;
+}
+.ai-hdr-btn:hover { color: var(--tx); border-color: var(--ac); background: var(--ac4); }
+.ai-hdr-new { font-size: 16px; font-weight: 500; }
+
+/* Chat history overlay */
+.chat-hist-overlay {
+  display: none; position: absolute; top: 30px; left: 0; right: 0; bottom: 0;
+  background: var(--panel); z-index: 20; flex-direction: column;
+  border-top: 1px solid var(--border); animation: chatHistIn .15s ease;
+}
+.chat-hist-overlay.open { display: flex; }
+@keyframes chatHistIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.chat-hist-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.chat-hist-title { font-size: 11px; font-weight: 500; color: var(--tx2); text-transform: uppercase; letter-spacing: .06em; }
+.chat-hist-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.chat-hist-empty { padding: 20px 12px; text-align: center; font-size: 12px; color: var(--tx3); }
+.chat-hist-item {
+  display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px;
+  cursor: pointer; border-bottom: 1px solid var(--border); transition: background .1s;
+}
+.chat-hist-item:hover { background: var(--surface); }
+.chat-hist-item.active { background: var(--ac4); border-left: 2px solid var(--ac); }
+.chat-hist-info { flex: 1; min-width: 0; }
+.chat-hist-name {
+  font-size: 12px; font-weight: 500; color: var(--tx); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px;
+}
+.chat-hist-meta { font-size: 10px; color: var(--tx3); font-family: 'JetBrains Mono', monospace; display: flex; gap: 8px; }
+.chat-hist-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity .1s; }
+.chat-hist-item:hover .chat-hist-actions { opacity: 1; }
+.chat-hist-act {
+  width: 20px; height: 20px; background: transparent; border: 1px solid var(--border2);
+  border-radius: 3px; color: var(--tx3); cursor: pointer; display: flex;
+  align-items: center; justify-content: center; font-size: 10px; transition: all .1s;
+}
+.chat-hist-act:hover { color: var(--tx); border-color: var(--ac); }
+.chat-hist-act.del:hover { color: var(--red); border-color: rgba(217,97,106,.4); }
 
 /* Hide context bar and chips — Zed assistant is clean */
 .ai-ctx { display: none !important; }
@@ -2992,7 +3049,20 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
         <button class="proj-ctx-toggle" id="proj-ctx-toggle" onclick="projectCtxEnabled=!projectCtxEnabled;updateProjCtxIndicator();this.classList.toggle('on',projectCtxEnabled);" title="Toggle project context for AI">
           <span style="font-size:12px">&#9881;</span> <span id="proj-ctx-badge" style="font-size:10px;font-family:'JetBrains Mono',monospace">—</span>
         </button>
+        <button class="agent-toggle" id="agent-toggle" onclick="toggleAgentMode()" title="Toggle AI Agent mode (multi-file editing)">&#9881; Agent</button>
+        <button class="ai-hdr-btn" onclick="toggleChatHistory()" id="chat-hist-btn" title="Chat history">&#9776;</button>
+        <button class="ai-hdr-btn ai-hdr-new" onclick="newChat()" title="New chat">+</button>
         <div class="ai-status" id="ai-status"></div>
+      </div>
+      <!-- Chat history overlay (hidden by default) -->
+      <div class="chat-hist-overlay" id="chat-hist-overlay">
+        <div class="chat-hist-hdr">
+          <span class="chat-hist-title">Conversations</span>
+          <button class="ai-hdr-btn" onclick="toggleChatHistory()" title="Close">&#10005;</button>
+        </div>
+        <div class="chat-hist-list" id="chat-hist-list">
+          <div class="chat-hist-empty">No conversations yet</div>
+        </div>
       </div>
       <div class="msgs" id="msgs">
         <div class="msg ai"><div class="bbl">Ready. Open a file and ask anything.<br><span style="color:var(--tx3);font-size:11px">Enter to send / Shift+Enter for newline</span></div></div>
@@ -4114,6 +4184,110 @@ function clearAIHistory() {
   localStorage.removeItem('ax_ai_hist');
   renderAIHistory();
   notif('AI history cleared','ok');
+}
+
+// ═══════════════════════════════════════════════════════
+// NEW CHAT & CHAT HISTORY (AI Panel)
+// ═══════════════════════════════════════════════════════
+async function newChat() {
+  // Save current conversation first if it has content
+  if (hist.length > 0) {
+    await persistChatToServer();
+  }
+  hist = [];
+  currentChatId = null;
+  const msgs = document.getElementById('msgs');
+  msgs.innerHTML = '<div class="msg ai"><div class="bbl">New conversation started.<br><span style="color:var(--tx3);font-size:11px">Enter to send / Shift+Enter for newline</span></div></div>';
+  document.getElementById('cinput').value = '';
+  document.getElementById('cinput').focus();
+  // Close history overlay if open
+  const overlay = document.getElementById('chat-hist-overlay');
+  if (overlay) overlay.classList.remove('open');
+  notif('New chat started', 'ok');
+}
+
+function toggleChatHistory() {
+  const overlay = document.getElementById('chat-hist-overlay');
+  if (!overlay) return;
+  const isOpen = overlay.classList.contains('open');
+  if (isOpen) {
+    overlay.classList.remove('open');
+  } else {
+    overlay.classList.add('open');
+    loadChatHistoryList();
+  }
+}
+
+async function loadChatHistoryList() {
+  const list = document.getElementById('chat-hist-list');
+  if (!list) return;
+  list.innerHTML = '<div class="chat-hist-empty">Loading...</div>';
+
+  let html = '';
+  try {
+    const r = await api('GET', '/api/chats');
+    if (r.chats && r.chats.length) {
+      serverChats = r.chats;
+      html = r.chats.slice(0, 50).map(c => {
+        const isActive = c.id === currentChatId;
+        const date = new Date(c.updated || c.created);
+        const ago = formatTimeAgo(date);
+        return `<div class="chat-hist-item${isActive ? ' active' : ''}" onclick="resumeChat('${c.id}')">
+          <div class="chat-hist-info">
+            <div class="chat-hist-name">${esc(c.title || 'Untitled')}</div>
+            <div class="chat-hist-meta">
+              <span>${ago}</span>
+              <span>${c.messageCount || 0} msgs</span>
+              ${c.lang ? `<span>${esc(c.lang)}</span>` : ''}
+            </div>
+          </div>
+          <div class="chat-hist-actions">
+            <button class="chat-hist-act del" onclick="event.stopPropagation();deleteChatFromHistory('${c.id}')" title="Delete">&#10005;</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {}
+
+  if (!html) html = '<div class="chat-hist-empty">No saved conversations yet.<br>Start chatting — conversations auto-save.</div>';
+  list.innerHTML = html;
+}
+
+function formatTimeAgo(date) {
+  const s = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  if (s < 604800) return Math.floor(s / 86400) + 'd ago';
+  return date.toLocaleDateString();
+}
+
+async function resumeChat(id) {
+  // Save current chat first
+  if (hist.length > 0 && currentChatId !== id) {
+    await persistChatToServer();
+  }
+  const r = await api('GET', '/api/chats/' + id);
+  if (!r.chat) { notif('Chat not found', 'err'); return; }
+  hist = r.chat.messages || [];
+  currentChatId = id;
+  const msgs = document.getElementById('msgs');
+  msgs.innerHTML = '';
+  hist.forEach(m => {
+    const el = appendMsg(m.role === 'user' ? 'u' : 'ai', m.content || '');
+    if (m.role === 'assistant' && el) finalMsg(el, m.content || '');
+  });
+  // Close overlay & ensure panel is visible
+  document.getElementById('chat-hist-overlay').classList.remove('open');
+  document.getElementById('ai-panel').classList.remove('closed');
+  notif('Chat restored', 'ok');
+}
+
+async function deleteChatFromHistory(id) {
+  await api('DELETE', '/api/chats/' + id);
+  if (currentChatId === id) { currentChatId = null; }
+  loadChatHistoryList();
+  notif('Chat deleted', 'ok');
 }
 
 // ═══════════════════════════════════════════════════════
