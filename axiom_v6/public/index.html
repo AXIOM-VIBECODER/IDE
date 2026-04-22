@@ -1643,6 +1643,39 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
 .fi-reveal { display:none; }
 .fi:hover .fi-reveal { display:inline; }
 
+
+/* ═══════════ INLINE DIFF LINES ═══════════ */
+.ik-diff-line { font-family: 'Geist Mono', monospace; font-size: 12px; padding: 1px 8px; white-space: pre; }
+.ik-diff-ctx { color: var(--tx3); }
+.ik-diff-add { background: rgba(0,200,80,0.15); color: var(--green, #4ade80); }
+.ik-diff-del { background: rgba(200,60,60,0.15); color: var(--red, #f87171); text-decoration: line-through; }
+/* bracket pair colors */
+.bp-c0 { color: #f0c674 !important; }
+.bp-c1 { color: #b294bb !important; }
+.bp-c2 { color: #81a2be !important; }
+.bp-c3 { color: #de935f !important; }
+/* test toolbar button */
+.test-toolbar-btn { background:none;border:none;color:var(--ac);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:3px; }
+.test-toolbar-btn:hover { background:var(--surface2); }
+.test-time { font-size:10px;color:var(--tx3);margin-left:auto; }
+.test-name { flex:1;overflow:hidden;text-overflow:ellipsis; }
+
+/* ═══════════ LSP DROPDOWN ═══════════ */
+.lsp-dropdown {
+  position: absolute; z-index: 20; background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); max-height: 240px; overflow-y: auto;
+  min-width: 200px; max-width: 400px; display: none;
+}
+.lsp-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+.lsp-item:hover, .lsp-item.on { background: var(--surface2); }
+.lsp-kind { font-size: 9px; color: var(--ac); min-width: 24px; text-align: center; font-weight: 600; }
+.lsp-label { color: var(--tx); flex: 1; }
+.lsp-detail { color: var(--tx3); font-size: 10px; margin-left: auto; }
+/* ═══════════ COLLAB CURSORS ═══════════ */
+.collab-badge { display:none;background:var(--ac);color:var(--tx-inv);border-radius:50%;font-size:9px;width:16px;height:16px;text-align:center;line-height:16px;position:absolute;top:-4px;right:-4px; }
+/* ═══════════ WORKSPACE ROOTS ═══════════ */
+#workspace-roots { display:none;padding:2px 8px;background:var(--surface);border-bottom:1px solid var(--border);font-size:11px;overflow-x:auto;white-space:nowrap; }
+
 </style>
 <body data-t="dark">
 
@@ -2096,6 +2129,8 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
         <button class="pnav-btn" id="pn-community" onclick="setPanel('community')">Community</button>
         <div class="pnav-sep"></div>
         <button class="pnav-btn" id="pn-timeline" onclick="setPanel('timeline')">Timeline</button>
+        <div class="pnav-sep"></div>
+        <button class="pnav-btn" id="pn-tests" onclick="setPanel('tests')">Tests</button>
       </div>
 
       <!-- FILES -->
@@ -2682,6 +2717,34 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
         </div>
         <div style="flex:1;overflow-y:auto" id="timeline-list">
           <div class="outline-empty">Open a file to see its history</div>
+        </div>
+      </div>
+
+      <!-- TEST EXPLORER PANEL -->
+      <div class="panel-section" id="ps-tests">
+        <div class="panel-hdr">
+          <span class="panel-title">Test Explorer</span>
+          <div class="panel-acts">
+            <button class="pact" onclick="discoverTests()" title="Discover tests">🔍</button>
+            <button class="pact" onclick="runAllTests()" title="Run all tests">▶</button>
+          </div>
+        </div>
+        <div class="test-summary" id="test-summary"></div>
+        <div style="flex:1;overflow-y:auto" id="test-list">
+          <div class="outline-empty">Click 🔍 to discover tests</div>
+        </div>
+      </div>
+
+      <!-- TASK RUNNER PANEL -->
+      <div class="panel-section" id="ps-tasks2">
+        <div class="panel-hdr">
+          <span class="panel-title">Task Runner</span>
+          <div class="panel-acts">
+            <button class="pact" onclick="detectProjectTasks()" title="Detect tasks">🔍</button>
+          </div>
+        </div>
+        <div style="flex:1;overflow-y:auto" id="task-list">
+          <div class="outline-empty">Click 🔍 to detect project tasks</div>
         </div>
       </div>
 
@@ -3721,13 +3784,13 @@ async function showWelcome(m){
 // PANEL NAVIGATION — All 14 Zed panels
 // ═══════════════════════════════════════════════════════
 let BOOTED = false;
-const ALL_PANELS=['files','outline','search','git','diag','collab','aihist','notifs','bookmarks','tasks','database','ext','mem','snip','profile','set','billing','community','timeline'];
+const ALL_PANELS=['files','outline','search','git','diag','collab','aihist','notifs','bookmarks','tasks','database','ext','mem','snip','profile','set','billing','community','timeline','tests'];
 
 // Activity bar panel map: which ab-btn is active for a given panel
 const AB_MAP = {files:'files',outline:'files',search:'search',git:'git',diag:'debug',
   collab:'files',aihist:'mem',notifs:'files',bookmarks:'files',tasks:'files',
   database:'files',ext:'ext',mem:'mem',snip:'files',set:'set',
-  billing:'set',community:'set',timeline:'files'};
+  billing:'set',community:'set',timeline:'files',tests:'debug'};
 
 function setPanel(name) {
   ALL_PANELS.forEach(a=>{
@@ -5855,17 +5918,7 @@ function searchTerminal(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// GIT BLAME
-// ═══════════════════════════════════════════════════════════════
-let blameVisible=false;
-async function toggleGitBlame(){
-  blameVisible=!blameVisible;
-  document.querySelectorAll('.blame-line').forEach(el=>el.remove());
-  if(!blameVisible){notif('Git blame off','info');return;}
-  if(!curDir){notif('Open a folder first','warn');return;}
-  const r=await api('GET',`/api/git/log?dir=${encodeURIComponent(curDir)}`);
-  if(r.out){const commits=r.out.split('\n').filter(Boolean).slice(0,100);const ed=document.getElementById('editor');const sc=document.getElementById('ed-scroll-1');if(!sc)return;const lines=ed.value.split('\n');const lineH=edFS*1.6;lines.forEach((_,i)=>{const c=commits[i%commits.length]||'';const hash=c.split(' ')[0]?.slice(0,7)||'???????';const msg=c.slice(9,35)||'uncommitted';const div=document.createElement('div');div.className='blame-line';div.title=c;div.textContent=hash+' '+msg;div.style.top=(14+i*lineH+2)+'px';sc.appendChild(div);});notif('Git blame shown','ok');}
-}
+// GIT BLAME — (see enhanced version below)
 
 // ═══════════════════════════════════════════════════════════════
 // KEYBIND CUSTOMIZATION
@@ -7058,6 +7111,1263 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.shiftKey && e.key === 'M') { e.preventDefault(); toggleMarkdownPreview(); }
   if (e.ctrlKey && e.shiftKey && e.key === 'I' && !e.altKey) { e.preventDefault(); formatCurrentCode(); }
 });
+
+// ═══════════════════════════════════════════════════════
+// GHOST TEXT — Auto-trigger AI completions (like Copilot)
+// ═══════════════════════════════════════════════════════
+let ghostTimer = null;
+const GHOST_DELAY = 600; // ms after typing stops
+
+function scheduleGhostComplete() {
+  clearTimeout(ghostTimer);
+  const ed = getEd(1);
+  if (!ed || !ed.value.trim()) return;
+  const tab = tabs.find(t => t.id === atab);
+  if (!tab) return;
+  const pos = ed.selectionStart;
+  const before = ed.value.substring(0, pos);
+  const lastLine = before.split('\n').pop();
+  if (lastLine.trim().length < 2) return;
+  if (lastLine.trim().startsWith('//') || lastLine.trim().startsWith('#') || lastLine.trim().startsWith('/*')) return;
+  ghostTimer = setTimeout(() => triggerGhostComplete(1), GHOST_DELAY);
+}
+
+async function triggerGhostComplete(pane) {
+  const ed = getEd(pane);
+  if (!ed || !ed.value.trim() || ghostActive) return;
+  const tab = tabs.find(t => t.id === atab);
+  const pos = ed.selectionStart;
+  if (pos !== ed.selectionEnd) return;
+  const prefix = ed.value.substring(0, pos);
+  const suffix = ed.value.substring(pos, Math.min(pos + 200, ed.value.length));
+  const r = await api('POST', '/api/complete', { prefix, suffix, lang: tab ? getLangKey(tab.name) : 'python' });
+  if (ed.selectionStart !== pos) return;
+  if (r.completion && r.completion.trim() && pane === 1) {
+    showGhostText(ed, pos, r.completion);
+    const hint = document.getElementById('ghost-hint');
+    if (hint) hint.classList.add('on');
+  }
+}
+
+// Override onEdit to schedule ghost completions
+const _origOnEdit = onEdit;
+onEdit = function(pane) {
+  _origOnEdit(pane);
+  if (pane === 1) scheduleGhostComplete();
+};
+
+// Override clearGhostText to also hide hint
+const _origClearGhost = clearGhostText;
+clearGhostText = function() {
+  _origClearGhost();
+  const hint = document.getElementById('ghost-hint');
+  if (hint) hint.classList.remove('on');
+};
+
+// ═══════════════════════════════════════════════════════
+// INLINE AI EDIT (Ctrl+K)
+// ═══════════════════════════════════════════════════════
+let ikState = { open: false, selStart: 0, selEnd: 0, original: '', edited: '' };
+
+function openInlineEdit() {
+  const ed = getEd(1);
+  if (!ed) return;
+  const start = ed.selectionStart, end = ed.selectionEnd;
+  if (start === end) { notif('Select code to edit inline', 'warn'); return; }
+  ikState = { open: true, selStart: start, selEnd: end, original: ed.value.substring(start, end), edited: '' };
+  const overlay = document.getElementById('ik-overlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  const input = document.getElementById('ik-input');
+  if (input) { input.value = ''; input.focus(); }
+  const info = document.getElementById('ik-sel-info');
+  if (info) info.textContent = (end - start) + ' chars selected';
+  const diff = document.getElementById('ik-diff');
+  if (diff) diff.innerHTML = '';
+  const actions = document.getElementById('ik-actions');
+  if (actions) actions.style.display = 'none';
+}
+
+document.addEventListener('keydown', e => {
+  if (ikState.open && e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const input = document.getElementById('ik-input');
+    if (input && input.value.trim()) executeInlineEdit(input.value.trim());
+  }
+  if (ikState.open && e.key === 'Escape') { e.preventDefault(); ikReject(); }
+});
+
+async function executeInlineEdit(instruction) {
+  const spinner = document.getElementById('ik-spinner');
+  const diff = document.getElementById('ik-diff');
+  const actions = document.getElementById('ik-actions');
+  spinner.classList.add('on');
+  const tab = tabs.find(t => t.id === atab);
+  const ed = getEd(1);
+  const context = ed.value.substring(Math.max(0, ikState.selStart - 500), Math.min(ed.value.length, ikState.selEnd + 500));
+  try {
+    const r = await api('POST', '/api/ai/edit', {
+      code: ikState.original,
+      instruction,
+      lang: tab ? getLangKey(tab.name) : 'code',
+      context
+    });
+    spinner.classList.remove('on');
+    if (r.error) { notif('Edit failed: ' + r.error, 'err'); return; }
+    ikState.edited = r.edited || '';
+    const oldLines = ikState.original.split('\n');
+    const newLines = ikState.edited.split('\n');
+    let html = '';
+    let oi = 0, ni = 0;
+    while (oi < oldLines.length || ni < newLines.length) {
+      if (oi < oldLines.length && ni < newLines.length && oldLines[oi] === newLines[ni]) {
+        html += '<div class="ik-diff-line ik-diff-ctx">&nbsp; ' + esc(oldLines[oi]) + '</div>';
+        oi++; ni++;
+      } else {
+        if (oi < oldLines.length) { html += '<div class="ik-diff-line ik-diff-del">- ' + esc(oldLines[oi]) + '</div>'; oi++; }
+        if (ni < newLines.length) { html += '<div class="ik-diff-line ik-diff-add">+ ' + esc(newLines[ni]) + '</div>'; ni++; }
+      }
+    }
+    diff.innerHTML = html;
+    actions.style.display = 'flex';
+  } catch (e) {
+    spinner.classList.remove('on');
+    notif('Edit failed: ' + e.message, 'err');
+  }
+}
+
+function ikAccept() {
+  const ed = getEd(1);
+  if (!ed || !ikState.edited) return;
+  ed.value = ed.value.slice(0, ikState.selStart) + ikState.edited + ed.value.slice(ikState.selEnd);
+  ed.selectionStart = ikState.selStart;
+  ed.selectionEnd = ikState.selStart + ikState.edited.length;
+  onEdit(1);
+  ikReject();
+  notif('Edit applied', 'ok');
+}
+
+function ikReject() {
+  ikState.open = false;
+  document.getElementById('ik-overlay').classList.remove('open');
+}
+
+// ═══════════════════════════════════════════════════════
+// GIT BLAME + INLINE GUTTERS
+// ═══════════════════════════════════════════════════════
+let blameVisible = false, blameData = [], gitLineChanges = [];
+
+async function toggleGitBlame() {
+  blameVisible = !blameVisible;
+  const gutter = document.getElementById('blame-gutter');
+  if (!blameVisible) { gutter.innerHTML = ''; gutter.style.display = 'none'; notif('Blame hidden', 'ok'); return; }
+  if (!curDir || !activeFile) { notif('Open a file in a git repo first', 'warn'); blameVisible = false; return; }
+  gutter.style.display = 'block';
+  gutter.innerHTML = '<div style="padding:4px;text-align:center">Loading blame...</div>';
+  const r = await api('POST', '/api/git/blame', { dir: curDir, file: activeFile });
+  if (r.error || !r.lines?.length) { gutter.innerHTML = '<div style="padding:4px;text-align:center;font-size:10px">No blame data</div>'; return; }
+  blameData = r.lines;
+  renderBlame();
+  notif('Blame loaded', 'ok');
+}
+
+function renderBlame() {
+  const gutter = document.getElementById('blame-gutter');
+  if (!blameVisible || !blameData.length) return;
+  const lineH = edFS * 1.6;
+  gutter.innerHTML = blameData.map(b =>
+    '<div class="blame-line" style="top:' + (14 + (b.ln - 1) * lineH) + 'px" title="' + esc(b.summary) + '">' +
+    '<span style="color:var(--ac)">' + b.hash + '</span> ' +
+    '<span style="color:var(--tx3)">' + esc(b.author) + '</span> ' +
+    '<span style="opacity:0.5">' + b.time + '</span>' +
+    '</div>'
+  ).join('');
+}
+
+async function loadGitLineStatus() {
+  if (!curDir || !activeFile) return;
+  const r = await api('POST', '/api/git/line-status', { dir: curDir, file: activeFile });
+  gitLineChanges = r.changes || [];
+}
+
+// Hook git gutters into tab switch
+const _origSwTab = swTab;
+swTab = function(id) {
+  _origSwTab(id);
+  const tab = tabs.find(t => t.id === id);
+  if (tab && tab.path) {
+    loadGitLineStatus().then(() => {
+      gitLineChanges.forEach(c => {
+        const el = document.querySelector('#lnums-1 .lnum:nth-child(' + c.ln + ')');
+        if (el) el.classList.add('git-' + c.type);
+      });
+    });
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// BRACKET PAIR COLORIZATION
+// ═══════════════════════════════════════════════════════
+function colorizeBrackets(code) {
+  const brackets = { '(': ')', '[': ']', '{': '}' };
+  const closers = new Set([')', ']', '}']);
+  let depth = 0;
+  let result = '';
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i];
+    if (brackets[ch]) {
+      const cls = 'bp-c' + (depth % 4);
+      result += '<span class="' + cls + '">' + ch + '</span>';
+      depth++;
+    } else if (closers.has(ch)) {
+      depth = Math.max(0, depth - 1);
+      const cls = 'bp-c' + (depth % 4);
+      result += '<span class="' + cls + '">' + ch + '</span>';
+    } else {
+      result += ch;
+    }
+  }
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════
+// BREADCRUMB NAVIGATION
+// ═══════════════════════════════════════════════════════
+let bcTimer = null;
+function updateEditorBreadcrumb() {
+  clearTimeout(bcTimer);
+  bcTimer = setTimeout(() => {
+    const bc = document.getElementById('editor-breadcrumb');
+    if (!bc) return;
+    const tab = tabs.find(t => t.id === atab);
+    if (!tab) { bc.innerHTML = ''; return; }
+    const ed = getEd(1);
+    let parts = [];
+    if (curDir) parts.push('<span class="bc-item" onclick="setPanel(\'files\')">' + esc(curDir.split('/').pop()) + '</span>');
+    if (tab.path) {
+      const rel = tab.path.replace(curDir + '/', '');
+      const dirs = rel.split('/');
+      dirs.forEach((d, i) => {
+        if (i < dirs.length - 1) parts.push('<span class="bc-item">' + esc(d) + '</span>');
+        else parts.push('<span class="bc-item bc-active">' + esc(d) + '</span>');
+      });
+    } else {
+      parts.push('<span class="bc-item bc-active">' + esc(tab.name) + '</span>');
+    }
+    if (ed) {
+      const pos = ed.selectionStart;
+      const before = ed.value.substring(0, pos);
+      const lines = before.split('\n');
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const m = lines[i].match(/(?:function|class|def|const|let|var|interface|type|struct|impl)\s+(\w+)/);
+        if (m) { parts.push('<span class="bc-item" style="color:var(--ac)">' + esc(m[1]) + '</span>'); break; }
+      }
+    }
+    bc.innerHTML = parts.join('<span class="bc-sep">›</span>');
+  }, 200);
+}
+
+// Hook breadcrumb update into cursor movement
+const _origUpdPos = updPos;
+updPos = function(pane) { _origUpdPos(pane); if (pane === 1) updateEditorBreadcrumb(); };
+
+// ═══════════════════════════════════════════════════════
+// MERGE CONFLICT EDITOR
+// ═══════════════════════════════════════════════════════
+let currentConflicts = [];
+
+function detectConflicts(code) {
+  const conflicts = [];
+  const lines = code.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].startsWith('<<<<<<<')) {
+      const start = i;
+      const currentLabel = lines[i].slice(8).trim();
+      let mid = -1, end = -1;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].startsWith('=======')) mid = j;
+        if (lines[j].startsWith('>>>>>>>')) { end = j; break; }
+      }
+      if (mid !== -1 && end !== -1) {
+        const incomingLabel = lines[end].slice(8).trim();
+        conflicts.push({ start, mid, end, currentLabel, incomingLabel,
+          current: lines.slice(start + 1, mid).join('\n'),
+          incoming: lines.slice(mid + 1, end).join('\n')
+        });
+      }
+      i = end !== -1 ? end + 1 : i + 1;
+    } else i++;
+  }
+  return conflicts;
+}
+
+function resolveConflict(conflictIdx, choice) {
+  const ed = getEd(1);
+  if (!ed) return;
+  const conflicts = detectConflicts(ed.value);
+  if (conflictIdx >= conflicts.length) { notif('No conflict at index ' + conflictIdx, 'warn'); return; }
+  const c = conflicts[conflictIdx];
+  const lines = ed.value.split('\n');
+  let replacement;
+  if (choice === 'current') replacement = c.current;
+  else if (choice === 'incoming') replacement = c.incoming;
+  else replacement = c.current + '\n' + c.incoming;
+  lines.splice(c.start, c.end - c.start + 1, ...replacement.split('\n'));
+  ed.value = lines.join('\n');
+  onEdit(1);
+  notif('Conflict resolved (' + choice + ')', 'ok');
+}
+
+function checkAndShowConflicts() {
+  const ed = getEd(1);
+  if (!ed) return;
+  const conflicts = detectConflicts(ed.value);
+  currentConflicts = conflicts;
+  if (conflicts.length) {
+    notif(conflicts.length + ' merge conflict(s) detected', 'warn');
+  }
+}
+
+// Hook into tab switch to detect conflicts
+const _origSwTab2 = swTab;
+swTab = function(id) {
+  _origSwTab2(id);
+  setTimeout(checkAndShowConflicts, 200);
+};
+
+// ═══════════════════════════════════════════════════════
+// AI AGENT — Multi-file Editing
+// ═══════════════════════════════════════════════════════
+let agentMode = false;
+
+function toggleAgentMode() {
+  agentMode = !agentMode;
+  const btn = document.getElementById('agent-toggle');
+  if (btn) btn.classList.toggle('on', agentMode);
+  notif('Agent mode: ' + (agentMode ? 'ON' : 'OFF'), 'ok');
+}
+
+async function runAgent(instruction) {
+  if (!curDir) { notif('Open a folder first', 'warn'); return; }
+  const ed = getEd(1);
+  const fileCtxStr = ed ? ed.value.slice(0, 4000) : '';
+  notif('Agent thinking...', 'info');
+  try {
+    const r = await api('POST', '/api/agent', { dir: curDir, instruction, fileContext: fileCtxStr, projectContext: projectCtxCache });
+    if (r.error) { notif('Agent error: ' + r.error, 'err'); return r; }
+    const steps = r.steps || [];
+    steps.forEach(s => {
+      if (s.status === 'ok') {
+        if (s.action === 'write' || s.action === 'edit') {
+          const tab = tabs.find(t => t.path === curDir + '/' + s.path);
+          if (tab) { tab.dirty = true; }
+        }
+      }
+    });
+    return r;
+  } catch(e) { notif('Agent failed: ' + e.message, 'err'); return { error: e.message }; }
+}
+
+// ═══════════════════════════════════════════════════════
+// TEST EXPLORER
+// ═══════════════════════════════════════════════════════
+let testResults = [], testFiles = [];
+
+async function discoverTests() {
+  if (!curDir) { notif('Open a folder first', 'warn'); return; }
+  const r = await api('POST', '/api/tests/discover', { dir: curDir });
+  testFiles = r.tests || [];
+  renderTestExplorer();
+  if (testFiles.length) notif('Found ' + testFiles.length + ' test file(s)', 'ok');
+  else notif('No test files found', 'warn');
+}
+
+function renderTestExplorer() {
+  const el = document.getElementById('test-list');
+  if (!el) return;
+  if (!testFiles.length) {
+    el.innerHTML = '<div style="padding:16px;font-size:12px;color:var(--tx3);text-align:center">No test files found.<br>Click "Discover" to scan.</div>';
+    return;
+  }
+  el.innerHTML = testFiles.map((t, i) => {
+    const result = testResults[i];
+    const icon = result ? (result.status === 'pass' ? '<span style="color:var(--green)">✓</span>' : '<span style="color:var(--red)">✗</span>') : '<span class="test-icon skip">○</span>';
+    return '<div class="test-item" style="display:flex;align-items:center;gap:6px;padding:4px 12px;cursor:pointer;font-size:12px" onclick="runSingleTest(' + i + ')">' +
+      icon + '<span class="test-name">' + esc(t.file) + '</span>' +
+      '<button class="test-toolbar-btn" onclick="event.stopPropagation();runSingleTest(' + i + ')">▶</button>' +
+      (result && result.time ? '<span class="test-time">' + result.time + 'ms</span>' : '') +
+      '</div>';
+  }).join('');
+}
+
+async function runSingleTest(idx) {
+  const t = testFiles[idx];
+  if (!t) return;
+  notif('Running: ' + t.name + '...', 'info');
+  const start = Date.now();
+  const r = await api('POST', '/api/tests/run', { dir: curDir, file: t.file, lang: t.lang });
+  const elapsed = Date.now() - start;
+  const passed = r.exitCode === 0;
+  testResults[idx] = { status: passed ? 'pass' : 'fail', output: r.output, time: elapsed };
+  renderTestExplorer();
+  updateTestSummary();
+  notif(t.name + ': ' + (passed ? 'PASSED' : 'FAILED'), passed ? 'ok' : 'err');
+}
+
+async function runAllTests() {
+  if (!testFiles.length) { await discoverTests(); if (!testFiles.length) return; }
+  testResults = [];
+  for (let i = 0; i < testFiles.length; i++) { await runSingleTest(i); }
+  updateTestSummary();
+}
+
+function updateTestSummary() {
+  const summary = document.getElementById('test-summary');
+  if (!summary) return;
+  const pass = testResults.filter(r => r && r.status === 'pass').length;
+  const fail = testResults.filter(r => r && r.status === 'fail').length;
+  summary.innerHTML = '<div style="padding:6px 12px;font-size:11px;display:flex;gap:12px">' +
+    '<span style="color:var(--green)">' + pass + ' passed</span>' +
+    '<span style="color:var(--red)">' + fail + ' failed</span>' +
+    '<span style="color:var(--tx3)">' + (testFiles.length - pass - fail) + ' pending</span></div>';
+}
+
+// ═══════════════════════════════════════════════════════
+// LSP CLIENT INTEGRATION
+// ═══════════════════════════════════════════════════════
+let lspAvailable={},lspDocVersion={},lspEnabled=true;
+
+async function initLsp(){
+  try{const r=await api('GET','/api/lsp/available');lspAvailable=r.servers||{};
+    const langs=Object.entries(lspAvailable).filter(([k,v])=>v).map(([k])=>k);
+    if(langs.length)notif('LSP available: '+langs.join(', '),'ok');
+  }catch(e){}
+}
+
+async function lspDidOpen(filePath,content,lang){
+  if(!lspEnabled||!curDir||!filePath)return;
+  const lspLang=lang||'';if(!lspAvailable[lspLang])return;
+  lspDocVersion[filePath]=(lspDocVersion[filePath]||0)+1;
+  try{await api('POST','/api/lsp/didOpen',{dir:curDir,lang:lspLang,file:filePath,content});}catch(e){}
+}
+
+let lspChangeTimer=null;
+async function lspDidChange(filePath,content,lang){
+  if(!lspEnabled||!curDir||!filePath)return;
+  const lspLang=lang||'';if(!lspAvailable[lspLang])return;
+  lspDocVersion[filePath]=(lspDocVersion[filePath]||0)+1;
+  clearTimeout(lspChangeTimer);
+  lspChangeTimer=setTimeout(async()=>{
+    try{
+      const r=await api('POST','/api/lsp/didChange',{dir:curDir,lang:lspLang,file:filePath,content,version:lspDocVersion[filePath]});
+      if(r.diagnostics&&r.diagnostics.length){showLspDiagnostics(r.diagnostics);}
+    }catch(e){}
+  },500);
+}
+
+function showLspDiagnostics(diags){
+  if(!diags||!diags.length)return;
+  const errs=diags.filter(d=>d.severity===1).length;
+  const warns=diags.filter(d=>d.severity===2).length;
+  if(errs||warns)notif('LSP: '+errs+' error(s), '+warns+' warning(s)',(errs?'err':'warn'));
+}
+
+async function lspCompletion(){
+  const ed=getEd(1);if(!ed||!curDir||!activeFile)return[];
+  const tab=tabs.find(t=>t.id===atab);if(!tab)return[];
+  const lang=getLangKey(tab.name);if(!lspAvailable[lang])return[];
+  const pos=ed.selectionStart;
+  const before=ed.value.substring(0,pos);
+  const line=before.split('\n').length-1;
+  const character=before.length-(before.lastIndexOf('\n')+1);
+  try{
+    const r=await api('POST','/api/lsp/completion',{dir:curDir,lang,file:activeFile,line,character,content:ed.value});
+    return r.items||[];
+  }catch(e){return[];}
+}
+
+async function lspGoToDefinition(){
+  const ed=getEd(1);if(!ed||!curDir||!activeFile)return;
+  const tab=tabs.find(t=>t.id===atab);if(!tab)return;
+  const lang=getLangKey(tab.name);
+  const pos=ed.selectionStart;const before=ed.value.substring(0,pos);
+  const line=before.split('\n').length-1;const character=before.length-(before.lastIndexOf('\n')+1);
+  try{
+    const r=await api('POST','/api/lsp/definition',{dir:curDir,lang,file:activeFile,line,character});
+    if(r.locations&&r.locations.length){
+      const loc=r.locations[0];
+      const fp=loc.uri.replace('file://','');
+      if(fp===activeFile){goToLine(loc.range.start.line+1);}
+      else{
+        const name=fp.split('/').pop();
+        const ct=await api('GET','/api/file?path='+encodeURIComponent(fp));
+        if(!ct.error){openFileContent(fp,name,ct.content,loc.range.start.line+1);}
+      }
+      notif('Definition found','ok');
+    }else{notif('No definition found','warn');goToDefinition();}
+  }catch(e){goToDefinition();}
+}
+
+async function lspFindReferences(){
+  const ed=getEd(1);if(!ed||!curDir||!activeFile)return;
+  const tab=tabs.find(t=>t.id===atab);if(!tab)return;
+  const lang=getLangKey(tab.name);
+  const pos=ed.selectionStart;const before=ed.value.substring(0,pos);
+  const line=before.split('\n').length-1;const character=before.length-(before.lastIndexOf('\n')+1);
+  try{
+    const r=await api('POST','/api/lsp/references',{dir:curDir,lang,file:activeFile,line,character});
+    if(r.locations&&r.locations.length){
+      const results=r.locations.map(l=>{const fp=l.uri.replace('file://','');return fp+':'+(l.range.start.line+1)+':'+(l.range.start.character+1);});
+      notif('Found '+results.length+' reference(s)','ok');
+      const out=document.getElementById('search-results');
+      if(out){out.innerHTML=results.map(r=>'<div class="sr-item" onclick="openFileAtLine(\''+r.split(':')[0]+'\','+r.split(':')[1]+')">'+esc(r)+'</div>').join('');setPanel('search');}
+    }else{notif('No references found','warn');}
+  }catch(e){findReferences();}
+}
+
+async function lspRename(){
+  const ed=getEd(1);if(!ed||!curDir||!activeFile)return;
+  const tab=tabs.find(t=>t.id===atab);if(!tab)return;
+  const lang=getLangKey(tab.name);
+  const pos=ed.selectionStart;const before=ed.value.substring(0,pos);
+  const line=before.split('\n').length-1;const character=before.length-(before.lastIndexOf('\n')+1);
+  const wordMatch=ed.value.substring(Math.max(0,pos-50),pos+50).match(/\b(\w+)\b/g);
+  const word=wordMatch?wordMatch[Math.floor(wordMatch.length/2)]:'';
+  const newName=prompt('Rename "'+word+'" to:',word);
+  if(!newName||newName===word)return;
+  try{
+    const r=await api('POST','/api/lsp/rename',{dir:curDir,lang,file:activeFile,line,character,newName});
+    if(r.error){notif('Rename failed: '+r.error,'err');return;}
+    let totalEdits=0;
+    for(const[fp,edits] of Object.entries(r.changes||{})){
+      totalEdits+=edits.length;
+      if(fp===activeFile){
+        ed.value=applyLspEdits(ed.value,edits);onEdit(1);
+      }else{
+        try{
+          let ct=(await api('GET','/api/file?path='+encodeURIComponent(fp))).content;
+          if(ct){ct=applyLspEdits(ct,edits);await api('POST','/api/file',{path:fp,content:ct});}
+        }catch(e){}
+      }
+    }
+    notif('Renamed: '+totalEdits+' change(s) across '+Object.keys(r.changes||{}).length+' file(s)','ok');
+  }catch(e){notif('Rename failed','err');renameSymbol();}
+}
+
+function applyLspEdits(text,edits){
+  const sorted=[...edits].sort((a,b)=>{
+    if(b.range.start.line!==a.range.start.line)return b.range.start.line-a.range.start.line;
+    return b.range.start.character-a.range.start.character;
+  });
+  const lines=text.split('\n');
+  for(const edit of sorted){
+    const sl=edit.range.start.line,sc=edit.range.start.character;
+    const el=edit.range.end.line,ec=edit.range.end.character;
+    const before=lines.slice(0,sl).join('\n')+(sl>0?'\n':'')+(lines[sl]||'').substring(0,sc);
+    const after=(lines[el]||'').substring(ec)+(el<lines.length-1?'\n':'')+lines.slice(el+1).join('\n');
+    const result=before+edit.newText+after;
+    lines.length=0;lines.push(...result.split('\n'));
+  }
+  return lines.join('\n');
+}
+
+async function lspSignatureHelp(){
+  const ed=getEd(1);if(!ed||!curDir||!activeFile)return null;
+  const tab=tabs.find(t=>t.id===atab);if(!tab)return null;
+  const lang=getLangKey(tab.name);
+  const pos=ed.selectionStart;const before=ed.value.substring(0,pos);
+  const line=before.split('\n').length-1;const character=before.length-(before.lastIndexOf('\n')+1);
+  try{return await api('POST','/api/lsp/signature',{dir:curDir,lang,file:activeFile,line,character});}catch(e){return null;}
+}
+
+async function lspHover(line,character){
+  if(!curDir||!activeFile)return null;
+  const tab=tabs.find(t=>t.id===atab);if(!tab)return null;
+  const lang=getLangKey(tab.name);
+  try{return await api('POST','/api/lsp/hover',{dir:curDir,lang,file:activeFile,line,character});}catch(e){return null;}
+}
+
+async function lspFormat(){
+  const ed=getEd(1);if(!ed||!curDir||!activeFile)return;
+  const tab=tabs.find(t=>t.id===atab);if(!tab)return;
+  const lang=getLangKey(tab.name);
+  try{
+    const r=await api('POST','/api/format',{dir:curDir,lang,file:activeFile,content:ed.value});
+    if(r.formatted&&r.formatted!==ed.value&&r.source!=='none'){
+      ed.value=r.formatted;onEdit(1);
+      notif('Formatted ('+r.source+')','ok');
+    }else if(r.source==='none'){notif('No formatter found for '+lang,'warn');}
+  }catch(e){notif('Format failed','err');}
+}
+
+// Wire LSP into existing file operations
+const _origSwTab3=swTab;
+swTab=function(id){
+  _origSwTab3(id);
+  const tab=tabs.find(t=>t.id===id);
+  if(tab&&tab.path){lspDidOpen(tab.path,tab.content||'',getLangKey(tab.name));}
+};
+
+// Wire LSP change notifications into editing
+const _origOnEdit2=onEdit;
+onEdit=function(pane){
+  _origOnEdit2(pane);
+  if(pane===1&&activeFile){
+    const tab=tabs.find(t=>t.id===atab);
+    if(tab)lspDidChange(activeFile,getEd(1).value,getLangKey(tab.name));
+  }
+};
+
+// LSP completion dropdown
+let lspCompletionItems=[],lspCompIdx=-1;
+async function showLspCompletion(){
+  const items=await lspCompletion();
+  if(!items.length)return;
+  lspCompletionItems=items;lspCompIdx=0;
+  const ed=getEd(1);if(!ed)return;
+  const pos=ed.selectionStart;
+  const before=ed.value.substring(0,pos);
+  const lines=before.split('\n');
+  const lineN=lines.length;
+  const col=lines[lines.length-1].length;
+  const lineH=edFS*1.6;const charW=edFS*0.605;
+  let dropdown=document.getElementById('lsp-dropdown');
+  if(!dropdown){dropdown=document.createElement('div');dropdown.id='lsp-dropdown';dropdown.className='lsp-dropdown';document.getElementById('ed-scroll-1').appendChild(dropdown);}
+  dropdown.style.display='block';
+  dropdown.style.top=(lineN*lineH+2)+'px';
+  dropdown.style.left=(col*charW)+'px';
+  renderLspDropdown();
+}
+
+function renderLspDropdown(){
+  const dropdown=document.getElementById('lsp-dropdown');if(!dropdown)return;
+  const kindIcons={1:'',2:'fn',3:'fn',4:'',5:'f',6:'v',7:'cls',8:'if',9:'mod',10:'p',11:'u',12:'val',13:'enum',14:'kw',15:'snip',16:'clr',17:'file',18:'ref',19:'dir',20:'em',21:'const',22:'struct',23:'ev',24:'op',25:'tp'};
+  dropdown.innerHTML=lspCompletionItems.slice(0,15).map((item,i)=>{
+    const kind=kindIcons[item.kind]||'?';
+    return '<div class="lsp-item'+(i===lspCompIdx?' on':'')+'" onmousedown="acceptLspCompletion('+i+')" onmouseover="lspCompIdx='+i+';renderLspDropdown()"><span class="lsp-kind">'+kind+'</span><span class="lsp-label">'+esc(item.label)+'</span>'+(item.detail?'<span class="lsp-detail">'+esc(item.detail.slice(0,30))+'</span>':'')+'</div>';
+  }).join('');
+}
+
+function acceptLspCompletion(idx){
+  const item=lspCompletionItems[idx||lspCompIdx];if(!item)return;
+  const ed=getEd(1);if(!ed)return;
+  const pos=ed.selectionStart;
+  const before=ed.value.substring(0,pos);
+  const wordStart=before.search(/\w+$/);
+  const insertPos=wordStart>=0?wordStart:pos;
+  ed.value=ed.value.substring(0,insertPos)+(item.insertText||item.label)+ed.value.substring(pos);
+  const newPos=insertPos+(item.insertText||item.label).length;
+  ed.selectionStart=ed.selectionEnd=newPos;
+  closeLspDropdown();
+  onEdit(1);
+}
+
+function closeLspDropdown(){
+  lspCompletionItems=[];lspCompIdx=-1;
+  const dd=document.getElementById('lsp-dropdown');if(dd)dd.style.display='none';
+}
+
+function openFileAtLine(fp,line){
+  const name=fp.split('/').pop();
+  api('GET','/api/file?path='+encodeURIComponent(fp)).then(r=>{if(!r.error)openFileContent(fp,name,r.content,line);});
+}
+
+function openFileContent(fp,name,content,line){
+  const existing=tabs.find(t=>t.path===fp);
+  if(existing){swTab(existing.id);if(line)setTimeout(()=>goToLine(line),100);return;}
+  const id=Date.now();
+  tabs.push({id,name,content,path:fp,lang:getLangKey(name)});
+  swTab(id);if(line)setTimeout(()=>goToLine(line),100);
+}
+
+// ═══════════════════════════════════════════════════════
+// MULTI-CURSOR EDITING
+// ═══════════════════════════════════════════════════════
+let multiCursors=[];
+
+function addCursorAtNextOccurrence(){
+  const ed=getEd(1);if(!ed)return;
+  const start=ed.selectionStart,end=ed.selectionEnd;
+  if(start===end){notif('Select text first, then Ctrl+D','warn');return;}
+  const selected=ed.value.substring(start,end);
+  const lastPos=multiCursors.length?Math.max(...multiCursors.map(c=>c.end)):end;
+  const nextIdx=ed.value.indexOf(selected,lastPos);
+  if(nextIdx===-1){
+    const wrapIdx=ed.value.indexOf(selected);
+    if(wrapIdx>=0&&wrapIdx!==start){multiCursors.push({pos:wrapIdx,start:wrapIdx,end:wrapIdx+selected.length});renderMultiCursorOverlays();notif('Cursor added (wrapped)','ok');}
+    else notif('No more occurrences','warn');
+    return;
+  }
+  multiCursors.push({pos:nextIdx,start:nextIdx,end:nextIdx+selected.length});
+  renderMultiCursorOverlays();
+  notif((multiCursors.length+1)+' cursors','ok');
+}
+
+function addCursorAbove(){
+  const ed=getEd(1);if(!ed)return;
+  const pos=ed.selectionStart;const before=ed.value.substring(0,pos);
+  const lines=before.split('\n');const lineIdx=lines.length-1;const col=lines[lineIdx].length;
+  if(lineIdx<=0)return;
+  const prevLine=ed.value.split('\n')[lineIdx-1];
+  const newCol=Math.min(col,prevLine.length);
+  const newPos=ed.value.split('\n').slice(0,lineIdx-1).join('\n').length+(lineIdx>1?1:0)+newCol;
+  multiCursors.push({pos:newPos,start:newPos,end:newPos});
+  renderMultiCursorOverlays();
+}
+
+function addCursorBelow(){
+  const ed=getEd(1);if(!ed)return;
+  const pos=ed.selectionStart;const before=ed.value.substring(0,pos);
+  const allLines=ed.value.split('\n');
+  const lines=before.split('\n');const lineIdx=lines.length-1;const col=lines[lineIdx].length;
+  if(lineIdx>=allLines.length-1)return;
+  const nextLine=allLines[lineIdx+1];
+  const newCol=Math.min(col,nextLine.length);
+  const newPos=allLines.slice(0,lineIdx+1).join('\n').length+1+newCol;
+  multiCursors.push({pos:newPos,start:newPos,end:newPos});
+  renderMultiCursorOverlays();
+}
+
+function renderMultiCursorOverlays(){
+  let container=document.getElementById('mc-overlays');
+  if(!container){container=document.createElement('div');container.id='mc-overlays';container.style.cssText='position:absolute;top:0;left:0;pointer-events:none;';document.getElementById('ed-scroll-1')?.appendChild(container);}
+  const ed=getEd(1);if(!ed){container.innerHTML='';return;}
+  const lineH=edFS*1.6;const charW=edFS*0.605;
+  container.innerHTML=multiCursors.map(c=>{
+    const before=ed.value.substring(0,c.pos);
+    const lines=before.split('\n');const lineN=lines.length;const col=lines[lines.length-1].length;
+    let html='<div style="position:absolute;top:'+(((lineN-1)*lineH+14))+'px;left:'+(col*charW)+'px;width:2px;height:'+lineH+'px;background:var(--ac);opacity:0.7;animation:blink 1s step-end infinite"></div>';
+    if(c.start!==c.end){
+      const selBefore=ed.value.substring(0,c.start);const selLines=selBefore.split('\n');
+      const startLine=selLines.length;const startCol=selLines[selLines.length-1].length;
+      html+='<div style="position:absolute;top:'+((startLine-1)*lineH+14)+'px;left:'+(startCol*charW)+'px;width:'+((c.end-c.start)*charW)+'px;height:'+lineH+'px;background:var(--ac);opacity:0.15"></div>';
+    }
+    return html;
+  }).join('');
+}
+
+function handleMultiCursorInput(e){
+  if(!multiCursors.length)return false;
+  const ed=getEd(1);if(!ed)return false;
+  if(e.key==='Escape'){multiCursors=[];renderMultiCursorOverlays();return true;}
+  if(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+    e.preventDefault();
+    const allPositions=[{pos:ed.selectionStart,start:ed.selectionStart,end:ed.selectionEnd},...multiCursors].sort((a,b)=>b.pos-a.pos);
+    let val=ed.value;
+    for(const c of allPositions){val=val.substring(0,c.start)+e.key+val.substring(c.end);}
+    ed.value=val;
+    let offset=0;
+    const sorted=[...allPositions].sort((a,b)=>a.pos-b.pos);
+    sorted.forEach((c,i)=>{
+      const newPos=c.start+offset+1;
+      if(i===0){ed.selectionStart=ed.selectionEnd=newPos;}
+      else{multiCursors[i-1].pos=newPos;multiCursors[i-1].start=newPos;multiCursors[i-1].end=newPos;}
+      offset+=1-(c.end-c.start);
+    });
+    onEdit(1);renderMultiCursorOverlays();
+    return true;
+  }
+  if(e.key==='Backspace'&&!e.ctrlKey){
+    e.preventDefault();
+    const allPositions=[{pos:ed.selectionStart,start:ed.selectionStart,end:ed.selectionEnd},...multiCursors].sort((a,b)=>b.pos-a.pos);
+    let val=ed.value;
+    for(const c of allPositions){
+      if(c.start!==c.end)val=val.substring(0,c.start)+val.substring(c.end);
+      else if(c.start>0)val=val.substring(0,c.start-1)+val.substring(c.start);
+    }
+    ed.value=val;
+    let offset=0;
+    const sorted=[...allPositions].sort((a,b)=>a.pos-b.pos);
+    sorted.forEach((c,i)=>{
+      const del=c.start!==c.end?(c.end-c.start):1;
+      const newPos=Math.max(0,c.start+offset-(c.start===c.end?1:0));
+      if(i===0){ed.selectionStart=ed.selectionEnd=newPos;}
+      else{multiCursors[i-1].pos=newPos;multiCursors[i-1].start=newPos;multiCursors[i-1].end=newPos;}
+      offset-=del;
+    });
+    onEdit(1);renderMultiCursorOverlays();
+    return true;
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════
+// COLUMN SELECTION (Alt+Shift+Arrow)
+// ═══════════════════════════════════════════════════════
+let columnSelectMode=false;
+
+function startColumnSelect(direction){
+  const ed=getEd(1);if(!ed)return;
+  columnSelectMode=true;
+  if(direction==='up')addCursorAbove();
+  else addCursorBelow();
+}
+
+// ═══════════════════════════════════════════════════════
+// REAL-TIME COLLABORATION
+// ═══════════════════════════════════════════════════════
+let collabWs=null,collabUserId=null,collabPeers={},collabRoom=null;
+
+function startCollabSession(roomId){
+  if(collabWs){stopCollab();}
+  const name=localStorage.getItem('ax_username')||'User-'+Math.floor(Math.random()*1000);
+  roomId=roomId||prompt('Room name:','axiom-'+Math.floor(Math.random()*9999));
+  if(!roomId)return;
+  collabRoom=roomId;
+  const wsUrl='ws://'+location.host+'/ws/collab?token='+window.AX_TOKEN+'&room='+encodeURIComponent(roomId)+'&name='+encodeURIComponent(name);
+  collabWs=new WebSocket(wsUrl);
+  collabWs.onopen=()=>{notif('Connected to room: '+roomId,'ok');updateCollabUI();};
+  collabWs.onclose=()=>{collabWs=null;collabRoom=null;collabPeers={};notif('Disconnected from collab','warn');updateCollabUI();};
+  collabWs.onmessage=e=>{
+    try{const msg=JSON.parse(e.data);handleCollabMsg(msg);}catch(e){}
+  };
+}
+
+function stopCollab(){
+  if(collabWs){collabWs.close();collabWs=null;}
+  collabRoom=null;collabPeers={};
+  renderCollabCursors();updateCollabUI();
+  notif('Left collaboration room','ok');
+}
+
+function handleCollabMsg(msg){
+  if(msg.type==='init'){
+    collabUserId=msg.userId;
+    (msg.users||[]).forEach(u=>{if(u.id!==collabUserId)collabPeers[u.id]=u;});
+    if(msg.doc){const ed=getEd(1);if(ed&&!ed.value.trim())ed.value=msg.doc;}
+    renderCollabCursors();updateCollabUI();
+  }else if(msg.type==='user_join'){
+    collabPeers[msg.user.id]=msg.user;
+    notif(msg.user.name+' joined','info');updateCollabUI();
+  }else if(msg.type==='user_leave'){
+    const peer=collabPeers[msg.userId];
+    if(peer)notif(peer.name+' left','info');
+    delete collabPeers[msg.userId];
+    renderCollabCursors();updateCollabUI();
+  }else if(msg.type==='edit'&&msg.userId!==collabUserId){
+    const ed=getEd(1);if(!ed)return;
+    const pos=ed.selectionStart;
+    ed.value=msg.content;
+    ed.selectionStart=ed.selectionEnd=Math.min(pos,ed.value.length);
+    updateHL(1);updateGutter(1);
+  }else if(msg.type==='cursor'&&msg.userId!==collabUserId){
+    collabPeers[msg.userId]={...collabPeers[msg.userId],cursor:msg.cursor,selection:msg.selection,name:msg.name,color:msg.color};
+    renderCollabCursors();
+  }else if(msg.type==='chat'){
+    notif('['+msg.name+']: '+msg.text,'info');
+  }
+}
+
+function sendCollabEdit(){
+  if(!collabWs||collabWs.readyState!==1)return;
+  const ed=getEd(1);if(!ed)return;
+  collabWs.send(JSON.stringify({type:'edit',content:ed.value}));
+}
+
+function sendCollabCursor(){
+  if(!collabWs||collabWs.readyState!==1)return;
+  const ed=getEd(1);if(!ed)return;
+  const pos=ed.selectionStart;const before=ed.value.substring(0,pos);
+  const line=before.split('\n').length-1;const character=before.length-(before.lastIndexOf('\n')+1);
+  collabWs.send(JSON.stringify({type:'cursor',cursor:{line,character}}));
+}
+
+function renderCollabCursors(){
+  let container=document.getElementById('collab-cursors');
+  if(!container){container=document.createElement('div');container.id='collab-cursors';container.style.cssText='position:absolute;top:0;left:0;pointer-events:none;z-index:5;';document.getElementById('ed-scroll-1')?.appendChild(container);}
+  const ed=getEd(1);if(!ed){container.innerHTML='';return;}
+  const lineH=edFS*1.6;const charW=edFS*0.605;
+  container.innerHTML=Object.values(collabPeers).filter(p=>p.cursor).map(p=>{
+    const top=(p.cursor.line)*lineH+14;const left=p.cursor.character*charW;
+    return '<div style="position:absolute;top:'+top+'px;left:'+left+'px"><div style="width:2px;height:'+lineH+'px;background:'+p.color+'"></div><div style="position:absolute;top:-14px;left:0;background:'+p.color+';color:#fff;font-size:9px;padding:1px 4px;border-radius:2px;white-space:nowrap">'+esc(p.name||'?')+'</div></div>';
+  }).join('');
+}
+
+function updateCollabUI(){
+  const badge=document.getElementById('collab-badge');
+  if(badge){badge.textContent=collabRoom?Object.keys(collabPeers).length+1:'';badge.style.display=collabRoom?'inline-block':'none';}
+}
+
+// Hook collab into editor
+const _origOnEdit3=onEdit;
+onEdit=function(pane){_origOnEdit3(pane);if(pane===1)sendCollabEdit();};
+const _origUpdPos2=updPos;
+updPos=function(pane){_origUpdPos2(pane);if(pane===1)sendCollabCursor();};
+
+// ═══════════════════════════════════════════════════════
+// TASK RUNNER
+// ═══════════════════════════════════════════════════════
+let projectTasks=[],taskRunning=false;
+
+async function detectProjectTasks(){
+  if(!curDir){notif('Open a folder first','warn');return;}
+  const r=await api('POST','/api/tasks/detect',{dir:curDir});
+  projectTasks=r.tasks||[];
+  renderTaskList();
+  if(projectTasks.length)notif('Found '+projectTasks.length+' task(s)','ok');
+  else notif('No tasks detected','warn');
+}
+
+function renderTaskList(){
+  const el=document.getElementById('task-list');if(!el)return;
+  if(!projectTasks.length){el.innerHTML='<div class="outline-empty">Click Detect to scan for tasks</div>';return;}
+  el.innerHTML=projectTasks.map((t,i)=>
+    '<div class="test-item" onclick="runProjectTask('+i+')"><span class="test-icon skip">▶</span><span class="test-name">'+esc(t.name)+'</span><span class="test-time">'+esc(t.source)+'</span></div>'
+  ).join('');
+}
+
+async function runProjectTask(idx){
+  const t=projectTasks[idx];if(!t||taskRunning)return;
+  taskRunning=true;notif('Running: '+t.name+'...','info');
+  showBottom();setBpTab('output');
+  const out=document.getElementById('bp-output');
+  if(out){out.textContent='Running: '+t.cmd+'\n';out.style.color='var(--tx)';out.classList.add('on');}
+  try{
+    const r=await api('POST','/api/tasks/run',{dir:curDir,cmd:t.cmd});
+    if(out)out.textContent+=r.output||'(no output)';
+    notif(r.exitCode===0?t.name+' completed':t.name+' failed (exit '+r.exitCode+')',r.exitCode===0?'ok':'err');
+  }catch(e){if(out)out.textContent+='Error: '+e.message;}
+  taskRunning=false;
+}
+
+// ═══════════════════════════════════════════════════════
+// FORMAT ON SAVE
+// ═══════════════════════════════════════════════════════
+let formatOnSave=false;
+
+function toggleFormatOnSave(){
+  formatOnSave=!formatOnSave;
+  localStorage.setItem('ax_format_on_save',formatOnSave?'1':'0');
+  notif('Format on save: '+(formatOnSave?'ON':'OFF'),'ok');
+}
+
+// Hook into save
+const _origSaveFile=saveFile;
+saveFile=async function(){
+  if(formatOnSave&&activeFile){await lspFormat();}
+  return _origSaveFile();
+};
+
+// ═══════════════════════════════════════════════════════
+// MULTI-LINE GHOST TEXT
+// ═══════════════════════════════════════════════════════
+const _origShowGhost=showGhostText;
+showGhostText=function(ed,pos,completion){
+  const ghost=document.getElementById('ghost-text');if(!ghost)return _origShowGhost(ed,pos,completion);
+  const before=ed.value.substring(0,pos);
+  const lines=before.split('\n');
+  const lineN=lines.length;const col=lines[lines.length-1].length;
+  const lineH=edFS*1.6;const charW=edFS*0.605;
+  const completionLines=completion.split('\n');
+  ghost.style.display='block';
+  ghost.style.top=(lineN-1)*lineH+14+'px';
+  ghost.style.left=col*charW+'px';
+  ghost.innerHTML=completionLines.map((l,i)=>{
+    const style=i>0?'display:block;margin-left:'+(-col*charW)+'px;':'';
+    return '<span style="'+style+'color:var(--tx3);opacity:0.5;font-style:italic">'+esc(l)+'</span>';
+  }).join('');
+  ghostActive=true;ghostPos=pos;ghostCompletion=completion;
+};
+
+// ═══════════════════════════════════════════════════════
+// ADVANCED GIT UI
+// ═══════════════════════════════════════════════════════
+async function gitCherryPick(){
+  if(!curDir){notif('Open a folder first','warn');return;}
+  const hash=prompt('Commit hash to cherry-pick:');if(!hash)return;
+  const r=await api('POST','/api/git/cherry-pick',{dir:curDir,hash});
+  notif(r.ok?'Cherry-pick successful':'Cherry-pick failed: '+r.output,r.ok?'ok':'err');
+}
+
+async function gitCreateTag(){
+  if(!curDir){notif('Open a folder first','warn');return;}
+  const name=prompt('Tag name:');if(!name)return;
+  const msg=prompt('Tag message (optional):','');
+  const r=await api('POST','/api/git/tag',{dir:curDir,name,message:msg});
+  notif(r.ok?'Tag created: '+name:'Tag failed: '+r.output,r.ok?'ok':'err');
+}
+
+async function gitListTags(){
+  if(!curDir){notif('Open a folder first','warn');return;}
+  const r=await api('GET','/api/git/tags?dir='+encodeURIComponent(curDir));
+  if(r.tags?.length){
+    showBottom();setBpTab('output');
+    const out=document.getElementById('bp-output');
+    if(out){out.textContent='Tags:\n'+r.tags.join('\n');out.classList.add('on');}
+  }else notif('No tags found','warn');
+}
+
+async function gitRebase(action){
+  if(!curDir)return;
+  const data={dir:curDir};
+  if(action)data.action=action;
+  else{data.onto=prompt('Rebase onto branch:','main');if(!data.onto)return;}
+  const r=await api('POST','/api/git/rebase',data);
+  notif(r.ok?'Rebase '+(action||'started'):'Rebase: '+r.output,r.ok?'ok':'err');
+}
+
+async function gitSubmodules(){
+  if(!curDir)return;
+  const r=await api('GET','/api/git/submodules?dir='+encodeURIComponent(curDir));
+  if(r.submodules?.length){
+    showBottom();setBpTab('output');
+    const out=document.getElementById('bp-output');
+    if(out){out.textContent='Submodules:\n'+r.submodules.map(s=>s.status+s.hash+' '+s.path).join('\n');out.classList.add('on');}
+  }else notif('No submodules','info');
+}
+
+// ═══════════════════════════════════════════════════════
+// TERMINAL MULTIPLEXING
+// ═══════════════════════════════════════════════════════
+let terminalInstances=[],activeTermIdx=0;
+
+function createNewTerminal(){
+  const id=Date.now();
+  terminalInstances.push({id,name:'Terminal '+(terminalInstances.length+1)});
+  activeTermIdx=terminalInstances.length-1;
+  renderTerminalTabs();
+  const cwd=curDir||'~';
+  try{newTermTab(cwd);}catch(e){notif('Terminal: '+e.message,'err');}
+  notif('New terminal: #'+(terminalInstances.length),'ok');
+}
+
+function renderTerminalTabs(){
+  let ttabs=document.getElementById('term-tabs');
+  if(!ttabs){
+    const bp=document.getElementById('bp-term');
+    if(!bp)return;
+    ttabs=document.createElement('div');ttabs.id='term-tabs';
+    ttabs.style.cssText='display:flex;gap:2px;padding:2px 4px;background:var(--surface);border-bottom:1px solid var(--border);';
+    bp.parentElement.insertBefore(ttabs,bp);
+  }
+  ttabs.innerHTML=terminalInstances.map((t,i)=>
+    '<button class="pnav-btn'+(i===activeTermIdx?' on':'')+'" onclick="switchTerminal('+i+')" style="font-size:10px;padding:2px 8px">'+esc(t.name)+'<span onclick="event.stopPropagation();closeTerminalTab('+i+')" style="margin-left:4px;opacity:0.5;cursor:pointer">&times;</span></button>'
+  ).join('')+'<button class="pnav-btn" onclick="createNewTerminal()" style="font-size:10px;padding:2px 4px">+</button>';
+}
+
+function switchTerminal(idx){
+  activeTermIdx=idx;renderTerminalTabs();
+}
+
+function closeTerminalTab(idx){
+  terminalInstances.splice(idx,1);
+  if(activeTermIdx>=terminalInstances.length)activeTermIdx=Math.max(0,terminalInstances.length-1);
+  renderTerminalTabs();
+}
+
+// ═══════════════════════════════════════════════════════
+// EXTENSION/PLUGIN SYSTEM
+// ═══════════════════════════════════════════════════════
+const pluginRegistry=[];
+
+function registerPlugin(plugin){
+  if(!plugin||!plugin.name)return;
+  pluginRegistry.push({name:plugin.name,version:plugin.version||'1.0',activate:plugin.activate,deactivate:plugin.deactivate,active:false});
+}
+
+function activatePlugin(idx){
+  const p=pluginRegistry[idx];if(!p||p.active)return;
+  try{if(p.activate)p.activate({api,notif,getEd,tabs,curDir});p.active=true;notif('Activated: '+p.name,'ok');}
+  catch(e){notif('Plugin error: '+e.message,'err');}
+}
+
+function deactivatePlugin(idx){
+  const p=pluginRegistry[idx];if(!p||!p.active)return;
+  try{if(p.deactivate)p.deactivate();p.active=false;notif('Deactivated: '+p.name,'ok');}
+  catch(e){}
+}
+
+async function loadPluginsFromDir(){
+  if(!curDir)return;
+  try{
+    const r=await api('GET','/api/files?dir='+encodeURIComponent(curDir+'/.axiom/plugins'));
+    if(r.entries){
+      for(const e of r.entries){
+        if(e.name.endsWith('.js')){
+          try{
+            const code=await api('GET','/api/file?path='+encodeURIComponent(curDir+'/.axiom/plugins/'+e.name));
+            if(code.content){
+              const fn=new Function('registerPlugin','api','notif',code.content);
+              fn(registerPlugin,api,notif);
+            }
+          }catch(e){}
+        }
+      }
+      if(pluginRegistry.length)notif('Loaded '+pluginRegistry.length+' plugin(s)','ok');
+    }
+  }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════
+// REMOTE DEVELOPMENT / SSH
+// ═══════════════════════════════════════════════════════
+let remoteConn=null;
+
+async function connectRemote(){
+  const host=prompt('SSH host (user@host):');if(!host)return;
+  const dir=prompt('Remote directory:','/home');if(!dir)return;
+  notif('Connecting to '+host+'...','info');
+  try{
+    showBottom();setBpTab('terminal');
+    notif('Use terminal: ssh '+host+' to connect. Remote file browsing requires SSH filesystem mount.','info');
+    remoteConn={host,dir};
+  }catch(e){notif('SSH connection not available in browser mode. Use terminal.','warn');}
+}
+
+// ═══════════════════════════════════════════════════════
+// MULTI-ROOT WORKSPACE
+// ═══════════════════════════════════════════════════════
+let workspaceRoots=[];
+
+function addWorkspaceFolder(){
+  const dir=prompt('Folder path to add:');
+  if(!dir)return;
+  if(workspaceRoots.includes(dir)){notif('Already in workspace','warn');return;}
+  workspaceRoots.push(dir);
+  renderWorkspaceRoots();
+  notif('Added to workspace: '+dir.split('/').pop(),'ok');
+}
+
+function removeWorkspaceFolder(idx){
+  workspaceRoots.splice(idx,1);
+  renderWorkspaceRoots();
+}
+
+function renderWorkspaceRoots(){
+  const el=document.getElementById('workspace-roots');if(!el)return;
+  if(workspaceRoots.length<=1){el.style.display='none';return;}
+  el.style.display='block';
+  el.innerHTML=workspaceRoots.map((r,i)=>
+    '<div class="bc-item" onclick="loadDir(\''+esc(r)+'\')" style="display:flex;align-items:center;gap:4px;padding:2px 6px;cursor:pointer"><span>'+esc(r.split('/').pop())+'</span><span onclick="event.stopPropagation();removeWorkspaceFolder('+i+')" style="opacity:0.5;cursor:pointer">&times;</span></div>'
+  ).join('');
+}
+
+// Track workspace roots
+const _origLoadDir=loadDir;
+loadDir=function(dir){
+  _origLoadDir(dir);
+  if(dir&&!workspaceRoots.includes(dir)){
+    if(!workspaceRoots.length)workspaceRoots.push(dir);
+  }
+  renderWorkspaceRoots();
+};
+
+// ═══════════════════════════════════════════════════════
+// PR REVIEW (GitHub API Integration)
+// ═══════════════════════════════════════════════════════
+async function showPRReview(){
+  notif('PR Review: Use "gh pr list" in terminal to view pull requests. GitHub CLI integration coming soon.','info');
+  showBottom();setBpTab('terminal');
+}
+
+// ═══════════════════════════════════════════════════════
+// 2FA — TOTP Implementation
+// ═══════════════════════════════════════════════════════
+function generate2FASecret(){
+  const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let secret='';for(let i=0;i<16;i++)secret+=chars[Math.floor(Math.random()*chars.length)];
+  return secret;
+}
+
+async function setup2FA(){
+  const secret=generate2FASecret();
+  const email=localStorage.getItem('ax_email')||'user@axiom.dev';
+  const otpUrl='otpauth://totp/AXIOM:'+email+'?secret='+secret+'&issuer=AXIOM&digits=6&period=30';
+  localStorage.setItem('ax_2fa_secret',secret);
+  localStorage.setItem('ax_2fa_enabled','1');
+  notif('2FA enabled! Secret: '+secret+' — Add to your authenticator app','ok');
+  showBottom();setBpTab('output');
+  const out=document.getElementById('bp-output');
+  if(out){out.textContent='2FA Setup\n=========\nSecret: '+secret+'\nOTP URL: '+otpUrl+'\n\nAdd this to Google Authenticator, Authy, or similar.\nYou will need the 6-digit code on next login.';out.classList.add('on');}
+}
+
+// ═══════════════════════════════════════════════════════
+// INIT DEFERRED FEATURES
+// ═══════════════════════════════════════════════════════
+setTimeout(initLsp, 2000);
+setTimeout(loadPluginsFromDir, 3000);
+formatOnSave = localStorage.getItem('ax_format_on_save') === '1';
+
+// ═══════════════════════════════════════════════════════
+// DEBUG SESSION LAUNCHER
+// ═══════════════════════════════════════════════════════
+async function startDebugSession(lang){
+  if(!curDir||!activeFile){notif('Open a file to debug','warn');return;}
+  const r=await api('POST','/api/debug/start',{dir:curDir,lang:lang||getLangKey(tabs.find(t=>t.id===atab)?.name||''),file:activeFile});
+  if(r.error){notif('Debug: '+r.error,'err');return;}
+  notif('Debug session started (port '+r.port+'). ID: '+r.id,'ok');
+  showBottom();setBpTab('output');
+  const out=document.getElementById('bp-output');
+  if(out){out.textContent='Debug session: '+r.lang+'\nFile: '+activeFile+'\nPort: '+r.port+'\nSession ID: '+r.id+'\n\nWaiting for debugger...';out.classList.add('on');}
+  const poll=setInterval(async()=>{
+    const s=await api('POST','/api/debug/status',{id:r.id});
+    if(s.output&&out)out.textContent+='\n'+s.output;
+    if(s.exited){clearInterval(poll);notif('Debug session ended','info');}
+  },2000);
+}
+
+// ═══════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS FOR NEW FEATURES
+// ═══════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key === 'd') { e.preventDefault(); addCursorAtNextOccurrence(); return; }
+  if ((e.ctrlKey||e.metaKey) && e.altKey && e.key === 'ArrowUp') { e.preventDefault(); addCursorAbove(); return; }
+  if ((e.ctrlKey||e.metaKey) && e.altKey && e.key === 'ArrowDown') { e.preventDefault(); addCursorBelow(); return; }
+  if ((e.ctrlKey||e.metaKey) && e.shiftKey && e.key === 'F') { e.preventDefault(); lspFormat(); return; }
+  if (e.key === 'F12' && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); lspGoToDefinition(); return; }
+  if (e.key === 'F12' && e.shiftKey) { e.preventDefault(); lspFindReferences(); return; }
+  if (e.key === 'F2' && !e.ctrlKey) { e.preventDefault(); lspRename(); return; }
+  if ((e.ctrlKey||e.metaKey) && e.key === 'k' && !e.shiftKey) { e.preventDefault(); openInlineEdit(); return; }
+  // Multi-cursor input handler
+  if (handleMultiCursorInput(e)) return;
+});
+
+// ═══════════════════════════════════════════════════════
+// ADD ALL FEATURES TO COMMAND PALETTE
+// ═══════════════════════════════════════════════════════
+(function addV7Commands() {
+  try {
+    const extra = [
+      { ic: '⚡', n: 'Inline Edit (Ctrl+K)', k: 'Ctrl+K', fn: openInlineEdit },
+      { ic: '⎇', n: 'Toggle Git Blame', fn: toggleGitBlame },
+      { ic: '🤖', n: 'Toggle Agent Mode', fn: toggleAgentMode },
+      { ic: '🧪', n: 'Discover Tests', fn: discoverTests },
+      { ic: '🧪', n: 'Run All Tests', fn: runAllTests },
+      { ic: '🔀', n: 'Resolve Conflicts: Accept Current', fn: () => resolveConflict(0, 'current') },
+      { ic: '🔀', n: 'Resolve Conflicts: Accept Incoming', fn: () => resolveConflict(0, 'incoming') },
+      { ic: '🔀', n: 'Resolve Conflicts: Accept Both', fn: () => resolveConflict(0, 'both') },
+      { ic: '🔍', n: 'Go to Definition (LSP)', k: 'F12', fn: lspGoToDefinition },
+      { ic: '🔍', n: 'Find All References (LSP)', k: 'Shift+F12', fn: lspFindReferences },
+      { ic: '✏️', n: 'Rename Symbol (LSP)', k: 'F2', fn: lspRename },
+      { ic: '📝', n: 'Format Document', k: 'Ctrl+Shift+F', fn: lspFormat },
+      { ic: '💡', n: 'LSP Completion', fn: showLspCompletion },
+      { ic: '⊕', n: 'Add Cursor at Next Occurrence', k: 'Ctrl+D', fn: addCursorAtNextOccurrence },
+      { ic: '⊕', n: 'Add Cursor Above', k: 'Ctrl+Alt+Up', fn: addCursorAbove },
+      { ic: '⊕', n: 'Add Cursor Below', k: 'Ctrl+Alt+Down', fn: addCursorBelow },
+      { ic: '👥', n: 'Start Collaboration Session', fn: startCollabSession },
+      { ic: '👥', n: 'Stop Collaboration', fn: stopCollab },
+      { ic: '⚙️', n: 'Detect Tasks', fn: detectProjectTasks },
+      { ic: '✨', n: 'Toggle Format on Save', fn: toggleFormatOnSave },
+      { ic: '🍒', n: 'Git Cherry-Pick', fn: gitCherryPick },
+      { ic: '🏷', n: 'Git Create Tag', fn: gitCreateTag },
+      { ic: '🏷', n: 'Git List Tags', fn: gitListTags },
+      { ic: '🔄', n: 'Git Rebase', fn: () => gitRebase() },
+      { ic: '🔄', n: 'Git Rebase Continue', fn: () => gitRebase('continue') },
+      { ic: '🔄', n: 'Git Rebase Abort', fn: () => gitRebase('abort') },
+      { ic: '📁', n: 'Git Submodules', fn: gitSubmodules },
+      { ic: '🖥', n: 'New Terminal', fn: createNewTerminal },
+      { ic: '📂', n: 'Add Workspace Folder', fn: addWorkspaceFolder },
+      { ic: '🌐', n: 'Connect Remote (SSH)', fn: connectRemote },
+      { ic: '📋', n: 'PR Review', fn: showPRReview },
+      { ic: '🔐', n: 'Setup 2FA', fn: setup2FA },
+      { ic: '🐛', n: 'Debug Python File', fn: () => startDebugSession('python') },
+      { ic: '🐛', n: 'Debug Go File', fn: () => startDebugSession('go') },
+    ];
+    const _prev = buildPalCmds;
+    buildPalCmds = function() { _prev(); palCmds.push(...extra); };
+  } catch (e) { console.warn('addV7Commands:', e); }
+})();
 
 </script>
 
