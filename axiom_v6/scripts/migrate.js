@@ -92,6 +92,30 @@ async function freshMigrations(conn) {
     await runMigrations(conn);
 }
 
+async function rollback(conn) {
+    const executed = await getExecutedMigrations(conn);
+    if (!executed.length) { warn('Nothing to rollback.'); return; }
+    const last = executed[executed.length - 1];
+    warn(`Rolling back: ${last.filename}`);
+    const sqlFile = path.join(MIGRATIONS_DIR, last.filename);
+    if (!fs.existsSync(sqlFile)) { error(`Migration file not found: ${last.filename}`); process.exit(1); }
+    // For SQL migrations, we remove the record so it can be re-run
+    // For actual reversal, you'd need a corresponding down migration
+    const downFile = path.join(MIGRATIONS_DIR, last.filename.replace('.sql', '.down.sql'));
+    if (fs.existsSync(downFile)) {
+        const sql = fs.readFileSync(downFile, 'utf8').trim();
+        if (sql) {
+            log(`  Running rollback SQL: ${downFile}`);
+            try { await conn.query(sql); success(`  Rollback SQL executed.`); }
+            catch (e) { error(`Rollback SQL failed: ${e.message}`); }
+        }
+    } else {
+        warn(`  No .down.sql file found. Removing migration record only.`);
+    }
+    await conn.query(`DELETE FROM \`${MIGRATIONS_TABLE}\` WHERE filename = ?`, [last.filename]);
+    success(`Rolled back: ${last.filename}`);
+}
+
 async function main() {
     const command = process.argv[2] || 'run';
     console.log('\n  AXIOM v6 — Database Migration Runner\n  ' + '='.repeat(40));
@@ -103,6 +127,7 @@ async function main() {
         await ensureMigrationsTable(conn);
         if (command === '--status' || command === 'status') await showStatus(conn);
         else if (command === '--fresh' || command === 'fresh') await freshMigrations(conn);
+        else if (command === '--rollback' || command === 'rollback') await rollback(conn);
         else await runMigrations(conn);
     } finally { await conn.end(); }
     process.exit(0);

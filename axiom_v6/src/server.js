@@ -421,7 +421,7 @@ function detectTasks(dir){
   return tasks;
 }
 
-const PORT=5000,DATA=path.join(os.homedir(),'.axiom');
+const PORT=+(process.env.PORT||5000),DATA=process.env.AXIOM_DATA||path.join(os.homedir(),'.axiom');
 const MAX_BODY_SIZE=5*1024*1024;
 const KEY_FILE=path.join(DATA,'key'),MEM_FILE=path.join(DATA,'memory.json');
 const CFG_FILE=path.join(DATA,'config.json'),DB_FILE=path.join(DATA,'axiom.db');
@@ -443,7 +443,11 @@ function logWarn(msg,meta={}){logEntry('warn',msg,meta);}
 
 function auditLog(action,details,req){
   const entry=JSON.stringify({ts:new Date().toISOString(),action,details,ip:req?.socket?.remoteAddress,user:req?.headers?.['x-user-email']||'system'});
-  fs.appendFileSync(path.join(DATA,'audit.log'),entry+'\n');
+  try{fs.appendFileSync(path.join(DATA,'audit.log'),entry+'\n');}catch(e){}
+  // Also write to DB audit_log table
+  const now=new Date().toISOString().slice(0,19).replace('T',' ');
+  dbPool.query('INSERT INTO audit_log (user_id,action,resource,details,ip_address,created_at) VALUES (?,?,?,?,?,?)',
+    [null,action,details?.route||details?.path||'',JSON.stringify(details),req?.socket?.remoteAddress||'',now]).catch(()=>{});
 }
 
 // ── Atomic File Writes ──────────────────────────────────────────
@@ -488,7 +492,7 @@ const CFG=loadCfg();
 
 // ── Rate limiter ─────────────────────────────────────────────────
 const rl=new Map();
-function rateOk(ip){const n=Date.now(),b=rl.get(ip)||{c:0,r:n+60000};if(n>b.r){b.c=0;b.r=n+60000;}b.c++;rl.set(ip,b);return b.c<=400;}
+function rateOk(ip,req){const n=Date.now();const realIp=(req?.headers?.['x-forwarded-for']||'').split(',')[0].trim()||ip;const b=rl.get(realIp)||{c:0,r:n+60000};if(n>b.r){b.c=0;b.r=n+60000;}b.c++;rl.set(realIp,b);return b.c<=200;}
 let currencyCache=null;
 
 // ── Path sandbox ─────────────────────────────────────────────────
@@ -502,7 +506,9 @@ function isAdmin(req,data){
   try{const ud=JSON.parse(fs.readFileSync(path.join(os.homedir(),'.axiom','users.json'),'utf8'));return !!ud.users?.find(u=>u.email===email&&u.role==='admin');}catch(e){return false;}
 }
 
-function sanitizeGitArg(arg){return (arg||'').replace(/[;&|`$(){}]/g,'');}
+function sanitizeGitArg(arg){return (arg||'').replace(/[;&|`$(){}!#\n\r]/g,'');}
+
+function git(cwd,...args){return new Promise(resolve=>{const s=safe(cwd);if(!s)return resolve({ok:false,out:'Path not allowed'});const sanitized=args.map(a=>sanitizeGitArg(a));exec(`git -C "${s}" ${sanitized.join(' ')}`,{timeout:15000,env:{...process.env,GIT_TERMINAL_PROMPT:'0'}},(err,out,se)=>resolve({ok:!err,out:(out||'')+(se&&!out?se:''),err:err?.message||''}));});}
 
 // ── Plans ────────────────────────────────────────────────────────
 // Four subscription tiers. `price` is USD/month; `kes` is the KES/month
@@ -560,8 +566,9 @@ const DB={
   },
   async updateUser(id,p){
     try{
+      const ALLOWED_COLS=['name','email','plan','role','status','avatar_url','github_id','google_id','total_paid','total_cost','chat_count','tokens_in','tokens_out','last_seen'];
       const sets=[];const vals=[];
-      for(const [k,v] of Object.entries(p)){if(['id'].includes(k))continue;sets.push(k+'=?');vals.push(v);}
+      for(const [k,v] of Object.entries(p)){if(!ALLOWED_COLS.includes(k))continue;sets.push(k+'=?');vals.push(v);}
       if(!sets.length)return null;
       vals.push(id);
       await dbPool.query('UPDATE users SET '+sets.join(',')+' WHERE id=?',vals);
@@ -774,12 +781,12 @@ Always write production-ready code: error handling, types, imports, edge cases. 
 // ── Helpers ──────────────────────────────────────────────────────
 function getKey(k){if(k)return k;if(process.env.ANTHROPIC_API_KEY)return process.env.ANTHROPIC_API_KEY;try{return fs.readFileSync(KEY_FILE,'utf8').trim();}catch(e){return'';}}
 function parseBody(req){return new Promise(r=>{let b='';let size=0;req.on('data',c=>{size+=c.length;if(size>MAX_BODY_SIZE){req.destroy();return r({text:'',json:{},error:'Body too large'});}b+=c;});req.on('end',()=>{try{r({text:b,json:JSON.parse(b)});}catch(e){r({text:b,json:{}});}});});}
-function sendJson(res,data,status=200){const j=JSON.stringify(data);res.writeHead(status,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});res.end(j);}
-function cors(res){res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','Content-Type,X-Axiom-Token');res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,DELETE,PATCH,OPTIONS');res.setHeader('X-Content-Type-Options','nosniff');}
+function sendJson(res,data,status=200){const j=JSON.stringify(data);res.writeHead(status,{'Content-Type':'application/json'});res.end(j);}
+const CORS_ORIGIN=process.env.CORS_ORIGIN||'*';
+function cors(res){res.setHeader('Access-Control-Allow-Origin',process.env.NODE_ENV==='production'?CORS_ORIGIN:'*');res.setHeader('Access-Control-Allow-Headers','Content-Type,X-Axiom-Token,X-Token,X-User-Token,Authorization');res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,DELETE,PATCH,OPTIONS');res.setHeader('X-Content-Type-Options','nosniff');}
 const SKIP=['node_modules','.git','__pycache__','.axiom','dist','build','.next','.nuxt','coverage','.cache'];
 function listDir(dir){const s=safe(dir);if(!s)return[];try{return fs.readdirSync(s,{withFileTypes:true}).filter(e=>!SKIP.includes(e.name)).map(e=>{try{const fp=path.join(s,e.name),st=fs.statSync(fp);return{name:e.name,type:e.isDirectory()?'dir':'file',path:fp,size:st.size,mtime:st.mtime.toISOString(),ext:path.extname(e.name).slice(1)};}catch(e){return null;}}).filter(Boolean).sort((a,b)=>a.type===b.type?a.name.localeCompare(b.name):a.type==='dir'?-1:1);}catch(e){return[];}}
 function runCode(code,lang,stdin=''){return new Promise(resolve=>{const R={python:'python3',javascript:'node',bash:'bash',sh:'bash',ruby:'ruby'};const E={python:'.py',javascript:'.js',bash:'.sh',ruby:'.rb'};const runner=R[lang?.toLowerCase()];if(!runner)return resolve({output:`Language '${lang}' not supported`,error:true});const tmp=path.join(os.tmpdir(),`ax_${Date.now()}${E[lang.toLowerCase()]||'.py'}`);fs.writeFileSync(tmp,code,{mode:0o600});const p=spawn(runner,[tmp],{timeout:30000});let out='',err='';if(stdin){p.stdin.write(stdin);p.stdin.end();}p.stdout.on('data',d=>out+=d);p.stderr.on('data',d=>err+=d);p.on('close',code=>{try{fs.unlinkSync(tmp);}catch(e){}resolve({output:(out+(err?'\n'+err:'')).trim()||'(no output)',exitCode:code,error:code!==0});});p.on('error',e=>{try{fs.unlinkSync(tmp);}catch(x){}resolve({output:'Error: '+e.message,error:true});});});}
-function git(cwd,...args){return new Promise(resolve=>{const s=safe(cwd);if(!s)return resolve({ok:false,out:'Path not allowed'});exec(`git -C "${s}" ${args.join(' ')}`,{timeout:15000,env:{...process.env,GIT_TERMINAL_PROMPT:'0'}},(err,out,se)=>resolve({ok:!err,out:(out||'')+(se&&!out?se:''),err:err?.message||''}));});}
 
 // ════════════════════════════════════════════════════════════════
 // PURE-NODE WEBSOCKET TERMINAL — Real bash shell, no npm needed
@@ -925,6 +932,7 @@ function handleWsUpgrade(req,socket,path){
         env:{...process.env,TERM:'xterm-256color',COLORTERM:'truecolor',FORCE_COLOR:'1'},
         cwd
       });
+      const send=d=>{try{socket.write(encodeWsFrame(typeof d==='string'?d:d.toString()));}catch(e){}};
       shell.stdout.on('data',d=>send(d));
       shell.stderr.on('data',d=>send(d));
       shell.on('close',()=>{send('\r\n\x1b[31m[Process exited]\x1b[0m\r\n');try{socket.destroy();}catch(e){}});
@@ -1012,7 +1020,7 @@ const server=http.createServer(async(req,res)=>{
   setSecurityHeaders(res);
   const ip=req.socket.remoteAddress||'';
   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
-  if(!rateOk(ip)){res.writeHead(429);res.end(JSON.stringify({error:'Rate limited'}));return;}
+  if(!rateOk(ip,req)){res.writeHead(429);res.end(JSON.stringify({error:'Rate limited'}));return;}
   const parsed=urlMod.parse(req.url,true),route=parsed.pathname,q=parsed.query;
   const{text:rawBody,json:data}=['POST','PUT','PATCH','DELETE'].includes(req.method)?await parseBody(req):{text:'',json:{}};
 
@@ -1066,6 +1074,59 @@ const server=http.createServer(async(req,res)=>{
     settings.updated=new Date().toISOString();
     atomicWriteSync(SETTINGS_FILE,JSON.stringify(settings,null,2));
     return sendJson(res,{ok:true,settings});
+  }
+
+  // Extensions management
+  const EXT_FILE=path.join(DATA,'extensions.json');
+  if(route==='/api/extensions'&&req.method==='GET'){
+    try{return sendJson(res,JSON.parse(fs.readFileSync(EXT_FILE,'utf8')));}
+    catch(e){return sendJson(res,{installed:[],marketplace:[]});}
+  }
+  if(route==='/api/extensions'&&req.method==='POST'){
+    const ext={id:data.id||crypto.randomUUID(),name:data.name||'Extension',version:data.version||'1.0.0',enabled:true,installed:new Date().toISOString()};
+    let exts;try{exts=JSON.parse(fs.readFileSync(EXT_FILE,'utf8'));}catch(e){exts={installed:[]};}
+    if(!exts.installed)exts.installed=[];
+    if(exts.installed.find(e=>e.id===ext.id))return sendJson(res,{error:'Already installed'},409);
+    exts.installed.push(ext);
+    atomicWriteSync(EXT_FILE,JSON.stringify(exts,null,2));
+    return sendJson(res,{ok:true,extension:ext});
+  }
+  if(route.match(/^\/api\/extensions\/[^/]+$/)&&req.method==='PUT'){
+    const extId=route.split('/')[3];
+    let exts;try{exts=JSON.parse(fs.readFileSync(EXT_FILE,'utf8'));}catch(e){return sendJson(res,{error:'No extensions'},404);}
+    const idx=exts.installed?.findIndex(e=>e.id===extId);
+    if(idx===-1||idx===undefined)return sendJson(res,{error:'Not found'},404);
+    if(data.enabled!==undefined)exts.installed[idx].enabled=data.enabled;
+    atomicWriteSync(EXT_FILE,JSON.stringify(exts,null,2));
+    return sendJson(res,{ok:true,extension:exts.installed[idx]});
+  }
+  if(route.match(/^\/api\/extensions\/[^/]+$/)&&req.method==='DELETE'){
+    const extId=route.split('/')[3];
+    let exts;try{exts=JSON.parse(fs.readFileSync(EXT_FILE,'utf8'));}catch(e){return sendJson(res,{error:'No extensions'},404);}
+    exts.installed=(exts.installed||[]).filter(e=>e.id!==extId);
+    atomicWriteSync(EXT_FILE,JSON.stringify(exts,null,2));
+    return sendJson(res,{ok:true});
+  }
+
+  // Theme management
+  const THEMES_FILE=path.join(DATA,'themes.json');
+  if(route==='/api/themes'&&req.method==='GET'){
+    try{return sendJson(res,JSON.parse(fs.readFileSync(THEMES_FILE,'utf8')));}
+    catch(e){return sendJson(res,{custom:[],active:'dark'});}
+  }
+  if(route==='/api/themes'&&req.method==='POST'){
+    let themes;try{themes=JSON.parse(fs.readFileSync(THEMES_FILE,'utf8'));}catch(e){themes={custom:[],active:'dark'};}
+    if(!themes.custom)themes.custom=[];
+    const theme={id:data.id||crypto.randomUUID(),name:data.name||'Custom Theme',colors:data.colors||{},created:new Date().toISOString()};
+    themes.custom.push(theme);
+    atomicWriteSync(THEMES_FILE,JSON.stringify(themes,null,2));
+    return sendJson(res,{ok:true,theme});
+  }
+  if(route==='/api/themes/active'&&req.method==='PUT'){
+    let themes;try{themes=JSON.parse(fs.readFileSync(THEMES_FILE,'utf8'));}catch(e){themes={custom:[],active:'dark'};}
+    themes.active=data.theme||'dark';themes.updated=new Date().toISOString();
+    atomicWriteSync(THEMES_FILE,JSON.stringify(themes,null,2));
+    return sendJson(res,{ok:true,active:themes.active});
   }
 
   // Snippets
@@ -1336,7 +1397,7 @@ const server=http.createServer(async(req,res)=>{
     catch(e){return sendJson(res,{configured:false});}
   }
   if(route==='/api/billing/mpesa/config'&&req.method==='POST'){
-    const c={consumer_key:data.consumer_key,consumer_secret:data.consumer_secret,shortcode:data.shortcode||'174379',passkey:data.passkey,callback_url:data.callback_url||`http://localhost:${PORT}/api/billing/mpesa/callback`,env:data.env||'sandbox',updated:new Date().toISOString()};
+    const c={consumer_key:data.consumer_key,consumer_secret:data.consumer_secret,shortcode:data.shortcode||'174379',passkey:data.passkey,callback_url:data.callback_url||(process.env.NODE_ENV==='production'?`https://${req.headers.host}/api/billing/mpesa/callback`:`http://localhost:${PORT}/api/billing/mpesa/callback`),env:data.env||'sandbox',updated:new Date().toISOString()};
     atomicWriteSync(MPESA_FILE,JSON.stringify(c,null,2),{mode:0o600});
     return sendJson(res,{ok:true});
   }
@@ -1961,8 +2022,12 @@ function gracefulShutdown(signal){
   logInfo(`Received ${signal}, shutting down gracefully...`);
   server.close(()=>{
     logInfo('HTTP server closed');
-    if(wss)wss.clients.forEach(c=>c.terminate());
-    if(pool)pool.end(()=>logInfo('DB pool closed'));
+    // Close all terminal sessions
+    terminals.forEach((t,id)=>{try{if(t.shell)t.shell.kill();}catch(e){}});
+    // Close all file watchers
+    Object.keys(fileWatchers).forEach(d=>unwatchDirectory(d));
+    // Close DB pool
+    try{dbPool.end(()=>logInfo('DB pool closed'));}catch(e){}
     process.exit(0);
   });
   setTimeout(()=>{logWarn('Forced shutdown after timeout');process.exit(1);},10000);

@@ -20,8 +20,38 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - axiom-data:/home/axiom/.axiom
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/ping',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - axiom-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: axiom-migrate
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=${DB_USER:-root}
+      - DB_PASS=${DB_PASS:-axiom_secret}
+      - DB_NAME=${DB_NAME:-axiom}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: ["node", "scripts/migrate.js"]
     networks:
       - axiom-network
 
@@ -34,11 +64,10 @@ services:
       MYSQL_DATABASE: ${DB_NAME:-axiom}
       MYSQL_CHARACTER_SET_SERVER: utf8mb4
       MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
-    ports:
-      - "3306:3306"
+    expose:
+      - "3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASS:-axiom_secret}"]
       interval: 10s
@@ -47,6 +76,11 @@ services:
       start_period: 30s
     networks:
       - axiom-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
 
 volumes:
   mysql-data:

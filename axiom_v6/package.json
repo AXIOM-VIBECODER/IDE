@@ -8,7 +8,7 @@
     "dev": "node --watch src/server.js",
     "test": "node --test tests/",
     "migrate": "node scripts/migrate.js",
-    "lint": "echo 'No linter configured'"
+    "lint": "node -c src/server.js && node scripts/lint-check.js"
   },
   "keywords": ["ide", "web-ide", "editor", "terminal", "lsp", "dap", "ai", "east-africa"],
   "license": "MIT",

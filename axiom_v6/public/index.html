@@ -3456,6 +3456,28 @@ function applyModalSettings() {
   applyPrefs();
 }
 
+// ── Client-side Memory proxy (loads/saves via server API) ──
+const Mem = {
+  _d: null,
+  async _fetch() {
+    try { const r = await fetch('/api/memory', {headers:{'X-Axiom-Token':window.AX_TOKEN||TOK}}); this._d = await r.json(); }
+    catch(e) { this._d = {v:5,sessions:0,chats:0,lastSeen:null,identity:{},langs:[],bugs:[],insights:[],decisions:[],todos:[],facts:[],sessionNotes:[],bookmarks:[]}; }
+    return this._d;
+  },
+  load() {
+    if (this._d) return this._d;
+    // Synchronous fallback: return cached or defaults, trigger async refresh
+    this._d = JSON.parse(localStorage.getItem('ax_mem_cache') || 'null') || {v:5,sessions:0,chats:0,lastSeen:null,identity:{},langs:[],bugs:[],insights:[],decisions:[],todos:[],facts:[],sessionNotes:[],bookmarks:[]};
+    this._fetch().then(d => { this._d = d; localStorage.setItem('ax_mem_cache', JSON.stringify(d)); });
+    return this._d;
+  },
+  save() {
+    if (!this._d) return;
+    localStorage.setItem('ax_mem_cache', JSON.stringify(this._d));
+    fetch('/api/memory', {method:'PUT', headers:{'Content-Type':'application/json','X-Axiom-Token':window.AX_TOKEN||TOK}, body:JSON.stringify(this._d)}).catch(()=>{});
+  }
+};
+
 // MEMORY MODAL
 function loadModalMemory() {
   try {
@@ -6194,6 +6216,22 @@ async function swalPrompt(title, defaultVal='', opts={}) {
   });
   if (result.isConfirmed) return result.value;
   return null;
+}
+
+// ── SweetAlert2 Alert — replaces dialog popups for menus/lists ──
+function swalAlert(html, title='', opts={}) {
+  Swal.fire({
+    title,
+    html,
+    icon: opts.icon || undefined,
+    showConfirmButton: opts.showConfirm !== false,
+    confirmButtonText: opts.confirmText || 'OK',
+    confirmButtonColor: '#58a6ff',
+    background: '#1a1d23',
+    color: '#c9d1d9',
+    width: opts.width || '420px',
+    customClass: { popup: 'swal-axiom-popup', confirmButton: 'swal-axiom-btn' }
+  });
 }
 
 
@@ -9340,8 +9378,21 @@ function installAdditionalDebuggers(){
 }
 
 function installDebugAdapter(lang){
+  const cmds={python:'pip install debugpy',go:'go install github.com/go-delve/delve/cmd/dlv@latest',rust:'rustup component add lldb',cpp:'sudo apt-get install -y gdb || brew install gdb',java:'echo "Install JDT debug adapter manually"',ruby:'gem install debug'};
+  const cmd=cmds[lang];
+  if(!cmd){notif('No install command for '+lang,'warn');return;}
   notif('Installing '+lang+' debug adapter...','info');
-  setTimeout(()=>notif(lang+' debug adapter ready','ok'),1500);
+  // Run the install command in the terminal
+  const termId=Object.keys(terms)[0];
+  if(termId&&terms[termId]){
+    const ws=terms[termId].ws;
+    if(ws&&ws.readyState===1){ws.send(cmd+'\n');notif('Running: '+cmd,'ok');return;}
+  }
+  // Fallback: run via API
+  api('POST','/api/run',{code:cmd,lang:'bash'}).then(r=>{
+    if(r.error)notif('Install failed: '+(r.output||'unknown error'),'err');
+    else notif(lang+' debug adapter installed','ok');
+  });
 }
 
 // --- Terminal Menu Functions ---
