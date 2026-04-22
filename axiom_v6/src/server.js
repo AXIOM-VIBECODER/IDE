@@ -10,6 +10,18 @@ const {exec,spawn,execSync}=require('child_process');
 let pty;try{pty=require('node-pty');}catch(e){console.warn('node-pty not available, falling back to spawn');}
 const mysql=require('mysql2/promise');
 
+// ── Security Headers ────────────────────────────────────────────
+function setSecurityHeaders(res){
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.setHeader('X-Frame-Options','SAMEORIGIN');
+  res.setHeader('X-XSS-Protection','1; mode=block');
+  res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
+  if(process.env.NODE_ENV==='production'){
+    res.setHeader('Strict-Transport-Security','max-age=31536000; includeSubDomains');
+    res.setHeader('Content-Security-Policy',"default-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.anthropic.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' ws: wss: https://api.anthropic.com https://api.github.com https://oauth2.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net");
+  }
+}
+
 // ══════════════════════════════════════════════════════════════
 // LSP CLIENT — Language Server Protocol manager
 // ══════════════════════════════════════════════════════════════
@@ -348,10 +360,11 @@ async function dapEvaluate(sess,expression,frameId){
 // ══════════════════════════════════════════════════════════════
 // COLLABORATION — WebSocket rooms for real-time editing
 // ══════════════════════════════════════════════════════════════
-const collabRooms={};  // roomId -> { doc, users: [{socket,name,color,cursor}], version }
+const collabRooms={};  // roomId -> { doc, users: [{socket,name,color,cursor}], version, owner, token, created, file }
+const COLLAB_FILE=path.join(DATA,'collab_sessions.json');
 
 function getRoom(roomId){
-  if(!collabRooms[roomId])collabRooms[roomId]={doc:'',users:[],version:0,history:[]};
+  if(!collabRooms[roomId])collabRooms[roomId]={doc:'',users:[],version:0,history:[],created:Date.now(),owner:null,token:null,file:null,typing:new Set()};
   return collabRooms[roomId];
 }
 
@@ -361,6 +374,15 @@ function broadcastRoom(roomId,msg,excludeSocket){
   room.users.forEach(u=>{
     if(u.socket!==excludeSocket){try{u.socket.write(encodeWsFrame(data));}catch(e){}}
   });
+}
+
+function saveCollabSessions(){
+  const sessions=Object.entries(collabRooms).map(([id,r])=>({id,userCount:r.users.length,version:r.version,created:r.created,owner:r.owner,file:r.file,docLen:r.doc.length}));
+  try{atomicWriteSync(COLLAB_FILE,JSON.stringify(sessions,null,2));}catch(e){}
+}
+
+function listCollabRooms(){
+  return Object.entries(collabRooms).map(([id,r])=>({id,users:r.users.map(u=>({id:u.id,name:u.name,color:u.color})),version:r.version,created:r.created,owner:r.owner,file:r.file}));
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -400,24 +422,87 @@ function detectTasks(dir){
 }
 
 const PORT=5000,DATA=path.join(os.homedir(),'.axiom');
+const MAX_BODY_SIZE=5*1024*1024;
 const KEY_FILE=path.join(DATA,'key'),MEM_FILE=path.join(DATA,'memory.json');
 const CFG_FILE=path.join(DATA,'config.json'),DB_FILE=path.join(DATA,'axiom.db');
 const SNIP_FILE=path.join(DATA,'snippets.json');
 const CHATS_FILE=path.join(DATA,'chats.json');
+const SETTINGS_FILE=path.join(DATA,'settings.json');
 fs.mkdirSync(DATA,{recursive:true,mode:0o700});
+
+// ── Logging ─────────────────────────────────────────────────────
+const LOG_FILE=path.join(DATA,'axiom.log');
+function logEntry(level,msg,meta={}){
+  const entry=JSON.stringify({ts:new Date().toISOString(),level,msg,...meta});
+  try{fs.appendFileSync(LOG_FILE,entry+'\n');}catch(e){}
+  if(level==='error')console.error(`[${level}] ${msg}`);
+}
+function logError(msg,err,meta={}){logEntry('error',msg,{...meta,error:err?.message||String(err),stack:err?.stack?.split('\n').slice(0,3).join(' | ')});}
+function logInfo(msg,meta={}){logEntry('info',msg,meta);}
+function logWarn(msg,meta={}){logEntry('warn',msg,meta);}
+
+function auditLog(action,details,req){
+  const entry=JSON.stringify({ts:new Date().toISOString(),action,details,ip:req?.socket?.remoteAddress,user:req?.headers?.['x-user-email']||'system'});
+  fs.appendFileSync(path.join(DATA,'audit.log'),entry+'\n');
+}
+
+// ── Atomic File Writes ──────────────────────────────────────────
+function atomicWriteSync(filePath,data,options={}){
+  const tmpPath=filePath+'.tmp.'+Date.now();
+  try{
+    fs.writeFileSync(tmpPath,data,{mode:options.mode||0o600,...options});
+    fs.renameSync(tmpPath,filePath);
+  }catch(e){
+    try{fs.unlinkSync(tmpPath);}catch(x){}
+    throw e;
+  }
+}
+
+// ── File Watching ───────────────────────────────────────────────
+const fileWatchers={};
+function watchDirectory(dir){
+  if(fileWatchers[dir])return;
+  try{
+    fileWatchers[dir]=fs.watch(dir,{recursive:true},(event,filename)=>{
+      if(!filename)return;
+      const room=collabRooms[dir+'/'+filename];
+      if(room){
+        const fullPath=path.join(dir,filename);
+        try{
+          const content=fs.readFileSync(fullPath,'utf8');
+          room.users.forEach(u=>{try{u.socket.write(encodeWsFrame(JSON.stringify({type:'external_change',file:filename,content})));}catch(e){}});
+        }catch(e){}
+      }
+    });
+  }catch(e){logWarn('Cannot watch directory: '+dir,{error:e.message});}
+}
+function unwatchDirectory(dir){
+  if(fileWatchers[dir]){try{fileWatchers[dir].close();}catch(e){}delete fileWatchers[dir];}
+}
 
 // ── Config ──────────────────────────────────────────────────────
 function loadCfg(){try{return JSON.parse(fs.readFileSync(CFG_FILE,'utf8'));}catch(e){}
   const c={token:crypto.randomBytes(32).toString('hex'),created:new Date().toISOString()};
-  fs.writeFileSync(CFG_FILE,JSON.stringify(c,null,2),{mode:0o600});return c;}
+  atomicWriteSync(CFG_FILE,JSON.stringify(c,null,2),{mode:0o600});return c;}
 const CFG=loadCfg();
 
 // ── Rate limiter ─────────────────────────────────────────────────
 const rl=new Map();
 function rateOk(ip){const n=Date.now(),b=rl.get(ip)||{c:0,r:n+60000};if(n>b.r){b.c=0;b.r=n+60000;}b.c++;rl.set(ip,b);return b.c<=400;}
+let currencyCache=null;
 
 // ── Path sandbox ─────────────────────────────────────────────────
 function safe(p){if(!p)return null;const r=path.resolve((p+'').replace(/^~/,os.homedir()));return[os.homedir(),'/tmp'].some(b=>r.startsWith(path.resolve(b)))?r:null;}
+
+function isAdmin(req,data){
+  const token=req.headers['x-token']||req.headers.authorization?.replace('Bearer ','');
+  if(token===CFG.token)return true;
+  const email=data?.email||req.headers['x-user-email'];
+  if(!email)return false;
+  try{const ud=JSON.parse(fs.readFileSync(path.join(os.homedir(),'.axiom','users.json'),'utf8'));return !!ud.users?.find(u=>u.email===email&&u.role==='admin');}catch(e){return false;}
+}
+
+function sanitizeGitArg(arg){return (arg||'').replace(/[;&|`$(){}]/g,'');}
 
 // ── Plans ────────────────────────────────────────────────────────
 // Four subscription tiers. `price` is USD/month; `kes` is the KES/month
@@ -442,10 +527,12 @@ const PLANS={
 };
 
 // ── MySQL Database ───────────────────────────────────────────────
+const DB_PASS=process.env.DB_PASS;
+if(!DB_PASS&&process.env.NODE_ENV==='production'){console.error('FATAL: DB_PASS environment variable is required in production');process.exit(1);}
 const dbPool=mysql.createPool({
   host:process.env.DB_HOST||'localhost',
   user:process.env.DB_USER||'root',
-  password:process.env.DB_PASS||'Zawadi@18',
+  password:DB_PASS||'',
   database:process.env.DB_NAME||'axiom',
   waitForConnections:true,
   connectionLimit:10,
@@ -595,7 +682,7 @@ const DB={
 const Mem={
   _d:null,
   load(){if(this._d)return this._d;try{this._d=JSON.parse(fs.readFileSync(MEM_FILE,'utf8'));}catch(e){this._d={v:5,sessions:0,chats:0,lastSeen:null,identity:{},langs:[],bugs:[],insights:[],decisions:[],todos:[],facts:[],sessionNotes:[],bookmarks:[]};}return this._d;},
-  save(){if(this._d)fs.writeFileSync(MEM_FILE,JSON.stringify(this._d,null,2),{mode:0o600});},
+  save(){if(this._d)atomicWriteSync(MEM_FILE,JSON.stringify(this._d,null,2),{mode:0o600});},
   get(){return this.load();},patch(p){Object.assign(this.load(),p);this.save();return this._d;},
   addFact(f){const m=this.load();if(!m.facts.includes(f)){m.facts.unshift(f);m.facts=m.facts.slice(0,400);}this.save();},
   addBug(e,s,l){const m=this.load();m.bugs.unshift({e:e.slice(0,250),s:s.slice(0,200),l,d:new Date().toISOString()});m.bugs=m.bugs.slice(0,300);this.save();},
@@ -631,7 +718,7 @@ const Mem={
 // ── Snippets ─────────────────────────────────────────────────────
 const Snippets={
   load(){try{return JSON.parse(fs.readFileSync(SNIP_FILE,'utf8'));}catch(e){return[];}},
-  save(s){fs.writeFileSync(SNIP_FILE,JSON.stringify(s,null,2),{mode:0o600});},
+  save(s){atomicWriteSync(SNIP_FILE,JSON.stringify(s,null,2),{mode:0o600});},
   add(name,code,lang,desc){const s=this.load();s.unshift({id:crypto.randomUUID(),name,code,lang,desc,created:new Date().toISOString()});this.save(s.slice(0,200));},
   remove(id){this.save(this.load().filter(s=>s.id!==id));}
 };
@@ -639,7 +726,7 @@ const Snippets={
 // ── Chats ────────────────────────────────────────────────────────
 const Chats={
   load(){try{return JSON.parse(fs.readFileSync(CHATS_FILE,'utf8'));}catch(e){return[];}},
-  save(c){fs.writeFileSync(CHATS_FILE,JSON.stringify(c,null,2),{mode:0o600});},
+  save(c){atomicWriteSync(CHATS_FILE,JSON.stringify(c,null,2),{mode:0o600});},
   add(title,messages,lang){const c=this.load();const chat={id:crypto.randomUUID(),title:title.slice(0,120),messages,lang:lang||'',created:new Date().toISOString(),updated:new Date().toISOString()};c.unshift(chat);this.save(c.slice(0,200));return chat;},
   update(id,messages,title){const c=this.load();const i=c.findIndex(x=>x.id===id);if(i===-1)return null;if(messages)c[i].messages=messages;if(title)c[i].title=title;c[i].updated=new Date().toISOString();this.save(c);return c[i];},
   remove(id){const c=this.load().filter(x=>x.id!==id);this.save(c);},
@@ -686,7 +773,7 @@ Always write production-ready code: error handling, types, imports, edge cases. 
 
 // ── Helpers ──────────────────────────────────────────────────────
 function getKey(k){if(k)return k;if(process.env.ANTHROPIC_API_KEY)return process.env.ANTHROPIC_API_KEY;try{return fs.readFileSync(KEY_FILE,'utf8').trim();}catch(e){return'';}}
-function parseBody(req){return new Promise(r=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>{try{r({text:b,json:JSON.parse(b)});}catch(e){r({text:b,json:{}});}});});}
+function parseBody(req){return new Promise(r=>{let b='';let size=0;req.on('data',c=>{size+=c.length;if(size>MAX_BODY_SIZE){req.destroy();return r({text:'',json:{},error:'Body too large'});}b+=c;});req.on('end',()=>{try{r({text:b,json:JSON.parse(b)});}catch(e){r({text:b,json:{}});}});});}
 function sendJson(res,data,status=200){const j=JSON.stringify(data);res.writeHead(status,{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});res.end(j);}
 function cors(res){res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','Content-Type,X-Axiom-Token');res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,DELETE,PATCH,OPTIONS');res.setHeader('X-Content-Type-Options','nosniff');}
 const SKIP=['node_modules','.git','__pycache__','.axiom','dist','build','.next','.nuxt','coverage','.cache'];
@@ -885,13 +972,22 @@ function handleWsUpgrade(req,socket,path){
               room.doc=msg.content;room.version++;
               room.history.push({user:user.name,ts:Date.now(),len:msg.content.length});
               if(room.history.length>100)room.history=room.history.slice(-50);
+              if(room.typing.has(user.id))room.typing.delete(user.id);
               broadcastRoom(roomId,{type:'edit',content:msg.content,version:room.version,userId:user.id},socket);
+              saveCollabSessions();
             }else if(msg.type==='cursor'){
               user.cursor=msg.cursor||{line:0,character:0};
               user.selection=msg.selection||null;
               broadcastRoom(roomId,{type:'cursor',userId:user.id,cursor:user.cursor,selection:user.selection,name:user.name,color:user.color},socket);
+            }else if(msg.type==='typing'){
+              room.typing.add(user.id);
+              broadcastRoom(roomId,{type:'typing',userId:user.id,name:user.name},socket);
+              setTimeout(()=>{room.typing.delete(user.id);},3000);
             }else if(msg.type==='chat'){
               broadcastRoom(roomId,{type:'chat',userId:user.id,name:user.name,text:msg.text,ts:Date.now()});
+            }else if(msg.type==='file_info'){
+              room.file=msg.file||null;
+              broadcastRoom(roomId,{type:'file_info',file:room.file,userId:user.id},socket);
             }
           }catch(e){}
         }
@@ -913,6 +1009,7 @@ function handleWsUpgrade(req,socket,path){
 // ── HTTP Server ──────────────────────────────────────────────────
 const server=http.createServer(async(req,res)=>{
   cors(res);
+  setSecurityHeaders(res);
   const ip=req.socket.remoteAddress||'';
   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
   if(!rateOk(ip)){res.writeHead(429);res.end(JSON.stringify({error:'Rate limited'}));return;}
@@ -940,13 +1037,13 @@ const server=http.createServer(async(req,res)=>{
   }
 
   // System
-  if(route==='/api/ping'){const tok=req.headers['x-axiom-token'];return sendJson(res,{ok:true,v:'6.0',ws_terminal:true,auth:tok===CFG.token,token:CFG.token});}
+  if(route==='/api/ping'){const tok=req.headers['x-axiom-token'];return sendJson(res,{ok:true,v:'6.0',ws_terminal:true,auth:tok===CFG.token});}
   if(route==='/api/token'&&req.method==='POST')return sendJson(res,{ok:data.token===CFG.token});
   if(route==='/api/plans')return sendJson(res,{plans:PLANS});
 
   // API key
   if(route==='/api/key'&&req.method==='GET'){const k=getKey();return sendJson(res,{hasKey:!!k,masked:k?k.slice(0,14)+'••••':''});}
-  if(route==='/api/key'&&req.method==='POST'){if(!(data.key||'').startsWith('sk-ant-'))return sendJson(res,{error:'Invalid key'},400);fs.writeFileSync(KEY_FILE,data.key,{mode:0o600});return sendJson(res,{ok:true});}
+  if(route==='/api/key'&&req.method==='POST'){if(!(data.key||'').startsWith('sk-ant-'))return sendJson(res,{error:'Invalid key'},400);atomicWriteSync(KEY_FILE,data.key,{mode:0o600});return sendJson(res,{ok:true});}
 
   // Memory
   if(route==='/api/memory'){if(req.method==='GET')return sendJson(res,Mem.load());if(req.method==='PUT'){Mem.patch(data);return sendJson(res,{ok:true,memory:Mem.load()});}if(req.method==='DELETE'){Mem.clear();return sendJson(res,{ok:true});}}
@@ -958,6 +1055,19 @@ const server=http.createServer(async(req,res)=>{
   if(route==='/api/session/start'&&req.method==='POST'){const m=Mem.startSession();return sendJson(res,{memory:m,sessions:m.sessions});}
   if(route==='/api/session/end'&&req.method==='POST'){if(data.s){const m=Mem.load();m.sessionNotes.unshift({s:data.s,d:new Date().toISOString()});m.sessionNotes=m.sessionNotes.slice(0,50);Mem.save();}return sendJson(res,{ok:true});}
 
+  // Settings persistence
+  if(route==='/api/settings'&&req.method==='GET'){
+    try{return sendJson(res,JSON.parse(fs.readFileSync(SETTINGS_FILE,'utf8')));}
+    catch(e){return sendJson(res,{theme:'dark',fontSize:14,tabSize:2,wordWrap:true,minimap:true,autoSave:false,formatOnSave:false,bracketPairColorization:true});}
+  }
+  if(route==='/api/settings'&&req.method==='PUT'){
+    const allowed=['theme','fontSize','tabSize','wordWrap','minimap','autoSave','formatOnSave','bracketPairColorization','fontFamily','lineHeight','cursorStyle','renderWhitespace','scrollBeyondLastLine'];
+    const settings={};allowed.forEach(k=>{if(data[k]!==undefined)settings[k]=data[k];});
+    settings.updated=new Date().toISOString();
+    atomicWriteSync(SETTINGS_FILE,JSON.stringify(settings,null,2));
+    return sendJson(res,{ok:true,settings});
+  }
+
   // Snippets
   if(route==='/api/snippets'&&req.method==='GET')return sendJson(res,Snippets.load());
   if(route==='/api/snippets'&&req.method==='POST'){Snippets.add(data.name||'Untitled',data.code||'',data.lang||'',data.desc||'');return sendJson(res,{ok:true,snippets:Snippets.load()});}
@@ -966,8 +1076,8 @@ const server=http.createServer(async(req,res)=>{
   // Files
   if(route==='/api/files'&&req.method==='GET'){const d=safe(q.path||os.homedir());if(!d)return sendJson(res,{error:'Not allowed'},403);return sendJson(res,{entries:listDir(d),current:d,home:os.homedir()});}
   if(route==='/api/file'&&req.method==='GET'){const s=safe(q.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{const st=fs.statSync(s);if(st.size>5*1024*1024)return sendJson(res,{error:'File too large'},400);return sendJson(res,{content:fs.readFileSync(s,'utf8'),path:s});}catch(e){return sendJson(res,{error:e.message},400);}}
-  if(route==='/api/file'&&req.method==='POST'){const s=safe(data.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{fs.mkdirSync(path.dirname(s),{recursive:true});fs.writeFileSync(s,data.content??'');return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
-  if(route==='/api/file'&&req.method==='DELETE'){const s=safe(data.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{fs.unlinkSync(s);return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
+  if(route==='/api/file'&&req.method==='POST'){const s=safe(data.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{fs.mkdirSync(path.dirname(s),{recursive:true});fs.writeFileSync(s,data.content??'');auditLog('file_write',{path:data.path},req);return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
+  if(route==='/api/file'&&req.method==='DELETE'){const s=safe(data.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{fs.unlinkSync(s);auditLog('file_delete',{path:data.path},req);return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
   if(route==='/api/mkdir'&&req.method==='POST'){const s=safe(data.path);if(!s)return sendJson(res,{error:'Not allowed'},403);try{fs.mkdirSync(s,{recursive:true});return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
   if(route==='/api/rename'&&req.method==='POST'){const a=safe(data.from),b=safe(data.to);if(!a||!b)return sendJson(res,{error:'Not allowed'},403);try{fs.renameSync(a,b);return sendJson(res,{ok:true});}catch(e){return sendJson(res,{error:e.message},400);}}
 
@@ -1038,7 +1148,9 @@ const server=http.createServer(async(req,res)=>{
     apiReq.on('error',()=>{try{res.end();}catch(x){}});apiReq.write(rb);apiReq.end();return;
   }
 
-  // Admin routes
+  // Admin routes — RBAC check
+  if(route.startsWith('/api/admin')&&!isAdmin(req,data))return sendJson(res,{error:'Forbidden: admin role required'},403);
+  if(route.startsWith('/api/admin'))auditLog('admin_access',{route},req);
   if(route==='/api/admin/analytics'&&req.method==='GET')return sendJson(res,await DB.getAnalytics());
   if(route==='/api/admin/users'&&req.method==='GET'){const users=await DB.getUsers({plan:q.plan,search:q.search});return sendJson(res,{users,total:users.length});}
   if(route==='/api/admin/users'&&req.method==='POST'){const u=await DB.createUser({name:data.name,email:data.email,plan:data.plan||'free'});if(u.error)return sendJson(res,u,409);return sendJson(res,{user:u});}
@@ -1116,6 +1228,7 @@ const server=http.createServer(async(req,res)=>{
     if(!data.email||!data.password||data.password.length<6)return sendJson(res,{error:'Email and password (6+ chars) required'},400);
     const r=UsersDB.register(data.name||'User',data.email,data.password,data.plan||'free');
     if(r.error)return sendJson(res,r,409);
+    auditLog('user_register',{email:data.email},req);
     return sendJson(res,r);
   }
   if(route==='/api/auth/login'&&req.method==='POST'){
@@ -1224,7 +1337,7 @@ const server=http.createServer(async(req,res)=>{
   }
   if(route==='/api/billing/mpesa/config'&&req.method==='POST'){
     const c={consumer_key:data.consumer_key,consumer_secret:data.consumer_secret,shortcode:data.shortcode||'174379',passkey:data.passkey,callback_url:data.callback_url||`http://localhost:${PORT}/api/billing/mpesa/callback`,env:data.env||'sandbox',updated:new Date().toISOString()};
-    fs.writeFileSync(MPESA_FILE,JSON.stringify(c,null,2),{mode:0o600});
+    atomicWriteSync(MPESA_FILE,JSON.stringify(c,null,2),{mode:0o600});
     return sendJson(res,{ok:true});
   }
   if(route==='/api/billing/mpesa/stk-push'&&req.method==='POST'){
@@ -1248,7 +1361,7 @@ const server=http.createServer(async(req,res)=>{
   }
   if(route==='/api/billing/mpesa/callback'&&req.method==='POST'){
     const cb=data.Body?.stkCallback;
-    if(cb){const items=cb.CallbackMetadata?.Item||[];const txn={CheckoutRequestID:cb.CheckoutRequestID,ResultCode:cb.ResultCode,ResultDesc:cb.ResultDesc};items.forEach(i=>{txn[i.Name]=i.Value;});const mpLog=path.join(DATA,'mpesa_transactions.json');let txns=[];try{txns=JSON.parse(fs.readFileSync(mpLog,'utf8'));}catch(e){}txns.unshift({...txn,received:new Date().toISOString()});fs.writeFileSync(mpLog,JSON.stringify(txns.slice(0,500),null,2),{mode:0o600});
+    if(cb){const items=cb.CallbackMetadata?.Item||[];const txn={CheckoutRequestID:cb.CheckoutRequestID,ResultCode:cb.ResultCode,ResultDesc:cb.ResultDesc};items.forEach(i=>{txn[i.Name]=i.Value;});const mpLog=path.join(DATA,'mpesa_transactions.json');let txns=[];try{txns=JSON.parse(fs.readFileSync(mpLog,'utf8'));}catch(e){}txns.unshift({...txn,received:new Date().toISOString()});atomicWriteSync(mpLog,JSON.stringify(txns.slice(0,500),null,2),{mode:0o600});
     if(cb.ResultCode===0&&txn.Amount){await DB.recordPayment({user_id:'mpesa',email:txn.PhoneNumber||'',name:'M-Pesa',plan:'pro',amount:txn.Amount/130,status:'succeeded',type:'mpesa',mpesa_receipt:txn.MpesaReceiptNumber});}
     }return sendJson(res,{ok:true});
   }
@@ -1258,9 +1371,31 @@ const server=http.createServer(async(req,res)=>{
     catch(e){return sendJson(res,{transactions:[]});}
   }
 
-  // Currency conversion (approximate rates)
+  // Collaboration management API
+  if(route==='/api/collab/rooms'&&req.method==='GET')return sendJson(res,{rooms:listCollabRooms()});
+  if(route==='/api/collab/room'&&req.method==='POST'){
+    const roomId=data.roomId||crypto.randomUUID();
+    const room=getRoom(roomId);
+    room.owner=data.owner||'anonymous';room.file=data.file||null;
+    if(data.doc!==undefined)room.doc=data.doc;
+    saveCollabSessions();
+    return sendJson(res,{roomId,version:room.version,users:room.users.length});
+  }
+
+  // Currency conversion (live rates with fallback)
   if(route==='/api/currency'&&req.method==='GET'){
-    return sendJson(res,{rates:{KES:130,TZS:2650,UGX:3800,RWF:1300,ETB:57},base:'USD'});
+    if(currencyCache&&currencyCache.ts>Date.now()-3600000)return sendJson(res,currencyCache.data);
+    const fallback={rates:{KES:130,TZS:2650,UGX:3800,RWF:1300,ETB:57,NGN:1550,GHS:15,ZAR:18},base:'USD',cached:true};
+    try{
+      const resp=await new Promise((resolve,reject)=>{
+        const r=https.get('https://open.er-api.com/v6/latest/USD',{timeout:5000},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>resolve(JSON.parse(d)));});
+        r.on('error',reject);r.on('timeout',()=>{r.destroy();reject(new Error('timeout'));});
+      });
+      if(resp.rates){const picked={};['KES','TZS','UGX','RWF','ETB','NGN','GHS','ZAR','EUR','GBP','INR','JPY','CNY'].forEach(c=>{if(resp.rates[c])picked[c]=resp.rates[c];});
+      const result={rates:picked,base:'USD',updated:resp.time_last_update_utc||new Date().toISOString()};
+      currencyCache={ts:Date.now(),data:result};return sendJson(res,result);}
+      return sendJson(res,fallback);
+    }catch(e){return sendJson(res,fallback);}
   }
 
   // Format code
@@ -1316,7 +1451,7 @@ const server=http.createServer(async(req,res)=>{
     const dir=safe(data.dir);const file=safe(data.file);
     if(!dir||!file)return sendJson(res,{error:'Not allowed'},403);
     return new Promise(resolve=>{
-      exec(`cd "${dir}" && git blame --porcelain "${file.replace(dir+'/','')}" 2>/dev/null`,{maxBuffer:1024*1024},(err,stdout)=>{
+      exec(`cd "${dir}" && git blame --porcelain "${sanitizeGitArg(file.replace(dir+'/',''))}" 2>/dev/null`,{maxBuffer:1024*1024},(err,stdout)=>{
         if(err)return resolve(sendJson(res,{error:'Not a git file',lines:[]}));
         const lines=[],raw=stdout.split('\n');let cur={};
         for(const line of raw){
@@ -1337,7 +1472,7 @@ const server=http.createServer(async(req,res)=>{
     const dir=safe(data.dir);const file=safe(data.file);
     if(!dir||!file)return sendJson(res,{error:'Not allowed'},403);
     return new Promise(resolve=>{
-      exec(`cd "${dir}" && git diff --unified=0 "${file.replace(dir+'/','')}" 2>/dev/null`,{maxBuffer:512*1024},(err,stdout)=>{
+      exec(`cd "${dir}" && git diff --unified=0 "${sanitizeGitArg(file.replace(dir+'/',''))}" 2>/dev/null`,{maxBuffer:512*1024},(err,stdout)=>{
         if(err)return resolve(sendJson(res,{changes:[]}));
         const changes=[];
         for(const line of stdout.split('\n')){
@@ -1821,6 +1956,22 @@ server.on('upgrade',(req,socket,head)=>{
   }
 });
 
+// ── Graceful Shutdown ────────────────────────────────────────────
+function gracefulShutdown(signal){
+  logInfo(`Received ${signal}, shutting down gracefully...`);
+  server.close(()=>{
+    logInfo('HTTP server closed');
+    if(wss)wss.clients.forEach(c=>c.terminate());
+    if(pool)pool.end(()=>logInfo('DB pool closed'));
+    process.exit(0);
+  });
+  setTimeout(()=>{logWarn('Forced shutdown after timeout');process.exit(1);},10000);
+}
+process.on('SIGTERM',()=>gracefulShutdown('SIGTERM'));
+process.on('SIGINT',()=>gracefulShutdown('SIGINT'));
+process.on('uncaughtException',(err)=>{logError('Uncaught exception: '+err.stack);process.exit(1);});
+process.on('unhandledRejection',(reason)=>{logError('Unhandled rejection: '+reason);});
+
 // ── Start ────────────────────────────────────────────────────────
 server.listen(PORT,'127.0.0.1',async ()=>{
   await DB.seedDemo();const mem=Mem.startSession();const hasKey=!!getKey();
@@ -1864,7 +2015,7 @@ function verifyJWT(tok){
 
 const UsersDB={
   load(){try{return JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));}catch(e){return{users:[]}}},
-  save(d){fs.mkdirSync(path.dirname(USERS_FILE),{recursive:true});fs.writeFileSync(USERS_FILE,JSON.stringify(d,null,2));},
+  save(d){fs.mkdirSync(path.dirname(USERS_FILE),{recursive:true});atomicWriteSync(USERS_FILE,JSON.stringify(d,null,2));},
   register(name,email,pw,plan='free'){
     const d=this.load();
     if(d.users.find(u=>u.email.toLowerCase()===email.toLowerCase()))return{error:'Email already registered'};

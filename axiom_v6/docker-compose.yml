@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  axiom:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: axiom-ide
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=${DB_USER:-root}
+      - DB_PASS=${DB_PASS:-axiom_secret}
+      - DB_NAME=${DB_NAME:-axiom}
+      - NODE_ENV=${NODE_ENV:-production}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - axiom-data:/home/axiom/.axiom
+    networks:
+      - axiom-network
+
+  mysql:
+    image: mysql:8
+    container_name: axiom-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASS:-axiom_secret}
+      MYSQL_DATABASE: ${DB_NAME:-axiom}
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASS:-axiom_secret}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - axiom-network
+
+volumes:
+  mysql-data:
+    driver: local
+  axiom-data:
+    driver: local
+
+networks:
+  axiom-network:
+    driver: bridge

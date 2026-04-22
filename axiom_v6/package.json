@@ -1,4 +1,20 @@
 {
+  "name": "axiom-ide",
+  "version": "6.0.0",
+  "description": "AXIOM v6 - East Africa Edition Web IDE",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test tests/",
+    "migrate": "node scripts/migrate.js",
+    "lint": "echo 'No linter configured'"
+  },
+  "keywords": ["ide", "web-ide", "editor", "terminal", "lsp", "dap", "ai", "east-africa"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "mysql2": "^3.22.1",
     "node-pty": "^1.1.0",

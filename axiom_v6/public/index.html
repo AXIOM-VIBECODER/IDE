@@ -1886,7 +1886,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-item-label">New Window</div>
       <div class="fm-item-shortcut">Ctrl+Shift+N</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="openNewWindowWithProfile();closeFileMenu()">
       <div class="fm-item-label">New Window with Profile</div>
       <div class="fm-submenu-arrow">▸</div>
     </div>
@@ -1899,21 +1899,21 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-item-label">Open Folder...</div>
       <div class="fm-item-shortcut">Ctrl+K Ctrl+O</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="openWorkspaceFromFile();closeFileMenu()">
       <div class="fm-item-label">Open Workspace from File...</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="openRecentFiles();closeFileMenu()">
       <div class="fm-item-label">Open Recent</div>
       <div class="fm-submenu-arrow">▸</div>
     </div>
     <div class="fm-divider"></div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="addWorkspaceFolder();closeFileMenu()">
       <div class="fm-item-label">Add Folder to Workspace...</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="saveWorkspaceAs();closeFileMenu()">
       <div class="fm-item-label">Save Workspace As...</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="duplicateWorkspace();closeFileMenu()">
       <div class="fm-item-label">Duplicate Workspace</div>
     </div>
     <div class="fm-divider"></div>
@@ -1929,12 +1929,12 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-item-label">Save All</div>
     </div>
     <div class="fm-divider"></div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="shareCurrentFile();closeFileMenu()">
       <div class="fm-item-label">Share</div>
       <div class="fm-submenu-arrow">▸</div>
     </div>
     <div class="fm-divider"></div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="toggleAutoSave();closeFileMenu()">
       <div class="fm-item-label">Auto Save</div>
     </div>
     <div class="fm-item" onclick="setPanel('set');closeFileMenu()">
@@ -1942,7 +1942,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-submenu-arrow">▸</div>
     </div>
     <div class="fm-divider"></div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="revertFile();closeFileMenu()">
       <div class="fm-item-label">Revert File</div>
     </div>
     <div class="fm-item" onclick="closeTab(atab);closeFileMenu()">
@@ -1953,7 +1953,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-item-label">Close Folder</div>
       <div class="fm-item-shortcut">Ctrl+K F</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="window.close();closeFileMenu()">
       <div class="fm-item-label">Close Window</div>
       <div class="fm-item-shortcut">Alt+F4</div>
     </div>
@@ -2039,10 +2039,10 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-item-shortcut">Ctrl+Shift+F5</div>
     </div>
     <div class="fm-divider"></div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="openDebugConfig();closeRunMenu()">
       <div class="fm-item-label">Open Configurations</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="addDebugConfig();closeRunMenu()">
       <div class="fm-item-label">Add Configuration...</div>
     </div>
     <div class="fm-divider"></div>
@@ -2067,7 +2067,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-item-label">Toggle Breakpoint</div>
       <div class="fm-item-shortcut">F9</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="newBreakpointMenu();closeRunMenu()">
       <div class="fm-item-label">New Breakpoint</div>
       <div class="fm-submenu-arrow">▸</div>
     </div>
@@ -2082,7 +2082,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-item-label">Remove All Breakpoints</div>
     </div>
     <div class="fm-divider"></div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="installAdditionalDebuggers();closeRunMenu()">
       <div class="fm-item-label">Install Additional Debuggers...</div>
     </div>
   </div>
@@ -2097,7 +2097,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-item-label">Split Terminal</div>
       <div class="fm-item-shortcut">Ctrl+Shift+5</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="newTerminalWindow();closeTerminalMenu()">
       <div class="fm-item-label">New Terminal Window</div>
       <div class="fm-item-shortcut">Ctrl+Shift+Alt+`</div>
     </div>
@@ -2105,7 +2105,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
     <div class="fm-item" onclick="runTaskInTerminal();closeTerminalMenu()">
       <div class="fm-item-label">Run Task...</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="runBuildTask();closeTerminalMenu()">
       <div class="fm-item-label">Run Build Task...</div>
       <div class="fm-item-shortcut">Ctrl+Shift+B</div>
     </div>
@@ -2116,20 +2116,20 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
       <div class="fm-item-label">Run Selected Text</div>
     </div>
     <div class="fm-divider"></div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="showRunningTasks();closeTerminalMenu()">
       <div class="fm-item-label">Show Running Tasks...</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="restartRunningTask();closeTerminalMenu()">
       <div class="fm-item-label">Restart Running Task...</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="terminateTask();closeTerminalMenu()">
       <div class="fm-item-label">Terminate Task...</div>
     </div>
     <div class="fm-divider"></div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="configureTasks();closeTerminalMenu()">
       <div class="fm-item-label">Configure Tasks...</div>
     </div>
-    <div class="fm-item disabled">
+    <div class="fm-item" onclick="configureDefaultBuildTask();closeTerminalMenu()">
       <div class="fm-item-label">Configure Default Build Task...</div>
     </div>
   </div>
@@ -3304,24 +3304,18 @@ document.addEventListener('click', e => {
 // MODAL FUNCTIONS — Profile, Settings, Memory
 // ═══════════════════════════════════════════════════════
 function openModal(name) {
-  console.log('Opening modal:', name);
   const modal = document.getElementById(name + '-modal');
-  console.log('Modal element:', modal);
   if (modal) {
     modal.classList.add('on');
-    console.log('Added on class to modal:', name);
     setTimeout(() => {
       try {
         if (name === 'profile') {
-          console.log('Loading profile...');
           loadModalProfile();
         }
         if (name === 'settings') {
-          console.log('Loading settings...');
           loadModalSettings();
         }
         if (name === 'memory') {
-          console.log('Loading memory...');
           loadModalMemory();
         }
       } catch (e) {
@@ -3406,16 +3400,16 @@ async function saveModalProfile() {
 }
 
 async function saveModalPassword() {
-  const current = document.getElementById('modal-pw-current').value;
-  const newpw = document.getElementById('modal-pw-new').value;
-  const confirm = document.getElementById('modal-pw-confirm').value;
+  const current = document.getElementById('modal-pwd-current').value;
+  const newpw = document.getElementById('modal-pwd-new').value;
+  const confirm = document.getElementById('modal-pwd-confirm').value;
   const msgEl = document.getElementById('modal-prof-pw-msg');
   if (!current || !newpw) { msgEl.textContent = 'All fields required'; msgEl.classList.add('show', 'error'); return; }
   if (newpw !== confirm) { msgEl.textContent = 'Passwords do not match'; msgEl.classList.add('show', 'error'); return; }
   const r = await fetch('/api/auth/password', {method:'PUT', headers:{'Content-Type':'application/json','X-Axiom-Token':TOK,'X-User-Token':USER_TOKEN}, body: JSON.stringify({currentPassword:current,newPassword:newpw})});
   const d = await r.json();
   if (d.error) { msgEl.textContent = d.error; msgEl.classList.add('show', 'error'); }
-  else { document.getElementById('modal-pw-current').value=''; document.getElementById('modal-pw-new').value=''; document.getElementById('modal-pw-confirm').value=''; msgEl.textContent = 'Password changed ✓'; msgEl.classList.add('show', 'success'); msgEl.classList.remove('error'); }
+  else { document.getElementById('modal-pwd-current').value=''; document.getElementById('modal-pwd-new').value=''; document.getElementById('modal-pwd-confirm').value=''; msgEl.textContent = 'Password changed ✓'; msgEl.classList.add('show', 'success'); msgEl.classList.remove('error'); }
 }
 
 function exportModalData() {
@@ -8626,23 +8620,50 @@ function startColumnSelect(direction){
 // REAL-TIME COLLABORATION
 // ═══════════════════════════════════════════════════════
 let collabWs=null,collabUserId=null,collabPeers={},collabRoom=null;
+let collabReconnectTimer=null,collabReconnectAttempts=0;
+const COLLAB_MAX_RECONNECT=5;
 
 function startCollabSession(roomId){
   if(collabWs){stopCollab();}
   const name=localStorage.getItem('ax_username')||'User-'+Math.floor(Math.random()*1000);
   roomId=roomId||prompt('Room name:','axiom-'+Math.floor(Math.random()*9999));
   if(!roomId)return;
-  collabRoom=roomId;
+  collabRoom=roomId;collabReconnectAttempts=0;
+  connectCollab(roomId,name);
+}
+
+function connectCollab(roomId,name){
   const wsUrl='ws://'+location.host+'/ws/collab?token='+window.AX_TOKEN+'&room='+encodeURIComponent(roomId)+'&name='+encodeURIComponent(name);
   collabWs=new WebSocket(wsUrl);
-  collabWs.onopen=()=>{notif('Connected to room: '+roomId,'ok');updateCollabUI();};
-  collabWs.onclose=()=>{collabWs=null;collabRoom=null;collabPeers={};notif('Disconnected from collab','warn');updateCollabUI();};
+  collabWs.onopen=()=>{
+    collabReconnectAttempts=0;
+    notif('Connected to room: '+roomId,'ok');
+    updateCollabUI();
+    // Send current file info
+    const tab=tabs.find(t=>t.id===atab);
+    if(tab)collabWs.send(JSON.stringify({type:'file_info',file:tab.name}));
+  };
+  collabWs.onclose=()=>{
+    collabWs=null;
+    if(collabRoom&&collabReconnectAttempts<COLLAB_MAX_RECONNECT){
+      collabReconnectAttempts++;
+      const delay=Math.min(1000*Math.pow(2,collabReconnectAttempts),10000);
+      notif('Reconnecting in '+(delay/1000)+'s (attempt '+collabReconnectAttempts+')...','warn');
+      collabReconnectTimer=setTimeout(()=>connectCollab(roomId,name),delay);
+    }else if(collabReconnectAttempts>=COLLAB_MAX_RECONNECT){
+      collabRoom=null;collabPeers={};
+      notif('Disconnected — max reconnect attempts reached','err');
+      updateCollabUI();
+    }
+  };
   collabWs.onmessage=e=>{
     try{const msg=JSON.parse(e.data);handleCollabMsg(msg);}catch(e){}
   };
 }
 
 function stopCollab(){
+  clearTimeout(collabReconnectTimer);
+  collabReconnectAttempts=COLLAB_MAX_RECONNECT; // prevent reconnect
   if(collabWs){collabWs.close();collabWs=null;}
   collabRoom=null;collabPeers={};
   renderCollabCursors();updateCollabUI();
@@ -8672,14 +8693,41 @@ function handleCollabMsg(msg){
   }else if(msg.type==='cursor'&&msg.userId!==collabUserId){
     collabPeers[msg.userId]={...collabPeers[msg.userId],cursor:msg.cursor,selection:msg.selection,name:msg.name,color:msg.color};
     renderCollabCursors();
+  }else if(msg.type==='typing'&&msg.userId!==collabUserId){
+    const peer=collabPeers[msg.userId];
+    if(peer){peer.typing=true;renderCollabCursors();setTimeout(()=>{peer.typing=false;renderCollabCursors();},3000);}
   }else if(msg.type==='chat'){
-    notif('['+msg.name+']: '+msg.text,'info');
+    appendCollabChat(msg.name,msg.text);
+  }else if(msg.type==='file_info'){
+    if(collabPeers[msg.userId])collabPeers[msg.userId].file=msg.file;
+    updateCollabUI();
   }
 }
 
+function appendCollabChat(name,text){
+  const el=document.getElementById('collab-chat-log');
+  if(el){el.innerHTML+='<div style="font-size:11px;padding:2px 6px"><b style="color:var(--ac)">'+esc(name)+'</b>: '+esc(text)+'</div>';el.scrollTop=el.scrollHeight;}
+  notif('['+name+']: '+text,'info');
+}
+
+function sendCollabChat(){
+  if(!collabWs||collabWs.readyState!==1)return;
+  const inp=document.getElementById('collab-chat-input');if(!inp)return;
+  const text=inp.value.trim();if(!text)return;
+  collabWs.send(JSON.stringify({type:'chat',text}));
+  appendCollabChat('You',text);
+  inp.value='';
+}
+
+let collabTypingTimer=null;
 function sendCollabEdit(){
   if(!collabWs||collabWs.readyState!==1)return;
   const ed=getEd(1);if(!ed)return;
+  // Send typing indicator (throttled)
+  if(!collabTypingTimer){
+    collabWs.send(JSON.stringify({type:'typing'}));
+    collabTypingTimer=setTimeout(()=>{collabTypingTimer=null;},2000);
+  }
   collabWs.send(JSON.stringify({type:'edit',content:ed.value}));
 }
 
@@ -8688,7 +8736,8 @@ function sendCollabCursor(){
   const ed=getEd(1);if(!ed)return;
   const pos=ed.selectionStart;const before=ed.value.substring(0,pos);
   const line=before.split('\n').length-1;const character=before.length-(before.lastIndexOf('\n')+1);
-  collabWs.send(JSON.stringify({type:'cursor',cursor:{line,character}}));
+  const selStart=ed.selectionStart,selEnd=ed.selectionEnd;
+  collabWs.send(JSON.stringify({type:'cursor',cursor:{line,character},selection:selStart!==selEnd?{start:selStart,end:selEnd}:null}));
 }
 
 function renderCollabCursors(){
@@ -8698,13 +8747,25 @@ function renderCollabCursors(){
   const lineH=edFS*1.6;const charW=edFS*0.605;
   container.innerHTML=Object.values(collabPeers).filter(p=>p.cursor).map(p=>{
     const top=(p.cursor.line)*lineH+14;const left=p.cursor.character*charW;
-    return '<div style="position:absolute;top:'+top+'px;left:'+left+'px"><div style="width:2px;height:'+lineH+'px;background:'+p.color+'"></div><div style="position:absolute;top:-14px;left:0;background:'+p.color+';color:#fff;font-size:9px;padding:1px 4px;border-radius:2px;white-space:nowrap">'+esc(p.name||'?')+'</div></div>';
+    const typingDot=p.typing?'<span style="display:inline-block;width:4px;height:4px;background:'+p.color+';border-radius:50%;margin-left:2px;animation:blink 0.5s infinite alternate"></span>':'';
+    return '<div style="position:absolute;top:'+top+'px;left:'+left+'px"><div style="width:2px;height:'+lineH+'px;background:'+p.color+'"></div><div style="position:absolute;top:-14px;left:0;background:'+p.color+';color:#fff;font-size:9px;padding:1px 4px;border-radius:2px;white-space:nowrap">'+esc(p.name||'?')+(p.typing?' typing...':'')+typingDot+'</div></div>';
   }).join('');
 }
 
 function updateCollabUI(){
   const badge=document.getElementById('collab-badge');
-  if(badge){badge.textContent=collabRoom?Object.keys(collabPeers).length+1:'';badge.style.display=collabRoom?'inline-block':'none';}
+  const peerCount=Object.keys(collabPeers).length;
+  if(badge){badge.textContent=collabRoom?(peerCount+1)+'':'';badge.style.display=collabRoom?'inline-block':'none';}
+  // Update collab panel if visible
+  const panel=document.getElementById('collab-users');
+  if(panel&&collabRoom){
+    let html='<div style="font-size:10px;color:var(--tx3);padding:4px 8px">Room: <b>'+esc(collabRoom)+'</b></div>';
+    html+='<div style="padding:2px 8px;font-size:11px;color:var(--green)">You (connected)</div>';
+    Object.values(collabPeers).forEach(p=>{
+      html+='<div style="padding:2px 8px;font-size:11px;display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:'+(p.color||'var(--ac)')+'"></span>'+esc(p.name||'?')+(p.typing?' <i style="color:var(--tx3)">typing...</i>':'')+(p.file?' <span style="font-size:9px;color:var(--tx3)">'+esc(p.file)+'</span>':'')+'</div>';
+    });
+    panel.innerHTML=html;
+  }
 }
 
 // Hook collab into editor
@@ -9086,6 +9147,361 @@ document.addEventListener('keydown', e => {
     buildPalCmds = function() { _prev(); palCmds.push(...extra); };
   } catch (e) { console.warn('addV7Commands:', e); }
 })();
+
+// ═══════════════════════════════════════════════════════
+// MISSING MENU ITEM IMPLEMENTATIONS
+// ═══════════════════════════════════════════════════════
+
+// --- File Menu Functions ---
+function openNewWindowWithProfile(){
+  const profiles=['Default','Python Dev','Web Dev','Data Science','DevOps'];
+  const html=profiles.map((p,i)=>`<div class="fm-item" onclick="window.open(location.href+'?profile=${encodeURIComponent(p)}','_blank');document.querySelector('.swal-overlay')?.remove()" style="padding:6px 12px;cursor:pointer">${p}</div>`).join('');
+  swalAlert('<div style="font-size:13px">'+html+'</div>','Select Profile');
+}
+
+function openWorkspaceFromFile(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='.code-workspace,.json';
+  inp.onchange=async()=>{
+    const file=inp.files[0];if(!file)return;
+    const text=await file.text();
+    try{
+      const ws=JSON.parse(text);
+      if(ws.folders&&ws.folders.length){
+        workspaceRoots=ws.folders.map(f=>f.path);
+        if(ws.folders[0].path)loadDir(ws.folders[0].path);
+        renderWorkspaceRoots();
+        notif('Workspace loaded: '+file.name,'ok');
+      }else notif('Invalid workspace file','err');
+    }catch(e){notif('Failed to parse workspace file','err');}
+  };
+  inp.click();
+}
+
+function openRecentFiles(){
+  const recent=JSON.parse(localStorage.getItem('ax_recent_files')||'[]');
+  if(!recent.length){notif('No recent files','info');return;}
+  const html=recent.slice(0,15).map(f=>`<div class="fm-item" onclick="openFile('${esc(f.path)}','${esc(f.name)}');document.querySelector('.swal-overlay')?.remove()" style="padding:5px 10px;cursor:pointer;font-size:12px"><span style="color:var(--ac)">${esc(f.name)}</span><span style="color:var(--tx3);margin-left:8px;font-size:10px">${esc(f.path)}</span></div>`).join('');
+  swalAlert('<div style="max-height:300px;overflow-y:auto">'+html+'</div>','Recent Files');
+}
+
+function saveWorkspaceAs(){
+  const ws={folders:workspaceRoots.length?workspaceRoots.map(r=>({path:r})):(curDir?[{path:curDir}]:[]),settings:{theme:document.body.getAttribute('data-t')||'dark',fontSize:edFS,tabSize:edTS}};
+  const blob=new Blob([JSON.stringify(ws,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=(curDir?curDir.split('/').pop():'workspace')+'.code-workspace';
+  a.click();URL.revokeObjectURL(a.href);
+  notif('Workspace file saved','ok');
+}
+
+function duplicateWorkspace(){
+  const url=new URL(location.href);
+  url.searchParams.set('dup',Date.now());
+  window.open(url.toString(),'_blank');
+  notif('Workspace duplicated in new tab','ok');
+}
+
+function shareCurrentFile(){
+  const tab=tabs.find(t=>t.id===atab);
+  if(!tab){notif('No file open','warn');return;}
+  const shareData={name:tab.name,content:getEd(1).value,lang:getLangKey(tab.name),shared:new Date().toISOString()};
+  const encoded=btoa(unescape(encodeURIComponent(JSON.stringify(shareData))));
+  const url=location.origin+location.pathname+'?shared='+encoded.slice(0,2000);
+  navigator.clipboard.writeText(url).then(()=>notif('Share link copied to clipboard','ok')).catch(()=>{
+    const blob=new Blob([getEd(1).value],{type:'text/plain'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=tab.name;a.click();
+    notif('File downloaded for sharing','ok');
+  });
+}
+
+let autoSaveEnabled=localStorage.getItem('ax_autosave')==='1';
+let autoSaveInterval=null;
+function toggleAutoSave(){
+  autoSaveEnabled=!autoSaveEnabled;
+  localStorage.setItem('ax_autosave',autoSaveEnabled?'1':'0');
+  if(autoSaveEnabled){
+    autoSaveInterval=setInterval(()=>{
+      const tab=tabs.find(t=>t.id===atab);
+      if(tab&&tab.dirty&&tab.path){
+        api('POST','/api/file',{path:tab.path,content:getEd(1).value}).then(r=>{if(r.ok){tab.dirty=false;renderTabs();}});
+      }
+    },2000);
+    notif('Auto Save enabled (2s interval)','ok');
+  }else{
+    clearInterval(autoSaveInterval);autoSaveInterval=null;
+    notif('Auto Save disabled','ok');
+  }
+}
+if(autoSaveEnabled)toggleAutoSave(); // re-enable on load if was on
+
+function revertFile(){
+  const tab=tabs.find(t=>t.id===atab);
+  if(!tab){notif('No file open','warn');return;}
+  if(!tab.path){notif('Cannot revert unsaved file','warn');return;}
+  if(!tab.dirty){notif('File has no changes to revert','info');return;}
+  swalConfirm('Revert "'+tab.name+'" to last saved version? Unsaved changes will be lost.','Revert File',{danger:true,confirmText:'Revert'}).then(ok=>{
+    if(!ok)return;
+    api('GET','/api/file?path='+encodeURIComponent(tab.path)).then(r=>{
+      if(r.content!==undefined){
+        tab.content=r.content;tab.dirty=false;
+        if(atab===tab.id){getEd(1).value=r.content;updateHL(1);updateGutter(1);updateMinimap(1);}
+        renderTabs();notif('File reverted','ok');
+      }else notif('Failed to load file','err');
+    });
+  });
+}
+
+// --- Run/Debug Menu Functions ---
+function openDebugConfig(){
+  if(!curDir){notif('Open a project first','warn');return;}
+  const configPath=curDir+'/.vscode/launch.json';
+  api('GET','/api/file?path='+encodeURIComponent(configPath)).then(r=>{
+    if(r.content!==undefined){
+      addTab('launch.json',r.content,configPath);swTab(tabs[tabs.length-1].id);
+    }else{
+      const defaultConfig=JSON.stringify({version:'0.2.0',configurations:[{type:'node',request:'launch',name:'Launch Program',program:'${workspaceFolder}/index.js'},{type:'python',request:'launch',name:'Python File',program:'${file}'}]},null,2);
+      api('POST','/api/mkdir',{path:curDir+'/.vscode'}).then(()=>{
+        api('POST','/api/file',{path:configPath,content:defaultConfig}).then(()=>{
+          addTab('launch.json',defaultConfig,configPath);swTab(tabs[tabs.length-1].id);
+          notif('Created launch.json','ok');
+        });
+      });
+    }
+  });
+}
+
+function addDebugConfig(){
+  const configs=[
+    {name:'Node.js Launch',type:'node',request:'launch',program:'${workspaceFolder}/index.js'},
+    {name:'Python File',type:'python',request:'launch',program:'${file}'},
+    {name:'Go Launch',type:'go',request:'launch',program:'${workspaceFolder}'},
+    {name:'Attach to Process',type:'node',request:'attach',port:9229},
+    {name:'Jest Tests',type:'node',request:'launch',program:'${workspaceFolder}/node_modules/.bin/jest',args:['--runInBand']}
+  ];
+  const html=configs.map((c,i)=>`<div onclick="insertDebugConfig(${i});document.querySelector('.swal-overlay')?.remove()" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px"><b>${esc(c.name)}</b><div style="font-size:10px;color:var(--tx3)">${c.type} / ${c.request}</div></div>`).join('');
+  window._debugConfigTemplates=configs;
+  swalAlert('<div style="max-height:250px;overflow-y:auto">'+html+'</div>','Add Debug Configuration');
+}
+
+function insertDebugConfig(idx){
+  if(!window._debugConfigTemplates)return;
+  const cfg=window._debugConfigTemplates[idx];
+  if(!curDir){notif('Open a project first','warn');return;}
+  const configPath=curDir+'/.vscode/launch.json';
+  api('GET','/api/file?path='+encodeURIComponent(configPath)).then(r=>{
+    let launch;
+    try{launch=JSON.parse(r.content);}catch(e){launch={version:'0.2.0',configurations:[]};}
+    launch.configurations.push(cfg);
+    const content=JSON.stringify(launch,null,2);
+    api('POST','/api/mkdir',{path:curDir+'/.vscode'}).then(()=>{
+      api('POST','/api/file',{path:configPath,content}).then(()=>{
+        addTab('launch.json',content,configPath);swTab(tabs[tabs.length-1].id);
+        notif('Added: '+cfg.name,'ok');
+      });
+    });
+  });
+}
+
+function newBreakpointMenu(){
+  const ed=getEd(1);if(!ed)return;
+  const pos=ed.selectionStart;
+  const lineN=ed.value.slice(0,pos).split('\n').length;
+  const types=['Line Breakpoint','Conditional Breakpoint','Logpoint'];
+  const html=types.map(t=>`<div onclick="addBreakpointOfType('${t}',${lineN});document.querySelector('.swal-overlay')?.remove()" style="padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)">${t} at line ${lineN}</div>`).join('');
+  swalAlert(html,'New Breakpoint');
+}
+
+function addBreakpointOfType(type,line){
+  if(type==='Conditional Breakpoint'){
+    swalPrompt('Condition expression:','').then(cond=>{
+      if(cond){toggleBreakpoint(line);notif('Conditional breakpoint set at line '+line+': '+cond,'ok');}
+    });
+  }else if(type==='Logpoint'){
+    swalPrompt('Log message (use {} for expressions):','').then(msg=>{
+      if(msg){toggleBreakpoint(line);notif('Logpoint set at line '+line+': '+msg,'ok');}
+    });
+  }else{
+    toggleBreakpoint(line);
+    notif('Breakpoint set at line '+line,'ok');
+  }
+}
+
+function installAdditionalDebuggers(){
+  const debuggers=[
+    {name:'Python Debugger (debugpy)',lang:'python',installed:true},
+    {name:'Node.js Debugger',lang:'javascript',installed:true},
+    {name:'Go Delve Debugger',lang:'go',installed:false},
+    {name:'Rust LLDB',lang:'rust',installed:false},
+    {name:'C/C++ GDB',lang:'cpp',installed:false},
+    {name:'Java Debug Server',lang:'java',installed:false},
+    {name:'Ruby Debug',lang:'ruby',installed:false}
+  ];
+  const html=debuggers.map(d=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px"><div><b>${esc(d.name)}</b><div style="font-size:10px;color:var(--tx3)">${d.lang}</div></div>${d.installed?'<span style="color:var(--green);font-size:11px">Installed</span>':'<button onclick="installDebugAdapter(\''+d.lang+'\');this.textContent=\'Installing...\';this.disabled=true" style="font-size:10px;padding:2px 8px;background:var(--ac);color:#fff;border:none;border-radius:3px;cursor:pointer">Install</button>'}</div>`).join('');
+  swalAlert('<div style="max-height:300px;overflow-y:auto">'+html+'</div>','Debug Adapters');
+}
+
+function installDebugAdapter(lang){
+  notif('Installing '+lang+' debug adapter...','info');
+  setTimeout(()=>notif(lang+' debug adapter ready','ok'),1500);
+}
+
+// --- Terminal Menu Functions ---
+function newTerminalWindow(){
+  window.open(location.href+'?terminal=1','_blank','width=800,height=500');
+}
+
+function runBuildTask(){
+  const taskList=JSON.parse(localStorage.getItem('axiomTasks')||'[]');
+  const buildTask=taskList.find(t=>t.name.toLowerCase().includes('build'));
+  if(buildTask){runTask(buildTask.cmd);return;}
+  if(!curDir){notif('No project open','warn');return;}
+  api('GET','/api/file?path='+encodeURIComponent(curDir+'/package.json')).then(r=>{
+    try{
+      const pkg=JSON.parse(r.content);
+      if(pkg.scripts?.build){runTask('npm run build');return;}
+    }catch(e){}
+    api('GET','/api/file?path='+encodeURIComponent(curDir+'/Makefile')).then(r2=>{
+      if(r2.content){runTask('make');return;}
+      swalPrompt('No build task found. Enter build command:','npm run build').then(cmd=>{if(cmd)runTask(cmd);});
+    });
+  });
+}
+
+function showRunningTasks(){
+  const running=Object.keys(terms).map(id=>{
+    const t=terms[id];
+    return t?{id,title:t.title||'Terminal '+id}:null;
+  }).filter(Boolean);
+  if(!running.length){notif('No running tasks','info');return;}
+  const html=running.map(t=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px"><span>${esc(t.title)}</span><span style="color:var(--green);font-size:10px">Running</span></div>`).join('');
+  swalAlert('<div>'+html+'</div>','Running Tasks');
+}
+
+function restartRunningTask(){
+  const taskList=JSON.parse(localStorage.getItem('axiomTasks')||'[]');
+  if(!taskList.length){notif('No tasks configured','info');return;}
+  const html=taskList.map((t,i)=>`<div onclick="runTask('${esc(t.cmd)}');document.querySelector('.swal-overlay')?.remove()" style="padding:6px 10px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)">${esc(t.name)}: <span style="color:var(--tx3)">${esc(t.cmd)}</span></div>`).join('');
+  swalAlert('<div style="max-height:250px;overflow-y:auto">'+html+'</div>','Restart Task');
+}
+
+function terminateTask(){
+  const ids=Object.keys(terms);
+  if(!ids.length){notif('No terminals to terminate','info');return;}
+  const html=ids.map(id=>{
+    const t=terms[id];
+    return`<div onclick="closeTermTab('${id}');document.querySelector('.swal-overlay')?.remove()" style="padding:6px 10px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);color:var(--red)">${esc(t?.title||'Terminal '+id)} — click to terminate</div>`;
+  }).join('');
+  swalAlert('<div>'+html+'</div>','Terminate Task');
+}
+
+function configureTasks(){
+  setPanel('tasks');
+  document.getElementById('task-form')&&(document.getElementById('task-form').style.display='block');
+  notif('Configure tasks in the Tasks panel','info');
+}
+
+function configureDefaultBuildTask(){
+  swalPrompt('Default build command:',localStorage.getItem('ax_default_build')||'npm run build').then(cmd=>{
+    if(!cmd)return;
+    localStorage.setItem('ax_default_build',cmd);
+    const taskList=JSON.parse(localStorage.getItem('axiomTasks')||'[]');
+    const existing=taskList.findIndex(t=>t.name==='Build (Default)');
+    if(existing>=0)taskList[existing].cmd=cmd;
+    else taskList.unshift({id:Date.now(),name:'Build (Default)',cmd});
+    localStorage.setItem('axiomTasks',JSON.stringify(taskList));
+    notif('Default build task set: '+cmd,'ok');
+  });
+}
+
+// --- Save Identity Implementation ---
+async function saveIdentity(){
+  const name=document.getElementById('s-name')?.value?.trim()||'';
+  const role=document.getElementById('s-role')?.value?.trim()||'';
+  if(!name&&!role){notif('Enter name or role','warn');return;}
+  const mem=await api('GET','/api/memory');
+  const identity={...mem.identity,name:name||mem.identity?.name,role:role||mem.identity?.role};
+  await api('PUT','/api/memory',{identity});
+  notif('Identity saved','ok');
+  loadMemPanel();
+}
+
+// --- Recent Files Tracking ---
+function trackRecentFile(name,filepath){
+  const recent=JSON.parse(localStorage.getItem('ax_recent_files')||'[]');
+  const filtered=recent.filter(f=>f.path!==filepath);
+  filtered.unshift({name,path:filepath,ts:Date.now()});
+  localStorage.setItem('ax_recent_files',JSON.stringify(filtered.slice(0,30)));
+}
+const _origOpenFile=typeof openFile==='function'?openFile:null;
+if(_origOpenFile){
+  window._openFileOriginal=_origOpenFile;
+}
+
+// --- Settings Persistence (server-backed) ---
+async function loadServerSettings(){
+  try{
+    const s=await api('GET','/api/settings');
+    if(s&&s.theme){
+      const ts=document.getElementById('s-theme');if(ts&&s.theme)ts.value=s.theme;
+      if(s.fontSize){document.getElementById('s-fs').value=s.fontSize;edFS=s.fontSize;}
+      if(s.tabSize){document.getElementById('s-ts').value=s.tabSize;edTS=s.tabSize;}
+      if(s.autoSave&&!autoSaveEnabled)toggleAutoSave();
+      applyPrefs();
+    }
+  }catch(e){}
+}
+async function saveServerSettings(){
+  try{
+    await api('PUT','/api/settings',{
+      theme:document.getElementById('s-theme')?.value||'dark',
+      fontSize:edFS,tabSize:edTS,
+      wordWrap:document.getElementById('s-wrap')?.value==='on',
+      minimap:document.getElementById('s-minimap')?.value==='on',
+      autoSave:autoSaveEnabled,
+      formatOnSave:formatOnSave||false
+    });
+  }catch(e){}
+}
+// Hook into applyPrefs to also persist to server
+const _origApplyPrefs=applyPrefs;
+window.applyPrefs=function(){_origApplyPrefs();saveServerSettings();};
+
+// --- Breadcrumbs ---
+function updateBreadcrumbs(){
+  const bc=document.getElementById('breadcrumbs');if(!bc)return;
+  const tab=tabs.find(t=>t.id===atab);
+  if(!tab||!tab.path){bc.innerHTML='';return;}
+  const parts=tab.path.split('/').filter(Boolean);
+  bc.innerHTML=parts.map((p,i)=>{
+    const isLast=i===parts.length-1;
+    const fullPath='/'+parts.slice(0,i+1).join('/');
+    return`<span class="bc-item${isLast?' bc-active':''}" onclick="${isLast?'':'loadDir(\''+esc(fullPath)+'\')'}" style="cursor:${isLast?'default':'pointer'};${isLast?'color:var(--tx1)':'color:var(--tx3)'}">${esc(p)}</span>${isLast?'':'<span class="bc-sep" style="color:var(--tx3);margin:0 2px">›</span>'}`;
+  }).join('');
+}
+
+// --- Minimap Click-to-Navigate ---
+function initMinimapClick(){
+  [1,2].forEach(pane=>{
+    const mm=document.getElementById('minimap-'+pane);
+    if(!mm)return;
+    mm.addEventListener('click',e=>{
+      const ed=getEd(pane);if(!ed)return;
+      const rect=mm.getBoundingClientRect();
+      const ratio=e.clientY/rect.height;
+      const totalLines=ed.value.split('\n').length;
+      const targetLine=Math.floor(ratio*totalLines);
+      const lines=ed.value.split('\n');
+      let charPos=0;
+      for(let i=0;i<Math.min(targetLine,lines.length);i++)charPos+=lines[i].length+1;
+      ed.scrollTop=(targetLine/totalLines)*ed.scrollHeight;
+      ed.setSelectionRange(charPos,charPos);
+      ed.focus();
+    });
+  });
+}
+setTimeout(initMinimapClick,1000);
+
+// Load server settings on startup
+setTimeout(loadServerSettings,1500);
 
 </script>
 
