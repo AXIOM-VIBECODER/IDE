@@ -1162,6 +1162,8 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
 .cbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--blue); }
 .cba { display: flex; gap: 3px; }
 .cb { background: transparent; border: 1px solid var(--border2); border-radius: 3px; color: var(--tx3); font-size: 9px; padding: 1px 5px; cursor: pointer; font-family: 'JetBrains Mono', monospace; }
+.cb-apply { border-color: var(--ac); color: var(--ac); font-weight: 600; }
+.cb-apply:hover { background: var(--ac); color: #fff; }
 .cb:hover { color: var(--tx); border-color: var(--ac); }
 .cb.ok { color: var(--green); border-color: var(--green); }
 .bbl pre code { display: block !important; padding: 9px 11px !important; font-family: 'JetBrains Mono', monospace !important; font-size: 11px !important; line-height: 1.55 !important; overflow-x: auto; }
@@ -4557,7 +4559,256 @@ function syntaxHighlight(code,lang){
   if(cur<code.length)html+=esc(code.slice(cur));
   hlCache={code,lang,html};return html;
 }
-function updateHL(pane){const tab=pane===1?tabs.find(t=>t.id===atab):null;const lang=tab?getLangKey(tab.name):'';const ed=getEd(pane);const hl=document.getElementById('hl-'+pane);if(!hl||!ed)return;hl.innerHTML=syntaxHighlight(ed.value,lang);hl.style.minWidth=ed.scrollWidth+'px';hl.style.minHeight=Math.max(ed.scrollHeight,ed.clientHeight)+'px';}
+function updateHL(pane){const tab=pane===1?tabs.find(t=>t.id===atab):null;const lang=tab?getLangKey(tab.name):'';const ed=getEd(pane);const hl=document.getElementById('hl-'+pane);if(!hl||!ed)return;
+  const code = ed.value;
+  const lineCount = (code.match(/\n/g) || []).length + 1;
+  // Virtual scrolling: for large files, only highlight visible viewport
+  if (lineCount > VIRTUAL_SCROLL_THRESHOLD) {
+    virtualHighlight(pane, ed, hl, code, lang);
+  } else {
+    hl.innerHTML=syntaxHighlight(code,lang);
+    hl.style.minWidth=ed.scrollWidth+'px';
+    hl.style.minHeight=Math.max(ed.scrollHeight,ed.clientHeight)+'px';
+    hl.style.paddingTop='';
+  }
+  // Async: overlay semantic tokens from LSP if available
+  if(pane===1&&tab&&tab.path&&curDir&&lspLang){requestSemanticTokens(tab,ed,hl);}
+}
+
+// ── Virtual Scrolling ──
+const VIRTUAL_SCROLL_THRESHOLD = 500; // lines before virtual scrolling kicks in
+const VIRTUAL_SCROLL_BUFFER = 30; // extra lines above/below viewport
+
+function getVisibleLineRange(ed) {
+  const lineH = edFS * 1.6;
+  const scrollTop = ed.scrollTop;
+  const viewportH = ed.clientHeight;
+  const firstVisible = Math.floor(scrollTop / lineH);
+  const lastVisible = Math.ceil((scrollTop + viewportH) / lineH);
+  return { first: firstVisible, last: lastVisible, lineH };
+}
+
+function virtualHighlight(pane, ed, hl, code, lang) {
+  const lines = code.split('\n');
+  const { first, last, lineH } = getVisibleLineRange(ed);
+  const totalLines = lines.length;
+
+  // Expand range with buffer
+  const rangeStart = Math.max(0, first - VIRTUAL_SCROLL_BUFFER);
+  const rangeEnd = Math.min(totalLines, last + VIRTUAL_SCROLL_BUFFER);
+
+  // Only highlight the visible slice
+  const visibleCode = lines.slice(rangeStart, rangeEnd).join('\n');
+  const highlighted = syntaxHighlight(visibleCode, lang);
+
+  // Use padding to position correctly
+  const topPad = rangeStart * lineH;
+  const totalHeight = totalLines * lineH;
+
+  hl.style.paddingTop = topPad + 'px';
+  hl.style.minHeight = totalHeight + 'px';
+  hl.style.minWidth = ed.scrollWidth + 'px';
+  hl.innerHTML = highlighted;
+
+  // Store range for scroll optimization
+  hl._vRange = { start: rangeStart, end: rangeEnd };
+}
+
+// Optimized scroll handler for virtual scrolling
+let _vsTimer = 0;
+function onVirtualScroll(pane) {
+  const ed = getEd(pane);
+  const hl = document.getElementById('hl-' + pane);
+  if (!ed || !hl || !hl._vRange) return;
+
+  const code = ed.value;
+  const lineCount = (code.match(/\n/g) || []).length + 1;
+  if (lineCount <= VIRTUAL_SCROLL_THRESHOLD) return;
+
+  const { first, last } = getVisibleLineRange(ed);
+  const rangeStart = Math.max(0, first - VIRTUAL_SCROLL_BUFFER);
+  const rangeEnd = Math.min(lineCount, last + VIRTUAL_SCROLL_BUFFER);
+
+  // Only re-render if viewport moved significantly outside current range
+  if (rangeStart >= hl._vRange.start + 10 && rangeEnd <= hl._vRange.end - 10) return;
+
+  clearTimeout(_vsTimer);
+  _vsTimer = setTimeout(() => {
+    const tab = pane === 1 ? tabs.find(t => t.id === atab) : null;
+    const lang = tab ? getLangKey(tab.name) : '';
+    virtualHighlight(pane, ed, hl, ed.value, lang);
+  }, 16); // ~60fps
+}
+
+// Virtual gutter - only render visible line numbers for large files
+function virtualGutter(pane) {
+  const ed = getEd(pane);
+  const lns = document.getElementById('lnums-' + pane);
+  if (!ed || !lns) return;
+  const lines = ed.value.split('\n');
+  if (lines.length <= VIRTUAL_SCROLL_THRESHOLD) return; // normal gutter handles it
+
+  const { first, last, lineH } = getVisibleLineRange(ed);
+  const rangeStart = Math.max(0, first - VIRTUAL_SCROLL_BUFFER);
+  const rangeEnd = Math.min(lines.length, last + VIRTUAL_SCROLL_BUFFER);
+
+  lns.style.fontSize = edFS + 'px';
+  lns.style.lineHeight = '1.6';
+
+  const topPad = rangeStart * lineH;
+  let html = `<div style="height:${topPad}px"></div>`;
+  for (let i = rangeStart; i < rangeEnd; i++) {
+    const n = i + 1;
+    const line = lines[i];
+    const foldable = /[{(\[]$|^\s*(def |class |func |function |if |for |while |async def )/.test(line.trimEnd());
+    html += `<div class="lnum${n === curLn ? ' cur-ln' : ''}" id="ln-${pane}-${n}" style="height:${lineH}px;line-height:${lineH}px">${foldable ? '<span class="fold-btn" onclick="toggleFold(' + n + ')">▸</span>' : '<span class="fold-spc"></span>'}${n}</div>`;
+  }
+  const bottomPad = (lines.length - rangeEnd) * lineH;
+  html += `<div style="height:${bottomPad}px"></div>`;
+  lns.innerHTML = html;
+}
+
+// ── Semantic Tokens from LSP ──
+const SEMANTIC_TOKEN_COLORS = {
+  namespace: 'var(--cyan)',
+  type: 'var(--cyan)',
+  class: 'var(--yellow)',
+  enum: 'var(--yellow)',
+  interface: 'var(--cyan)',
+  struct: 'var(--yellow)',
+  typeParameter: 'var(--cyan)',
+  parameter: 'var(--orange)',
+  variable: 'var(--tx)',
+  property: 'var(--blue)',
+  enumMember: 'var(--cyan)',
+  event: 'var(--orange)',
+  function: 'var(--blue)',
+  method: 'var(--blue)',
+  macro: 'var(--purple)',
+  keyword: 'var(--purple)',
+  modifier: 'var(--purple)',
+  comment: 'var(--tx3)',
+  string: 'var(--orange)',
+  number: 'var(--green)',
+  regexp: 'var(--red)',
+  operator: 'var(--tx2)',
+  decorator: 'var(--yellow)'
+};
+let _semTokenReq = 0;
+let _semTokenCache = { path: '', version: 0, tokens: null };
+
+async function requestSemanticTokens(tab, ed, hl) {
+  const reqId = ++_semTokenReq;
+  const filePath = tab.path;
+  const version = lspDocVersion[filePath] || 0;
+
+  // Use cache if same version
+  if (_semTokenCache.path === filePath && _semTokenCache.version === version && _semTokenCache.tokens) {
+    applySemanticTokens(_semTokenCache.tokens, ed, hl);
+    return;
+  }
+
+  try {
+    const r = await api('POST', '/api/lsp/semanticTokens', {
+      dir: curDir, lang: lspLang, file: filePath
+    });
+    if (reqId !== _semTokenReq) return; // stale
+    if (!r.data || !r.data.length) return;
+
+    // Decode relative-encoded tokens
+    const legend = r.legend || {};
+    const tokenTypes = legend.tokenTypes || [];
+    const raw = r.data;
+    const tokens = [];
+    let line = 0, startChar = 0;
+    for (let i = 0; i < raw.length; i += 5) {
+      const deltaLine = raw[i];
+      const deltaStart = raw[i + 1];
+      const length = raw[i + 2];
+      const tokenType = raw[i + 3];
+      const tokenMods = raw[i + 4];
+
+      if (deltaLine > 0) { line += deltaLine; startChar = deltaStart; }
+      else { startChar += deltaStart; }
+
+      const typeName = tokenTypes[tokenType] || '';
+      tokens.push({ line, startChar, length, type: typeName, mods: tokenMods });
+    }
+
+    _semTokenCache = { path: filePath, version, tokens };
+    applySemanticTokens(tokens, ed, hl);
+  } catch(e) { /* LSP may not support semantic tokens */ }
+}
+
+function applySemanticTokens(tokens, ed, hl) {
+  if (!tokens || !tokens.length || !hl) return;
+  const code = ed.value;
+  const lines = code.split('\n');
+
+  // Build position map: for each token, find absolute position
+  const tokenSpans = [];
+  for (const tok of tokens) {
+    if (tok.line >= lines.length) continue;
+    let absPos = 0;
+    for (let l = 0; l < tok.line; l++) absPos += lines[l].length + 1;
+    absPos += tok.startChar;
+    const color = SEMANTIC_TOKEN_COLORS[tok.type];
+    if (!color) continue;
+    tokenSpans.push({ start: absPos, end: absPos + tok.length, color, type: tok.type });
+  }
+  if (!tokenSpans.length) return;
+
+  // Overlay semantic tokens on existing HTML
+  // We use a post-processing approach: inject data attributes for semantic coloring
+  let html = hl.innerHTML;
+
+  // Build a simple text-position-to-html-position mapper
+  // For efficiency, only apply to tokens that don't already have correct coloring
+  // We'll use a separate overlay layer approach
+  const overlay = document.createElement('div');
+  overlay.className = 'sem-tokens-overlay';
+  overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;white-space:pre;font:inherit;line-height:inherit;padding:inherit;';
+
+  // Create per-line spans
+  const lineOffsets = [0];
+  for (let i = 0; i < lines.length; i++) lineOffsets.push(lineOffsets[i] + lines[i].length + 1);
+
+  // Group tokens by line
+  const byLine = {};
+  for (const t of tokenSpans) {
+    const ln = lines.findIndex((_, idx) => lineOffsets[idx] <= t.start && lineOffsets[idx + 1] > t.start);
+    if (ln < 0) continue;
+    if (!byLine[ln]) byLine[ln] = [];
+    byLine[ln].push(t);
+  }
+
+  // For each line with semantic tokens, create overlay line
+  let overlayHtml = '';
+  for (let l = 0; l < lines.length; l++) {
+    if (!byLine[l]) {
+      overlayHtml += '\n';
+      continue;
+    }
+    const lineToks = byLine[l].sort((a, b) => a.start - b.start);
+    let lineStr = '';
+    let charPos = 0;
+    for (const t of lineToks) {
+      const localStart = t.start - lineOffsets[l];
+      const localEnd = t.end - lineOffsets[l];
+      if (localStart > charPos) lineStr += ' '.repeat(localStart - charPos);
+      lineStr += `<span style="color:${t.color}">${escHtml(lines[l].slice(localStart, localEnd))}</span>`;
+      charPos = localEnd;
+    }
+    overlayHtml += lineStr + '\n';
+  }
+
+  // Only apply if parent supports it
+  const existingOverlay = hl.parentElement?.querySelector('.sem-tokens-overlay');
+  if (existingOverlay) existingOverlay.remove();
+
+  overlay.innerHTML = overlayHtml;
+  if (hl.parentElement) hl.parentElement.appendChild(overlay);
+}
 
 // ═══════════════════════════════════════════════════════
 // INDENT GUIDES
@@ -5356,6 +5607,12 @@ function syncScroll(pane){
   }
   if(lns)lns.scrollTop=ed.scrollTop;
   updateMinimap(pane);
+  // Virtual scrolling: update highlight viewport on scroll
+  onVirtualScroll(pane);
+  // Also update virtual gutter for large files
+  const code = ed.value;
+  const lineCount = (code.match(/\n/g) || []).length + 1;
+  if (lineCount > VIRTUAL_SCROLL_THRESHOLD) virtualGutter(pane);
   // Sync ghost text position too
   if(ghostActive)clearGhostText();
 }
@@ -5680,12 +5937,100 @@ function updMsg(el,t){el.querySelector('.bbl').innerHTML=renderMd(t)+'<span styl
 function finalMsg(el,t){el.querySelector('.bbl').innerHTML=renderMd(t);el.querySelectorAll('pre code').forEach(b=>{if(window.hljs)hljs.highlightElement(b);});document.getElementById('msgs').scrollTop=99999;}
 function appendTyping(){const id='ty'+Date.now();const c=document.getElementById('msgs');const d=document.createElement('div');d.className='msg ai';d.id=id;d.innerHTML=`<div class="bbl"><div class="tdots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>`;c.appendChild(d);c.scrollTop=c.scrollHeight;return id;}
 function removeTyping(id){const e=document.getElementById(id);if(e)e.remove();}
-function renderMd(text){const re=/```(\w*)\n?([\s\S]*?)```/g;let res='',last=0,m;while((m=re.exec(text))!==null){if(text.slice(last,m.index))res+=ri(text.slice(last,m.index));const lang=m[1]||'plaintext',code=m[2],id='c'+Math.random().toString(36).slice(2);res+=`<pre><div class="cbh"><span class="cbl">${esc(lang)}</span><div class="cba"><button class="cb" onclick="cpCode('${id}',this)">copy</button><button class="cb" onclick="toEd('${id}')">→ ed</button><button class="cb" onclick="runBlk('${id}','${lang}')">▶</button></div></div><code id="${id}" class="language-${lang}">${esc(code)}</code></pre>`;last=m.index+m[0].length;}const rem=text.slice(last);if(rem)res+=ri(rem);return res||ri(text);}
+function renderMd(text){const re=/```(\w*)\n?([\s\S]*?)```/g;let res='',last=0,m;while((m=re.exec(text))!==null){if(text.slice(last,m.index))res+=ri(text.slice(last,m.index));const lang=m[1]||'plaintext',code=m[2],id='c'+Math.random().toString(36).slice(2);res+=`<pre><div class="cbh"><span class="cbl">${esc(lang)}</span><div class="cba"><button class="cb" onclick="cpCode('${id}',this)">copy</button><button class="cb" onclick="toEd('${id}')">→ ed</button><button class="cb" onclick="runBlk('${id}','${lang}')">▶</button><button class="cb cb-apply" onclick="applyCodeDiff('${id}')" title="Preview diff & apply">⎘ apply</button></div></div><code id="${id}" class="language-${lang}">${esc(code)}</code></pre>`;last=m.index+m[0].length;}const rem=text.slice(last);if(rem)res+=ri(rem);return res||ri(text);}
 function ri(t){return t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/^#{3}\s(.+)$/gm,'<h3>$1</h3>').replace(/^#{2}\s(.+)$/gm,'<h2>$1</h2>').replace(/^#{1}\s(.+)$/gm,'<h1>$1</h1>').replace(/^[-*]\s(.+)$/gm,'<li>$1</li>').replace(/(<li>[\s\S]*?<\/li>)/g,'<ul>$1</ul>').split(/\n\n+/).map(p=>p.startsWith('<')?p:`<p>${p.split('\n').map(l=>esc(l)).join('<br>')}</p>`).join('');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function cpCode(id,btn){navigator.clipboard.writeText(document.getElementById(id)?.innerText||'').then(()=>{btn.textContent='✓';btn.classList.add('ok');setTimeout(()=>{btn.textContent='copy';btn.classList.remove('ok');},2000);});}
 function toEd(id){const el=document.getElementById(id);if(!el)return;if(!atab)newTab();insertAtCursor(getEd(1),el.innerText);onEdit(1);notif('Inserted','ok');}
 async function runBlk(id,lang){const el=document.getElementById(id);if(!el)return;setBpTab('output');showBottom();const out=document.getElementById('bp-output');out.textContent='Running…';out.classList.add('on');const r=await api('POST','/api/run',{code:el.innerText,lang});out.textContent=r.output;out.style.color=r.error?'var(--red)':'var(--green)';}
+
+// ── AI Diff Preview + Apply ──
+function applyCodeDiff(codeId) {
+  const el = document.getElementById(codeId);
+  if (!el) return;
+  const newCode = el.innerText;
+  const ed = getEd(1);
+  if (!ed) { notif('No editor open', 'warn'); return; }
+  const currentCode = ed.value;
+  const tab = tabs.find(t => t.id === atab);
+  const fileName = tab ? tab.name : 'file';
+
+  // Create diff preview overlay with accept/reject
+  const overlay = document.createElement('div');
+  overlay.className = 'diff-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;flex-direction:column';
+
+  const oldLines = currentCode.split('\n');
+  const newLines = newCode.split('\n');
+  const diff = computeLineDiff(oldLines, newLines);
+
+  let diffHtml = '';
+  diff.forEach(entry => {
+    const lnOld = entry.oldLn !== null ? entry.oldLn : '';
+    const lnNew = entry.newLn !== null ? entry.newLn : '';
+    const oldContent = entry.oldText !== null ? escHtml(entry.oldText) : '';
+    const newContent = entry.newText !== null ? escHtml(entry.newText) : '';
+    let oldBg = '', newBg = '';
+    if (entry.type === 'del') { oldBg = 'background:rgba(217,97,106,.15)'; }
+    else if (entry.type === 'add') { newBg = 'background:rgba(141,190,110,.15)'; }
+    else if (entry.type === 'mod') { oldBg = 'background:rgba(217,97,106,.10)'; newBg = 'background:rgba(141,190,110,.10)'; }
+    diffHtml += `<div style="display:flex;min-height:20px;font-size:12px;font-family:'JetBrains Mono',monospace;line-height:20px">
+      <div style="width:42px;text-align:right;padding-right:6px;color:var(--tx3);flex-shrink:0;font-size:10px">${lnOld}</div>
+      <div style="width:16px;flex-shrink:0;text-align:center;font-size:10px;color:${entry.type==='del'?'var(--red)':entry.type==='mod'?'var(--yellow)':'var(--tx3)'}">${entry.type==='del'?'-':entry.type==='mod'?'~':' '}</div>
+      <div style="flex:1;padding:0 8px;white-space:pre;overflow-x:auto;${oldBg}">${oldContent}</div>
+      <div style="width:2px;background:var(--border2);flex-shrink:0"></div>
+      <div style="width:42px;text-align:right;padding-right:6px;color:var(--tx3);flex-shrink:0;font-size:10px">${lnNew}</div>
+      <div style="width:16px;flex-shrink:0;text-align:center;font-size:10px;color:${entry.type==='add'?'var(--green)':entry.type==='mod'?'var(--yellow)':'var(--tx3)'}">${entry.type==='add'?'+':entry.type==='mod'?'~':' '}</div>
+      <div style="flex:1;padding:0 8px;white-space:pre;overflow-x:auto;${newBg}">${newContent}</div>
+    </div>`;
+  });
+
+  const stats = diff.reduce((a, d) => { if (d.type==='add') a.add++; if (d.type==='del') a.del++; if (d.type==='mod') a.mod++; return a; }, {add:0,del:0,mod:0});
+  const changeCount = stats.add + stats.del + stats.mod;
+
+  overlay.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--border)">
+      <div style="display:flex;gap:12px;font-size:12px;align-items:center">
+        <span style="font-weight:600;color:var(--ac)">AI Diff Preview</span>
+        <span style="color:var(--tx3)">|</span>
+        <span style="color:var(--red)">${escHtml(fileName)} (current)</span>
+        <span style="color:var(--tx3)">→</span>
+        <span style="color:var(--green)">${escHtml(fileName)} (proposed)</span>
+        <span style="color:var(--tx3);font-size:10px">
+          <span style="color:var(--green)">+${stats.add}</span>
+          <span style="color:var(--red)"> -${stats.del}</span>
+          <span style="color:var(--yellow)"> ~${stats.mod}</span>
+          (${changeCount} change${changeCount !== 1 ? 's' : ''})
+        </span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="diff-reject-btn" style="padding:6px 16px;background:var(--surface);border:1px solid var(--red);border-radius:4px;color:var(--red);font-size:11px;font-weight:600;cursor:pointer">Reject</button>
+        <button id="diff-accept-btn" style="padding:6px 16px;background:var(--green);border:none;border-radius:4px;color:#fff;font-size:11px;font-weight:600;cursor:pointer">Accept All Changes</button>
+      </div>
+    </div>
+    <div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border);font-size:11px;color:var(--tx3)">
+      <div style="flex:1;padding:4px 60px;text-align:center">Current</div>
+      <div style="flex:1;padding:4px 60px;text-align:center">Proposed by AI</div>
+    </div>
+    <div style="flex:1;overflow:auto;background:var(--ed-bg)">${diffHtml}</div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Wire accept/reject
+  overlay.querySelector('#diff-accept-btn').onclick = () => {
+    ed.value = newCode;
+    onEdit(1);
+    overlay.remove();
+    notif('Changes applied', 'ok');
+  };
+  overlay.querySelector('#diff-reject-btn').onclick = () => {
+    overlay.remove();
+    notif('Changes rejected', 'info');
+  };
+  // ESC to reject
+  const escH = e => { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escH); } };
+  document.addEventListener('keydown', escH);
+}
 
 // ═══════════════════════════════════════════════════════
 // CONTEXT MENU
@@ -6419,6 +6764,12 @@ function toggleBreakpoint(n) {
   else { breakpoints.add(n); }
   updateGutter(1);
   renderBpList();
+  // Live-update breakpoints in active DAP session
+  if (debugSessionId && activeFile) {
+    api('POST', '/api/debug/setBreakpoints', {
+      id: debugSessionId, file: activeFile, lines: [...breakpoints]
+    }).catch(() => {});
+  }
 }
 
 function clearAllBreakpoints() {
@@ -6446,7 +6797,6 @@ function renderBpList() {
 function highlightDebugLine(ln) {
   debugCurrentLine = ln;
   updateGutter(1);
-  // Scroll editor to that line
   const ed = getEd(1);
   if (ed) {
     const lines = ed.value.split('\n');
@@ -6454,7 +6804,6 @@ function highlightDebugLine(ln) {
     for (let i = 0; i < Math.min(ln - 1, lines.length); i++) pos += lines[i].length + 1;
     ed.focus();
     ed.setSelectionRange(pos, pos + (lines[ln - 1] || '').length);
-    // Scroll the line into view via the lnum element
     const lnEl = document.getElementById('ln-1-' + ln);
     if (lnEl) lnEl.scrollIntoView({ block: 'center' });
   }
@@ -6463,15 +6812,55 @@ function highlightDebugLine(ln) {
 function renderDebugVars(vars) {
   const el = document.getElementById('dbg-vars');
   if (!el) return;
-  const entries = Object.entries(vars || {});
-  if (!entries.length) { el.innerHTML = '<div class="dbg-empty">No variables</div>'; return; }
-  el.innerHTML = entries.map(([k, v]) =>
-    `<div class="dbg-var-row">
-      <span class="dbg-var-name">${escHtml(String(k))}</span>
-      <span class="dbg-var-eq">=</span>
-      <span class="dbg-var-val">${escHtml(String(v))}</span>
+  if (!vars || !vars.length) { el.innerHTML = '<div class="dbg-empty">No variables</div>'; return; }
+  let html = '';
+  vars.forEach(scopeGroup => {
+    html += `<div style="font-size:10px;color:var(--tx3);text-transform:uppercase;padding:4px 8px;margin-top:4px">${escHtml(scopeGroup.scope||'Locals')}</div>`;
+    (scopeGroup.variables || []).forEach(v => {
+      const expandable = v.ref > 0;
+      html += `<div class="dbg-var-row${expandable ? ' dbg-expandable' : ''}" ${expandable ? `onclick="expandDapVar(${v.ref},this)"` : ''}>
+        <span class="dbg-var-name" title="${escHtml(v.type||'')}">${expandable ? '▸ ' : ''}${escHtml(v.name)}</span>
+        <span class="dbg-var-eq">=</span>
+        <span class="dbg-var-val">${escHtml(String(v.value))}</span>
+      </div>`;
+    });
+  });
+  el.innerHTML = html;
+}
+
+async function expandDapVar(ref, el) {
+  if (!debugSessionId) return;
+  if (el.dataset.expanded === '1') { el.dataset.expanded = '0'; el.querySelectorAll('.dbg-var-child').forEach(c => c.remove()); return; }
+  el.dataset.expanded = '1';
+  const r = await api('POST', '/api/debug/variables', { id: debugSessionId, variablesReference: ref });
+  (r.variables || []).forEach(v => {
+    const child = document.createElement('div');
+    child.className = 'dbg-var-row dbg-var-child';
+    child.style.paddingLeft = '20px';
+    child.innerHTML = `<span class="dbg-var-name" title="${escHtml(v.type||'')}">${escHtml(v.name)}</span><span class="dbg-var-eq">=</span><span class="dbg-var-val">${escHtml(v.value)}</span>`;
+    el.after(child);
+  });
+}
+
+function renderCallStack(frames) {
+  const el = document.getElementById('dbg-stack');
+  if (!el) return;
+  if (!frames || !frames.length) { el.innerHTML = '<div class="dbg-empty">No call stack</div>'; return; }
+  el.innerHTML = frames.map((f, i) =>
+    `<div class="dbg-stack-item${i === 0 ? ' active' : ''}" onclick="navigateToFrame(${JSON.stringify(f).replace(/"/g, '&quot;')})" style="cursor:pointer">
+      <span style="color:var(--ac)">${escHtml(f.name || '<unknown>')}</span>
+      <span style="color:var(--tx3);font-size:10px;margin-left:4px">${f.source?.name || ''}:${f.line || ''}</span>
     </div>`
   ).join('');
+}
+
+function navigateToFrame(frame) {
+  if (frame.source?.path) {
+    openFile(frame.source.path, frame.source.name || frame.source.path.split('/').pop());
+    setTimeout(() => { if (frame.line) highlightDebugLine(frame.line); }, 200);
+  } else if (frame.line) {
+    highlightDebugLine(frame.line);
+  }
 }
 
 function renderWatch() {
@@ -6479,26 +6868,39 @@ function renderWatch() {
   if (!el) return;
   if (!watchExprs.length) { el.innerHTML = '<div class="dbg-empty">No watch expressions</div>'; return; }
   el.innerHTML = watchExprs.map((expr, i) => {
-    let val = '…';
-    try { val = String(eval(expr)); } catch(e) { val = `<span style="color:var(--red)">${escHtml(e.message)}</span>`; }
+    const val = watchValues[i] || '...';
     return `<div class="dbg-var-row">
       <span class="dbg-var-name">${escHtml(expr)}</span>
       <span class="dbg-var-eq">=</span>
-      <span class="dbg-var-val">${val}</span>
+      <span class="dbg-var-val">${escHtml(val)}</span>
       <button class="dbg-rm-btn" onclick="removeWatch(${i})" title="Remove">✕</button>
     </div>`;
   }).join('');
+}
+
+async function evaluateWatchExprs() {
+  if (!debugSessionId) return;
+  for (let i = 0; i < watchExprs.length; i++) {
+    try {
+      const r = await api('POST', '/api/debug/evaluate', { id: debugSessionId, expression: watchExprs[i] });
+      watchValues[i] = r.result || r.error || '<error>';
+    } catch(e) { watchValues[i] = '<error>'; }
+  }
+  renderWatch();
 }
 
 async function addWatch() {
   const expr = await swalPrompt('Watch expression:','',{placeholder:'e.g. myVariable'});
   if (!expr || !expr.trim()) return;
   watchExprs.push(expr.trim());
-  renderWatch();
+  watchValues.push('...');
+  if (debugSessionId) evaluateWatchExprs();
+  else renderWatch();
 }
 
 function removeWatch(i) {
   watchExprs.splice(i, 1);
+  watchValues.splice(i, 1);
   renderWatch();
 }
 
@@ -6512,112 +6914,142 @@ function showDebugOutput(text, ok) {
   el.scrollTop = el.scrollHeight;
 }
 
+// ── Real DAP Debug Session Management ──
+let debugSessionId = null;
+let debugPollTimer = null;
+let watchValues = [];
+
 async function startDebug() {
   if (!activeFile) { notif('Open a file to debug', 'warn'); return; }
   const ed = getEd(1);
   if (!ed) return;
-  const src = ed.value;
-  const lines = src.split('\n');
 
-  // Build instrumented code: inject __dbg_snap__ calls at breakpoints
-  let instrumented = [
-    'const __dbg_vars__ = {};',
-    'function __dbg_snap__(ln, scope){ Object.assign(__dbg_vars__, scope); console.log("__DBG__" + JSON.stringify({ln, vars: scope})); }'
-  ];
-  lines.forEach((line, i) => {
-    const n = i + 1;
-    instrumented.push(line);
-    if (breakpoints.has(n)) {
-      // After breakpoint line, capture all declared variable names seen so far
-      const varNames = [];
-      lines.slice(0, n).join('\n').replace(/\b(?:let|const|var)\s+(\w+)/g, (_, v) => varNames.push(v));
-      const scopeObj = varNames.length ? `{${[...new Set(varNames)].map(v => `${v}: typeof ${v}!=='undefined'?${v}:'<undefined>'`).join(',')}}` : '{}';
-      instrumented.push(`try{__dbg_snap__(${n}, ${scopeObj});}catch(_e){}`);
-    }
-  });
-
-  const code = instrumented.join('\n');
+  // Detect language from file extension
+  const ext = activeFile.split('.').pop().toLowerCase();
+  const langMap = { py: 'python', js: 'javascript', ts: 'javascript', go: 'go' };
+  const lang = langMap[ext];
+  if (!lang) { notif('Debugging not supported for .' + ext + ' files. Supported: Python, JavaScript, Go', 'warn'); return; }
 
   // Show debug active UI
   debugActive = true;
   debugLineIdx = 0;
-  debugLines = lines;
+  debugLines = ed.value.split('\n');
   document.getElementById('dbg-no-session').style.display = 'none';
   document.getElementById('dbg-active').style.display = 'flex';
-  document.getElementById('dbg-status').textContent = 'Running…';
+  document.getElementById('dbg-status').textContent = 'Starting ' + lang + ' debugger...';
   showBottom(); setBpTab('debug');
 
   try {
-    const res = await api('POST', '/api/run', { language: 'javascript', code });
-    const output = res.output || res.stdout || '';
-    const errOut = res.stderr || res.error || '';
+    // Build breakpoints map
+    const bps = {};
+    if (breakpoints.size) bps[activeFile] = [...breakpoints];
 
-    // Parse debug snapshots
-    let snapshots = [];
-    output.split('\n').forEach(line => {
-      if (line.startsWith('__DBG__')) {
-        try { snapshots.push(JSON.parse(line.slice(7))); } catch(e) {}
-      } else {
-        showDebugOutput(line, true);
-      }
+    const res = await api('POST', '/api/debug/start', {
+      dir: curDir, lang, file: activeFile, breakpoints: bps
     });
-    if (errOut) showDebugOutput(errOut, false);
 
-    if (snapshots.length) {
-      const first = snapshots[0];
-      highlightDebugLine(first.ln);
-      renderDebugVars(first.vars);
-      document.getElementById('dbg-status').textContent = `Paused at line ${first.ln}`;
-      // Store remaining snapshots for step-through
-      debugVars._snapshots = snapshots;
-      debugVars._snapIdx = 0;
-    } else {
-      document.getElementById('dbg-status').textContent = breakpoints.size ? 'No breakpoints hit' : 'Finished';
-      renderDebugVars({});
-      if (!breakpoints.size) notif('Set breakpoints first (click line numbers)', 'warn');
+    if (res.error) {
+      document.getElementById('dbg-status').textContent = 'Error: ' + res.error;
+      showDebugOutput('Failed to start: ' + res.error, false);
+      debugActive = false;
+      return;
     }
+
+    debugSessionId = res.id;
+    document.getElementById('dbg-status').textContent = 'Running...';
+    showDebugOutput('Debug session started (' + lang + ')', true);
+
+    // Start polling for state changes
+    startDebugPoll();
   } catch(e) {
     showDebugOutput('Error: ' + e.message, false);
     document.getElementById('dbg-status').textContent = 'Error';
+    debugActive = false;
   }
   renderBpList();
   renderWatch();
 }
 
-function debugContinue() {
-  if (!debugActive) return;
-  const snaps = debugVars._snapshots;
-  if (!snaps) return;
-  const idx = (debugVars._snapIdx || 0) + 1;
-  if (idx >= snaps.length) {
-    document.getElementById('dbg-status').textContent = 'Finished';
-    debugCurrentLine = null;
-    updateGutter(1);
-    return;
+function startDebugPoll() {
+  if (debugPollTimer) clearInterval(debugPollTimer);
+  debugPollTimer = setInterval(async () => {
+    if (!debugSessionId) { clearInterval(debugPollTimer); return; }
+    try {
+      const s = await api('POST', '/api/debug/status', { id: debugSessionId });
+      if (s.error) { clearInterval(debugPollTimer); return; }
+
+      // Update output
+      if (s.output) {
+        const outEl = document.getElementById('bp-output');
+        if (outEl && s.output !== outEl.dataset.lastOutput) {
+          outEl.dataset.lastOutput = s.output;
+          showDebugOutput(s.output.slice(-500), true);
+        }
+      }
+
+      // State transitions
+      if (s.state === 'stopped') {
+        document.getElementById('dbg-status').textContent = `Paused (${s.stoppedReason || 'breakpoint'})`;
+        // Show stack trace
+        if (s.stackFrames && s.stackFrames.length) {
+          renderCallStack(s.stackFrames);
+          const topFrame = s.stackFrames[0];
+          if (topFrame.line) highlightDebugLine(topFrame.line);
+          if (topFrame.source?.path && topFrame.source.path !== activeFile) {
+            openFile(topFrame.source.path, topFrame.source.name || topFrame.source.path.split('/').pop());
+            setTimeout(() => highlightDebugLine(topFrame.line), 200);
+          }
+        }
+        // Show variables
+        if (s.scopes) renderDebugVars(s.scopes);
+        // Evaluate watch expressions
+        evaluateWatchExprs();
+      } else if (s.state === 'running') {
+        document.getElementById('dbg-status').textContent = 'Running...';
+      } else if (s.state === 'terminated' || s.exited) {
+        document.getElementById('dbg-status').textContent = 'Session ended';
+        showDebugOutput('Debug session terminated', true);
+        clearInterval(debugPollTimer);
+      } else if (s.state === 'error') {
+        document.getElementById('dbg-status').textContent = 'Error';
+        clearInterval(debugPollTimer);
+      }
+    } catch(e) {}
+  }, 500);
+}
+
+async function debugContinue() {
+  if (!debugActive || !debugSessionId) return;
+  document.getElementById('dbg-status').textContent = 'Running...';
+  debugCurrentLine = null; updateGutter(1);
+  await api('POST', '/api/debug/continue', { id: debugSessionId });
+}
+
+async function debugStepOver() {
+  if (!debugActive || !debugSessionId) return;
+  document.getElementById('dbg-status').textContent = 'Stepping...';
+  await api('POST', '/api/debug/step', { id: debugSessionId, type: 'over' });
+}
+
+async function debugStepInto() {
+  if (!debugActive || !debugSessionId) return;
+  document.getElementById('dbg-status').textContent = 'Stepping...';
+  await api('POST', '/api/debug/step', { id: debugSessionId, type: 'into' });
+}
+
+async function debugStepOut() {
+  if (!debugActive || !debugSessionId) return;
+  document.getElementById('dbg-status').textContent = 'Stepping...';
+  await api('POST', '/api/debug/step', { id: debugSessionId, type: 'out' });
+}
+
+async function debugStop() {
+  if (debugSessionId) {
+    await api('POST', '/api/debug/stop', { id: debugSessionId }).catch(() => {});
   }
-  debugVars._snapIdx = idx;
-  highlightDebugLine(snaps[idx].ln);
-  renderDebugVars(snaps[idx].vars);
-  document.getElementById('dbg-status').textContent = `Paused at line ${snaps[idx].ln}`;
-  renderWatch();
-}
-
-function debugStepOver() { debugContinue(); }
-function debugStepInto() { debugContinue(); }
-function debugStepOut() {
-  // Jump to last snapshot
-  const snaps = debugVars._snapshots;
-  if (!snaps || !snaps.length) return;
-  const last = snaps[snaps.length - 1];
-  debugVars._snapIdx = snaps.length - 1;
-  highlightDebugLine(last.ln);
-  renderDebugVars(last.vars);
-  document.getElementById('dbg-status').textContent = `Paused at line ${last.ln}`;
-  renderWatch();
-}
-
-function debugStop() {
+  if (debugPollTimer) clearInterval(debugPollTimer);
   debugActive = false;
+  debugSessionId = null;
   debugCurrentLine = null;
   debugVars = {};
   updateGutter(1);
@@ -6630,8 +7062,7 @@ function debugStop() {
 }
 
 function debugRestart() {
-  debugStop();
-  setTimeout(startDebug, 100);
+  debugStop().then(() => setTimeout(startDebug, 300));
 }
 
 // Run menu wrapper functions
@@ -6653,11 +7084,9 @@ function toggleBreakpointAtCursor() {
   toggleBreakpoint(lineN);
 }
 function enableAllBreakpoints() {
-  // Breakpoints are always enabled in this implementation
   notif('All breakpoints enabled', 'ok');
 }
 function disableAllBreakpoints() {
-  // Store current breakpoints but don't use them
   notif('All breakpoints disabled', 'info');
 }
 function removeAllBreakpoints() {
@@ -7159,45 +7588,160 @@ function insertColor() {
   notif('Color inserted: ' + color, 'ok');
 }
 
-// ── Diff Viewer ──
+// ── Visual Diff Editor (Side-by-Side) ──
 function showDiffViewer(oldText, newText, oldTitle, newTitle) {
   oldText = oldText || '';
   newText = newText || '';
   oldTitle = oldTitle || 'Original';
   newTitle = newTitle || 'Modified';
   const overlay = document.createElement('div');
+  overlay.className = 'diff-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;flex-direction:column';
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+
+  // Compute LCS-based diff
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
-  const maxLines = Math.max(oldLines.length, newLines.length);
+  const diff = computeLineDiff(oldLines, newLines);
+
   let diffHtml = '';
-  for (let i = 0; i < maxLines; i++) {
-    const ol = i < oldLines.length ? oldLines[i] : '';
-    const nl = i < newLines.length ? newLines[i] : '';
-    const changed = ol !== nl;
-    const oldBg = changed ? (i >= oldLines.length ? '' : 'background:rgba(217,97,106,.12)') : '';
-    const newBg = changed ? (i >= newLines.length ? '' : 'background:rgba(141,190,110,.12)') : '';
-    diffHtml += `<div style="display:flex;min-height:18px;font-size:12px;font-family:'JetBrains Mono',monospace;line-height:18px">
-      <div style="width:36px;text-align:right;padding-right:6px;color:var(--tx3);flex-shrink:0;font-size:10px">${i < oldLines.length ? i + 1 : ''}</div>
-      <div style="flex:1;padding:0 6px;white-space:pre;overflow-x:auto;${oldBg}">${escHtml(ol)}</div>
-      <div style="width:1px;background:var(--border2);flex-shrink:0"></div>
-      <div style="width:36px;text-align:right;padding-right:6px;color:var(--tx3);flex-shrink:0;font-size:10px">${i < newLines.length ? i + 1 : ''}</div>
-      <div style="flex:1;padding:0 6px;white-space:pre;overflow-x:auto;${newBg}">${escHtml(nl)}</div>
+  diff.forEach(entry => {
+    const lnOld = entry.oldLn !== null ? entry.oldLn : '';
+    const lnNew = entry.newLn !== null ? entry.newLn : '';
+    const oldContent = entry.oldText !== null ? escHtml(entry.oldText) : '';
+    const newContent = entry.newText !== null ? escHtml(entry.newText) : '';
+    let oldBg = '', newBg = '', oldGutter = '', newGutter = '';
+
+    if (entry.type === 'del') {
+      oldBg = 'background:rgba(217,97,106,.15)'; oldGutter = 'background:rgba(217,97,106,.25)';
+    } else if (entry.type === 'add') {
+      newBg = 'background:rgba(141,190,110,.15)'; newGutter = 'background:rgba(141,190,110,.25)';
+    } else if (entry.type === 'mod') {
+      oldBg = 'background:rgba(217,97,106,.10)'; newBg = 'background:rgba(141,190,110,.10)';
+      oldGutter = 'background:rgba(217,97,106,.2)'; newGutter = 'background:rgba(141,190,110,.2)';
+    }
+
+    diffHtml += `<div style="display:flex;min-height:20px;font-size:12px;font-family:'JetBrains Mono',monospace;line-height:20px">
+      <div style="width:42px;text-align:right;padding-right:6px;color:var(--tx3);flex-shrink:0;font-size:10px;${oldGutter};user-select:none">${lnOld}</div>
+      <div style="width:16px;flex-shrink:0;text-align:center;font-size:10px;color:${entry.type==='del'?'var(--red)':entry.type==='mod'?'var(--yellow)':'var(--tx3)'}">${entry.type==='del'?'-':entry.type==='mod'?'~':' '}</div>
+      <div style="flex:1;padding:0 8px;white-space:pre;overflow-x:auto;${oldBg}">${oldContent}</div>
+      <div style="width:2px;background:var(--border2);flex-shrink:0"></div>
+      <div style="width:42px;text-align:right;padding-right:6px;color:var(--tx3);flex-shrink:0;font-size:10px;${newGutter};user-select:none">${lnNew}</div>
+      <div style="width:16px;flex-shrink:0;text-align:center;font-size:10px;color:${entry.type==='add'?'var(--green)':entry.type==='mod'?'var(--yellow)':'var(--tx3)'}">${entry.type==='add'?'+':entry.type==='mod'?'~':' '}</div>
+      <div style="flex:1;padding:0 8px;white-space:pre;overflow-x:auto;${newBg}">${newContent}</div>
     </div>`;
-  }
+  });
+
+  const stats = diff.reduce((a, d) => { if (d.type === 'add') a.add++; if (d.type === 'del') a.del++; if (d.type === 'mod') a.mod++; return a; }, { add: 0, del: 0, mod: 0 });
+
   overlay.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--border)">
-      <div style="display:flex;gap:16px;font-size:12px">
+      <div style="display:flex;gap:16px;font-size:12px;align-items:center">
         <span style="color:var(--red)">${escHtml(oldTitle)}</span>
         <span style="color:var(--tx3)">vs</span>
         <span style="color:var(--green)">${escHtml(newTitle)}</span>
+        <span style="color:var(--tx3);font-size:10px;margin-left:8px">
+          <span style="color:var(--green)">+${stats.add}</span>
+          <span style="color:var(--red)"> -${stats.del}</span>
+          <span style="color:var(--yellow)"> ~${stats.mod}</span>
+        </span>
       </div>
-      <button onclick="this.closest('div[style*=fixed]').remove()" style="padding:4px 12px;background:var(--surface);border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px">Close</button>
+      <button onclick="this.closest('.diff-overlay').remove()" style="padding:4px 12px;background:var(--surface);border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px;cursor:pointer">Close (Esc)</button>
+    </div>
+    <div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border);font-size:11px;color:var(--tx3)">
+      <div style="flex:1;padding:4px 60px;text-align:center">${escHtml(oldTitle)}</div>
+      <div style="flex:1;padding:4px 60px;text-align:center">${escHtml(newTitle)}</div>
     </div>
     <div style="flex:1;overflow:auto;background:var(--ed-bg)">${diffHtml}</div>
   `;
   document.body.appendChild(overlay);
+  // ESC to close
+  const escHandler = e => { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
+}
+
+function computeLineDiff(oldLines, newLines) {
+  // LCS-based line diff
+  const m = oldLines.length, n = newLines.length;
+  // For very large files, use a simpler approach
+  if (m + n > 10000) return computeSimpleDiff(oldLines, newLines);
+
+  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    dp[i][j] = oldLines[i-1] === newLines[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+  }
+  // Backtrack
+  const result = [];
+  let i = m, j = n;
+  const entries = [];
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldLines[i-1] === newLines[j-1]) {
+      entries.push({ type: 'ctx', oldLn: i, newLn: j, oldText: oldLines[i-1], newText: newLines[j-1] });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+      entries.push({ type: 'add', oldLn: null, newLn: j, oldText: null, newText: newLines[j-1] });
+      j--;
+    } else {
+      entries.push({ type: 'del', oldLn: i, newLn: null, oldText: oldLines[i-1], newText: null });
+      i--;
+    }
+  }
+  entries.reverse();
+  // Merge adjacent del+add into mod where lines are similar
+  for (let k = 0; k < entries.length - 1; k++) {
+    if (entries[k].type === 'del' && entries[k+1].type === 'add') {
+      entries[k] = { type: 'mod', oldLn: entries[k].oldLn, newLn: entries[k+1].newLn,
+        oldText: entries[k].oldText, newText: entries[k+1].newText };
+      entries.splice(k+1, 1);
+    }
+  }
+  return entries;
+}
+
+function computeSimpleDiff(oldLines, newLines) {
+  const result = [];
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < maxLines; i++) {
+    const ol = i < oldLines.length ? oldLines[i] : null;
+    const nl = i < newLines.length ? newLines[i] : null;
+    if (ol === nl) result.push({ type: 'ctx', oldLn: i+1, newLn: i+1, oldText: ol, newText: nl });
+    else if (ol === null) result.push({ type: 'add', oldLn: null, newLn: i+1, oldText: null, newText: nl });
+    else if (nl === null) result.push({ type: 'del', oldLn: i+1, newLn: null, oldText: ol, newText: null });
+    else result.push({ type: 'mod', oldLn: i+1, newLn: i+1, oldText: ol, newText: nl });
+  }
+  return result;
+}
+
+// ── Git Visual Diff ──
+async function showGitDiff(file) {
+  if (!curDir) return;
+  const r = await api('GET', `/api/git/diff-parsed?dir=${encodeURIComponent(curDir)}${file ? '&file=' + encodeURIComponent(file) : ''}`);
+  if (!r.files || !r.files.length) { notif('No changes to diff', 'info'); return; }
+  if (r.files.length === 1 || file) {
+    // Single file diff - fetch both versions
+    const f = file || r.files[0].path;
+    const savedRes = await api('GET', `/api/file?path=${encodeURIComponent(curDir + '/' + f)}`);
+    const currentContent = savedRes.content || '';
+    // Reconstruct old content from diff
+    let oldContent = currentContent;
+    try {
+      const showRes = await new Promise(resolve => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', `/api/git/file-at?dir=${encodeURIComponent(curDir)}&file=${encodeURIComponent(f)}&hash=HEAD`);
+        xhr.setRequestHeader('X-Axiom-Token', TOK);
+        xhr.onload = () => { try { resolve(JSON.parse(xhr.responseText)); } catch(e) { resolve({}); } };
+        xhr.onerror = () => resolve({});
+        xhr.send();
+      });
+      if (showRes.content) oldContent = showRes.content;
+    } catch(e) {}
+    showDiffViewer(oldContent, currentContent, f + ' (HEAD)', f + ' (working)');
+  } else {
+    // Multiple files - show file picker then diff
+    const fileList = r.files.map(f => f.path).join('\n');
+    const chosen = await swalPrompt('Choose file to diff:', '', { placeholder: 'File path', inputValue: r.files[0].path });
+    if (chosen) showGitDiff(chosen);
+  }
 }
 
 function diffCurrentFile() {

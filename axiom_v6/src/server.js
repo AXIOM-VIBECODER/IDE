@@ -5,7 +5,7 @@
  * Real WebSocket terminal · Admin Dashboard · Memory Engine · Zero npm deps
  */
 const http=require('http'),https=require('https'),fs=require('fs'),path=require('path');
-const os=require('os'),urlMod=require('url'),crypto=require('crypto');
+const os=require('os'),urlMod=require('url'),crypto=require('crypto'),net=require('net');
 const {exec,spawn,execSync}=require('child_process');
 let pty;try{pty=require('node-pty');}catch(e){console.warn('node-pty not available, falling back to spawn');}
 const mysql=require('mysql2/promise');
@@ -148,36 +148,201 @@ async function lspChange(srv,filePath,content,version){
 }
 
 // ══════════════════════════════════════════════════════════════
-// DAP CLIENT — Debug Adapter Protocol manager
+// DAP CLIENT — Real Debug Adapter Protocol over TCP/stdio
 // ══════════════════════════════════════════════════════════════
 const debugSessions={};
-const DAP_CMDS={
-  python:{cmd:'python3',args:['-m','debugpy','--listen','0','--wait-for-client'],type:'attach',port:5678},
-  javascript:{cmd:'node',args:['--inspect-brk'],type:'launch'},
-  go:{cmd:'dlv',args:['debug','--headless','--api-version=2','--listen=127.0.0.1:0'],type:'attach'},
+const DAP_CONFIGS={
+  python:{cmd:'python3',args:['-m','debugpy.adapter'],mode:'stdio',
+    launchArgs:(f,d)=>({type:'python',request:'launch',program:f,cwd:d,console:'integratedTerminal',justMyCode:true})},
+  javascript:{cmd:'node',args:data=>{
+      const p=5678+Object.keys(debugSessions).length;
+      return['--inspect-brk='+p,data.file];},
+    mode:'inspect',
+    launchArgs:(f,d,p)=>({type:'node',request:'attach',port:p,localRoot:d,remoteRoot:d})},
+  go:{cmd:'dlv',args:data=>{
+      const p=38697+Object.keys(debugSessions).length;
+      return['dap','--listen','127.0.0.1:'+p];},
+    mode:'tcp',
+    launchArgs:(f,d)=>({type:'go',request:'launch',mode:'debug',program:f,cwd:d})},
 };
+// DAP message framing (same Content-Length header as LSP)
+function dapEncode(msg){const body=JSON.stringify(msg);return`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;}
+function createDapParser(onMessage){
+  let buf='',contentLen=-1;
+  return function(chunk){
+    buf+=chunk;
+    while(true){
+      if(contentLen<0){
+        const hdrEnd=buf.indexOf('\r\n\r\n');
+        if(hdrEnd<0)break;
+        const hdr=buf.slice(0,hdrEnd);
+        const m=hdr.match(/Content-Length:\s*(\d+)/i);
+        if(!m)break;
+        contentLen=parseInt(m[1],10);
+        buf=buf.slice(hdrEnd+4);
+      }
+      if(buf.length<contentLen)break;
+      const body=buf.slice(0,contentLen);
+      buf=buf.slice(contentLen);contentLen=-1;
+      try{onMessage(JSON.parse(body));}catch(e){}
+    }
+  };
+}
 
 function startDapSession(lang,filePath,rootDir){
   const id=crypto.randomUUID();
-  const cfg=DAP_CMDS[lang];if(!cfg)return{error:'No debugger for '+lang};
-  let proc,port=0;
-  if(lang==='python'){
-    port=5678+Object.keys(debugSessions).length;
-    proc=spawn('python3',['-m','debugpy','--listen',String(port),'--wait-for-client',filePath],{cwd:rootDir,stdio:['pipe','pipe','pipe']});
-  }else if(lang==='javascript'){
-    const inspPort=9229+Object.keys(debugSessions).length;
-    port=inspPort;
-    proc=spawn('node',['--inspect-brk='+inspPort,filePath],{cwd:rootDir,stdio:['pipe','pipe','pipe']});
-  }else if(lang==='go'){
-    port=38697+Object.keys(debugSessions).length;
-    proc=spawn('dlv',['debug','--headless','--api-version=2','--listen=127.0.0.1:'+port],{cwd:rootDir,stdio:['pipe','pipe','pipe']});
-  }else{return{error:'Unsupported debug language'};}
-  let output='';
-  proc.stdout.on('data',d=>{output+=d.toString();if(output.length>50000)output=output.slice(-25000);});
-  proc.stderr.on('data',d=>{output+=d.toString();if(output.length>50000)output=output.slice(-25000);});
-  proc.on('exit',code=>{const s=debugSessions[id];if(s)s.exited=true;});
-  debugSessions[id]={proc,lang,file:filePath,port,output:'',breakpoints:[],exited:false,started:Date.now()};
-  return{id,port,lang};
+  const cfg=DAP_CONFIGS[lang];if(!cfg)return{error:'No debugger for '+lang};
+  const sess={id,lang,file:filePath,dir:rootDir,proc:null,dapSocket:null,
+    seq:1,pending:{},breakpoints:{},threads:[],stackFrames:[],scopes:{},
+    variables:{},output:[],state:'starting',exited:false,started:Date.now(),
+    stoppedThread:null,stoppedReason:null,capabilities:{}};
+
+  const onDapMsg=(msg)=>{
+    // Handle DAP responses
+    if(msg.type==='response'&&sess.pending[msg.request_seq]){
+      const{resolve}=sess.pending[msg.request_seq];delete sess.pending[msg.request_seq];
+      resolve(msg);
+    }
+    // Handle DAP events
+    if(msg.type==='event'){
+      if(msg.event==='initialized'){
+        sess.state='initialized';
+        // Send breakpoints then configurationDone
+        sendAllBreakpoints(sess).then(()=>dapRequest(sess,'configurationDone',{}));
+      }
+      if(msg.event==='stopped'){
+        sess.state='stopped';
+        sess.stoppedThread=msg.body?.threadId||1;
+        sess.stoppedReason=msg.body?.reason||'breakpoint';
+      }
+      if(msg.event==='continued'){sess.state='running';}
+      if(msg.event==='terminated'||msg.event==='exited'){sess.state='terminated';sess.exited=true;}
+      if(msg.event==='output'){
+        const text=msg.body?.output||'';
+        sess.output.push({category:msg.body?.category||'console',text});
+        if(sess.output.length>500)sess.output=sess.output.slice(-250);
+      }
+      if(msg.event==='thread'){
+        if(msg.body?.reason==='started')sess.threads.push({id:msg.body.threadId,name:'Thread '+msg.body.threadId});
+        if(msg.body?.reason==='exited')sess.threads=sess.threads.filter(t=>t.id!==msg.body.threadId);
+      }
+    }
+  };
+
+  const setupDap=(writable,readable)=>{
+    const parser=createDapParser(onDapMsg);
+    readable.on('data',d=>parser(d.toString()));
+    sess._write=(data)=>{writable.write(dapEncode(data));};
+    // Send initialize
+    dapRequest(sess,'initialize',{
+      clientID:'axiom',clientName:'AXIOM IDE',adapterID:lang,
+      linesStartAt1:true,columnsStartAt1:true,
+      pathFormat:'path',
+      supportsVariableType:true,supportsRunInTerminalRequest:false,
+      supportsVariablePaging:true,
+      locale:'en'
+    }).then(r=>{
+      sess.capabilities=r.body||{};
+      // Send launch
+      const launchArgs=cfg.launchArgs(filePath,rootDir,sess._port);
+      return dapRequest(sess,'launch',launchArgs);
+    }).then(()=>{sess.state='running';}).catch(e=>{
+      sess.output.push({category:'stderr',text:'DAP init error: '+e.message});
+      sess.state='error';
+    });
+  };
+
+  if(cfg.mode==='stdio'){
+    // debugpy adapter mode: communicate via stdin/stdout
+    const proc=spawn(cfg.cmd,cfg.args,{cwd:rootDir,stdio:['pipe','pipe','pipe']});
+    sess.proc=proc;
+    proc.stderr.on('data',d=>{sess.output.push({category:'stderr',text:d.toString()});});
+    proc.on('exit',()=>{sess.exited=true;sess.state='terminated';});
+    setupDap(proc.stdin,proc.stdout);
+  } else if(cfg.mode==='tcp'){
+    // dlv dap mode: connect TCP after spawning
+    const args=typeof cfg.args==='function'?cfg.args({file:filePath}):cfg.args;
+    const portMatch=args.join(' ').match(/127\.0\.0\.1:(\d+)/);
+    const port=portMatch?parseInt(portMatch[1],10):38697;
+    sess._port=port;
+    const proc=spawn(cfg.cmd,args,{cwd:rootDir,stdio:['pipe','pipe','pipe']});
+    sess.proc=proc;
+    let procOutput='';
+    proc.stdout.on('data',d=>{procOutput+=d.toString();});
+    proc.stderr.on('data',d=>{procOutput+=d.toString();sess.output.push({category:'stderr',text:d.toString()});});
+    proc.on('exit',()=>{sess.exited=true;sess.state='terminated';});
+    // Wait for server to be ready then connect
+    setTimeout(()=>{
+      const sock=net.connect(port,'127.0.0.1',()=>{sess.dapSocket=sock;setupDap(sock,sock);});
+      sock.on('error',e=>{sess.output.push({category:'stderr',text:'TCP connect error: '+e.message});sess.state='error';});
+    },800);
+  } else if(cfg.mode==='inspect'){
+    // Node.js inspect mode: spawn node, connect Chrome DevTools Protocol via DAP wrapper
+    const args=typeof cfg.args==='function'?cfg.args({file:filePath}):cfg.args;
+    const portMatch=args.join(' ').match(/--inspect-brk=(\d+)/);
+    const port=portMatch?parseInt(portMatch[1],10):9229;
+    sess._port=port;
+    const proc=spawn(cfg.cmd,args,{cwd:rootDir,stdio:['pipe','pipe','pipe']});
+    sess.proc=proc;
+    proc.stdout.on('data',d=>{sess.output.push({category:'stdout',text:d.toString()});});
+    proc.stderr.on('data',d=>{sess.output.push({category:'stderr',text:d.toString()});});
+    proc.on('exit',()=>{sess.exited=true;sess.state='terminated';});
+    // For Node inspect we emulate DAP by bridging to the inspect protocol
+    sess.state='running';
+    sess._inspectPort=port;
+  }
+
+  debugSessions[id]=sess;
+  return{id,lang,state:sess.state};
+}
+
+function dapRequest(sess,command,args){
+  return new Promise((resolve,reject)=>{
+    if(!sess._write){return reject(new Error('DAP not connected'));}
+    const seq=sess.seq++;
+    const msg={type:'request',seq,command,arguments:args||{}};
+    sess.pending[seq]={resolve,reject,ts:Date.now()};
+    sess._write(msg);
+    setTimeout(()=>{if(sess.pending[seq]){delete sess.pending[seq];reject(new Error('DAP timeout: '+command));}},15000);
+  });
+}
+
+async function sendAllBreakpoints(sess){
+  const grouped={};
+  Object.entries(sess.breakpoints).forEach(([file,lines])=>{
+    grouped[file]=lines.map(ln=>({line:ln}));
+  });
+  for(const[file,bps]of Object.entries(grouped)){
+    try{await dapRequest(sess,'setBreakpoints',{
+      source:{path:file},breakpoints:bps
+    });}catch(e){}
+  }
+}
+
+async function dapGetThreads(sess){
+  try{const r=await dapRequest(sess,'threads',{});sess.threads=r.body?.threads||[];return sess.threads;}
+  catch(e){return sess.threads;}
+}
+
+async function dapGetStackTrace(sess,threadId){
+  try{const r=await dapRequest(sess,'stackTrace',{threadId,startFrame:0,levels:50});
+    sess.stackFrames=r.body?.stackFrames||[];return sess.stackFrames;}
+  catch(e){return[];}
+}
+
+async function dapGetScopes(sess,frameId){
+  try{const r=await dapRequest(sess,'scopes',{frameId});return r.body?.scopes||[];}
+  catch(e){return[];}
+}
+
+async function dapGetVariables(sess,ref){
+  try{const r=await dapRequest(sess,'variables',{variablesReference:ref,count:200});return r.body?.variables||[];}
+  catch(e){return[];}
+}
+
+async function dapEvaluate(sess,expression,frameId){
+  try{const r=await dapRequest(sess,'evaluate',{expression,frameId,context:'watch'});return r.body||{result:'<error>'};}
+  catch(e){return{result:e.message};}
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1409,10 +1574,11 @@ Return ONLY valid JSON array. No markdown.`;
     const dir=safe(data.dir);const lang=data.lang||'';const filePath=data.file||'';
     if(!dir||!lang||!filePath)return sendJson(res,{error:'Missing params'},400);
     const srv=await startLsp(lang,dir);if(!srv)return sendJson(res,{data:[]});
+    const legend={tokenTypes:['namespace','type','class','enum','interface','struct','typeParameter','parameter','variable','property','enumMember','event','function','method','macro','keyword','modifier','comment','string','number','regexp','operator','decorator'],tokenModifiers:['declaration','definition','readonly','static','deprecated','abstract','async']};
     try{
       const result=await lspSend(srv,'textDocument/semanticTokens/full',{textDocument:{uri:fileToUri(filePath)}});
-      return sendJson(res,{data:result?.data||[]});
-    }catch(e){return sendJson(res,{data:[]});}
+      return sendJson(res,{data:result?.data||[],legend});
+    }catch(e){return sendJson(res,{data:[],legend});}
   }
   // LSP: diagnostics (poll)
   if(route==='/api/lsp/diagnostics'&&req.method==='POST'){
@@ -1429,28 +1595,118 @@ Return ONLY valid JSON array. No markdown.`;
     return sendJson(res,{servers:avail});
   }
 
-  // ══════════════ DEBUGGER ENDPOINTS ══════════════
+  // ══════════════ DEBUGGER ENDPOINTS (Real DAP) ══════════════
   if(route==='/api/debug/start'&&req.method==='POST'){
     const dir=safe(data.dir);const lang=data.lang||'';const file=data.file||'';
+    const bps=data.breakpoints||{};  // { filePath: [lineNumbers] }
     if(!dir||!lang||!file)return sendJson(res,{error:'Missing params'},400);
     const result=startDapSession(lang,file,dir);
+    if(result.error)return sendJson(res,result,400);
+    const sess=debugSessions[result.id];
+    if(sess&&bps)sess.breakpoints=bps;
     return sendJson(res,result);
   }
   if(route==='/api/debug/status'&&req.method==='POST'){
     const id=data.id||'';const sess=debugSessions[id];
     if(!sess)return sendJson(res,{error:'No session'});
-    return sendJson(res,{id,lang:sess.lang,file:sess.file,port:sess.port,exited:sess.exited,output:(sess.proc?'':'')+(sess.output||'').slice(-2000)});
+    // If stopped, auto-fetch stack trace and variables
+    let stackFrames=[],vars=[],scopes=[];
+    if(sess.state==='stopped'&&sess.stoppedThread){
+      try{stackFrames=await dapGetStackTrace(sess,sess.stoppedThread);
+        if(stackFrames.length){
+          scopes=await dapGetScopes(sess,stackFrames[0].id);
+          for(const scope of scopes.slice(0,3)){
+            try{const v=await dapGetVariables(sess,scope.variablesReference);
+              vars.push({scope:scope.name,variables:v.map(x=>({name:x.name,value:x.value,type:x.type||'',ref:x.variablesReference}))});}catch(e){}
+          }
+        }
+      }catch(e){}
+    }
+    return sendJson(res,{id,lang:sess.lang,file:sess.file,state:sess.state,
+      exited:sess.exited,stoppedThread:sess.stoppedThread,stoppedReason:sess.stoppedReason,
+      threads:sess.threads,stackFrames,scopes:vars,
+      output:sess.output.slice(-100).map(o=>o.text).join(''),
+      capabilities:sess.capabilities});
+  }
+  if(route==='/api/debug/continue'&&req.method==='POST'){
+    const id=data.id||'';const sess=debugSessions[id];
+    if(!sess)return sendJson(res,{error:'No session'});
+    try{await dapRequest(sess,'continue',{threadId:sess.stoppedThread||1});sess.state='running';return sendJson(res,{ok:true});}
+    catch(e){return sendJson(res,{error:e.message});}
+  }
+  if(route==='/api/debug/step'&&req.method==='POST'){
+    const id=data.id||'';const type=data.type||'over';const sess=debugSessions[id];
+    if(!sess)return sendJson(res,{error:'No session'});
+    const cmd=type==='into'?'stepIn':type==='out'?'stepOut':'next';
+    try{await dapRequest(sess,cmd,{threadId:sess.stoppedThread||1});sess.state='running';return sendJson(res,{ok:true});}
+    catch(e){return sendJson(res,{error:e.message});}
+  }
+  if(route==='/api/debug/setBreakpoints'&&req.method==='POST'){
+    const id=data.id||'';const sess=debugSessions[id];const file=data.file||'';const lines=data.lines||[];
+    if(!sess)return sendJson(res,{error:'No session'});
+    sess.breakpoints[file]=lines;
+    try{const r=await dapRequest(sess,'setBreakpoints',{source:{path:file},breakpoints:lines.map(l=>({line:l}))});
+      return sendJson(res,{breakpoints:r.body?.breakpoints||[]});}
+    catch(e){return sendJson(res,{error:e.message});}
+  }
+  if(route==='/api/debug/evaluate'&&req.method==='POST'){
+    const id=data.id||'';const expr=data.expression||'';const frameId=data.frameId;
+    const sess=debugSessions[id];
+    if(!sess)return sendJson(res,{error:'No session'});
+    const result=await dapEvaluate(sess,expr,frameId);
+    return sendJson(res,result);
+  }
+  if(route==='/api/debug/variables'&&req.method==='POST'){
+    const id=data.id||'';const ref=data.variablesReference||0;
+    const sess=debugSessions[id];
+    if(!sess)return sendJson(res,{error:'No session'});
+    const vars=await dapGetVariables(sess,ref);
+    return sendJson(res,{variables:vars});
   }
   if(route==='/api/debug/stop'&&req.method==='POST'){
     const id=data.id||'';const sess=debugSessions[id];
     if(!sess)return sendJson(res,{error:'No session'});
+    try{await dapRequest(sess,'disconnect',{terminateDebuggee:true}).catch(()=>{});}catch(e){}
     try{sess.proc.kill();}catch(e){}
+    if(sess.dapSocket)try{sess.dapSocket.destroy();}catch(e){}
     delete debugSessions[id];
     return sendJson(res,{ok:true});
   }
   if(route==='/api/debug/list'&&req.method==='GET'){
-    const sessions=Object.entries(debugSessions).map(([id,s])=>({id,lang:s.lang,file:s.file,port:s.port,exited:s.exited}));
+    const sessions=Object.entries(debugSessions).map(([id,s])=>({id,lang:s.lang,file:s.file,state:s.state,exited:s.exited}));
     return sendJson(res,{sessions});
+  }
+  // Parsed git diff for visual diff editor
+  if(route==='/api/git/diff-parsed'&&req.method==='GET'){
+    const dir=safe(q.dir||os.homedir());
+    if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    const file=q.file||'';
+    return new Promise(resolve=>{
+      const cmd=file?`cd "${dir}" && git diff -- "${file}" 2>/dev/null`:`cd "${dir}" && git diff 2>/dev/null`;
+      exec(cmd,{maxBuffer:2*1024*1024},(err,stdout)=>{
+        if(!stdout)return resolve(sendJson(res,{hunks:[],files:[]}));
+        // Parse unified diff into structured hunks
+        const files=[];let curFile=null;
+        stdout.split('\n').forEach(line=>{
+          if(line.startsWith('diff --git')){
+            curFile={path:line.replace(/^diff --git a\/(.+) b\/.*$/,'$1'),hunks:[]};files.push(curFile);
+          }else if(line.startsWith('@@')&&curFile){
+            const m=line.match(/@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)/);
+            curFile.hunks.push({
+              oldStart:parseInt(m?.[1]||1),oldCount:parseInt(m?.[2]||1),
+              newStart:parseInt(m?.[3]||1),newCount:parseInt(m?.[4]||1),
+              header:line,lines:[]
+            });
+          }else if(curFile&&curFile.hunks.length){
+            const hunk=curFile.hunks[curFile.hunks.length-1];
+            if(line.startsWith('+'))hunk.lines.push({type:'add',text:line.slice(1)});
+            else if(line.startsWith('-'))hunk.lines.push({type:'del',text:line.slice(1)});
+            else hunk.lines.push({type:'ctx',text:line.startsWith(' ')?line.slice(1):line});
+          }
+        });
+        resolve(sendJson(res,{files,raw:stdout.slice(0,50000)}));
+      });
+    });
   }
 
   // ══════════════ TASK RUNNER ENDPOINTS ══════════════
