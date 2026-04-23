@@ -1307,9 +1307,6 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
 .auth-oauth[disabled] { opacity:.5;cursor:not-allowed; }
 .auth-oauth-hint { font-size:10px;color:var(--tx3);text-align:center;margin:4px 0 8px;line-height:1.5; }
 .auth-oauth-hint a { color:var(--ac);cursor:pointer;text-decoration:underline; }
-.auth-demo { width:100%;padding:8px;background:transparent;border:1px solid var(--border2);
-  border-radius:7px;color:var(--tx2);font-size:12px;transition:all .15s; }
-.auth-demo:hover { border-color:var(--ac);color:var(--ac);background:var(--ac4); }
 .auth-footer { text-align:center;margin-top:14px;font-size:11px;color:var(--tx3); }
 .auth-footer a { color:var(--ac);cursor:pointer;text-decoration:none; }
 
@@ -1775,8 +1772,6 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
           Continue with Google
         </button>
         <div id="oauth-hint" class="auth-oauth-hint" style="display:none"></div>
-        <div class="auth-divider"><span>demo</span></div>
-        <button class="auth-demo" onclick="demoLogin()">⚡ Continue with Demo Account</button>
         <div class="auth-footer">Don't have an account? <a onclick="switchAuthTab('signup')">Create one free</a></div>
       </div>
 
@@ -3184,13 +3179,6 @@ async function signUp() {
   afterAuth(d);
 }
 
-async function demoLogin() {
-  const r = await fetch('/api/auth/login', {method:'POST', headers:{'Content-Type':'application/json', 'X-Axiom-Token': TOK}, body: JSON.stringify({email:'demo@axiom.dev', password:'axiom123'})});
-  const d = await r.json();
-  if (d.error) { document.getElementById('sin-err').textContent = d.error; return; }
-  afterAuth(d);
-}
-
 // Redirect to /api/auth/{provider}/start. The server will 302 to the
 // provider's consent screen and eventually redirect back to `/` with a
 // hash containing the signed JWT and user profile (handled by tryOAuthReturn).
@@ -3206,18 +3194,14 @@ async function refreshOAuthProviders() {
     const r = await fetch('/api/auth/providers');
     if (!r.ok) return;
     const d = await r.json();
+    // Always show OAuth buttons — if not configured, clicking shows setup instructions
     document.querySelectorAll('.auth-oauth').forEach(btn => {
-      const p = btn.getAttribute('data-provider');
-      const enabled = !!d[p];
-      btn.style.display = enabled ? '' : 'none';
-      btn.disabled = !enabled;
+      btn.style.display = '';
+      btn.disabled = false;
     });
     const hint = document.getElementById('oauth-hint');
-    if (hint && !d.github && !d.google) {
-      hint.style.display = 'block';
-      hint.innerHTML = 'Set <code>GITHUB_CLIENT_ID</code>/<code>GOOGLE_CLIENT_ID</code> (and secrets) in your environment to enable social login.';
-    }
-  } catch (e) { /* ignore — keep buttons visible so failures are reported on click */ }
+    if (hint) hint.style.display = 'none';
+  } catch (e) { /* ignore — keep buttons visible */ }
 }
 
 // If we were just redirected back from a GitHub/Google callback, the server
@@ -3719,13 +3703,7 @@ async function deleteAccount() {
     localStorage.removeItem('ax_user_token');
   }
 
-  // Auto-login: create/restore default local user
-  const alR = await fetch('/api/auth/auto-login', {method:'POST', headers:{'Content-Type':'application/json','X-Axiom-Token':TOK}}).catch(()=>null);
-  if (alR?.ok) {
-    const alD = await alR.json().catch(()=>({}));
-    if (alD.user && alD.token) { afterAuth(alD); return; }
-  }
-
+  // Show auth screen — user must sign in, create account, or use OAuth
   document.getElementById('auth-screen').style.display = 'flex';
 })();
 

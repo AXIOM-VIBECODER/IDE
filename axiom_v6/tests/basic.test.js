@@ -182,12 +182,19 @@ describe('AXIOM v6 — Security Checks', () => {
 // ═══════════════════════════════════════════════════════════════
 describe('AXIOM v6 — API Integration (skipped if server not running)', () => {
     let serverAvailable = false;
+    let serverToken = '';
 
     it('should check if server is running', async () => {
         try {
             const r = await httpRequest('/api/ping');
             serverAvailable = r.status === 200;
             if (!serverAvailable) { console.log('    (Server not running — skipping API tests)'); }
+            // Read server token from config for authenticated requests
+            try {
+                const cfgPath = path.join(require('os').homedir(), '.axiom', 'config.json');
+                const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+                serverToken = cfg.token || '';
+            } catch (e) { /* no config */ }
         } catch (e) {
             console.log('    (Server not running — skipping API tests)');
         }
@@ -216,21 +223,21 @@ describe('AXIOM v6 — API Integration (skipped if server not running)', () => {
 
     it('should return settings at /api/settings', async () => {
         if (!serverAvailable) return;
-        const r = await httpRequest('/api/settings');
+        const r = await httpRequest('/api/settings', { headers: { 'X-Axiom-Token': serverToken } });
         assert.strictEqual(r.status, 200);
         assert.ok(r.body.theme !== undefined);
     });
 
     it('should return extensions at /api/extensions', async () => {
         if (!serverAvailable) return;
-        const r = await httpRequest('/api/extensions');
+        const r = await httpRequest('/api/extensions', { headers: { 'X-Axiom-Token': serverToken } });
         assert.strictEqual(r.status, 200);
         assert.ok(Array.isArray(r.body.installed));
     });
 
     it('should return themes at /api/themes', async () => {
         if (!serverAvailable) return;
-        const r = await httpRequest('/api/themes');
+        const r = await httpRequest('/api/themes', { headers: { 'X-Axiom-Token': serverToken } });
         assert.strictEqual(r.status, 200);
     });
 

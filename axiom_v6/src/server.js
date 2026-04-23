@@ -361,7 +361,7 @@ async function dapEvaluate(sess,expression,frameId){
 // COLLABORATION — WebSocket rooms for real-time editing
 // ══════════════════════════════════════════════════════════════
 const collabRooms={};  // roomId -> { doc, users: [{socket,name,color,cursor}], version, owner, token, created, file }
-const COLLAB_FILE=path.join(DATA,'collab_sessions.json');
+let COLLAB_FILE; // set after DATA is defined
 
 function getRoom(roomId){
   if(!collabRooms[roomId])collabRooms[roomId]={doc:'',users:[],version:0,history:[],created:Date.now(),owner:null,token:null,file:null,typing:new Set()};
@@ -422,6 +422,7 @@ function detectTasks(dir){
 }
 
 const PORT=+(process.env.PORT||5000),DATA=process.env.AXIOM_DATA||path.join(os.homedir(),'.axiom');
+COLLAB_FILE=path.join(DATA,'collab_sessions.json');
 const MAX_BODY_SIZE=5*1024*1024;
 const KEY_FILE=path.join(DATA,'key'),MEM_FILE=path.join(DATA,'memory.json');
 const CFG_FILE=path.join(DATA,'config.json'),DB_FILE=path.join(DATA,'axiom.db');
@@ -445,9 +446,11 @@ function auditLog(action,details,req){
   const entry=JSON.stringify({ts:new Date().toISOString(),action,details,ip:req?.socket?.remoteAddress,user:req?.headers?.['x-user-email']||'system'});
   try{fs.appendFileSync(path.join(DATA,'audit.log'),entry+'\n');}catch(e){}
   // Also write to DB audit_log table
+  if(dbPool){
   const now=new Date().toISOString().slice(0,19).replace('T',' ');
   dbPool.query('INSERT INTO audit_log (user_id,action,resource,details,ip_address,created_at) VALUES (?,?,?,?,?,?)',
     [null,action,details?.route||details?.path||'',JSON.stringify(details),req?.socket?.remoteAddress||'',now]).catch(()=>{});
+  }
 }
 
 // ── Atomic File Writes ──────────────────────────────────────────
@@ -535,17 +538,21 @@ const PLANS={
 // ── MySQL Database ───────────────────────────────────────────────
 const DB_PASS=process.env.DB_PASS;
 if(!DB_PASS&&process.env.NODE_ENV==='production'){console.error('FATAL: DB_PASS environment variable is required in production');process.exit(1);}
-const dbPool=mysql.createPool({
-  host:process.env.DB_HOST||'localhost',
-  user:process.env.DB_USER||'root',
-  password:DB_PASS||'',
-  database:process.env.DB_NAME||'axiom',
-  waitForConnections:true,
-  connectionLimit:10,
-  queueLimit:0,
-  timezone:'+00:00',
-  decimalNumbers:true
-});
+let dbPool=null;
+let dbAvailable=false;
+try{
+  dbPool=mysql.createPool({
+    host:process.env.DB_HOST||'localhost',
+    user:process.env.DB_USER||'root',
+    password:DB_PASS||'',
+    database:process.env.DB_NAME||'axiom',
+    waitForConnections:true,
+    connectionLimit:10,
+    queueLimit:0,
+    timezone:'+00:00',
+    decimalNumbers:true
+  });
+}catch(e){console.warn('[DB] MySQL pool creation failed:',e.message);}
 
 const DB={
   async createUser(o){
@@ -667,6 +674,8 @@ const DB={
     const a=await this.getAnalytics();return{answer:`Platform: ${a.overview.total_users} users, $${a.revenue.total.toFixed(2)} revenue, $${a.revenue.mrr}/mo MRR`,data:a,type:'analytics'};
   },
   async seedDemo(){
+    if(!dbPool)return;
+    try{
     const [existing]=await dbPool.query('SELECT COUNT(*) AS cnt FROM users');
     if(existing[0].cnt>0)return;
     const demos=[['Amara Osei','amara@example.com','pro'],['Kofi Mensah','kofi@example.com','free'],['Sofia Rodriguez','sofia@startup.io','starter'],['James Chen','james@tech.co','pro'],['Priya Sharma','priya@company.com','team']];
@@ -679,6 +688,7 @@ const DB={
       }
     }
     console.log('  Demo data seeded to MySQL');
+    }catch(e){console.warn('[DB] seedDemo failed (MySQL may be unavailable):',e.message);}
   },
   // Keep backward-compat stubs for any code that calls load()/save()
   load(){return this;},
@@ -1024,8 +1034,8 @@ const server=http.createServer(async(req,res)=>{
   const parsed=urlMod.parse(req.url,true),route=parsed.pathname,q=parsed.query;
   const{text:rawBody,json:data}=['POST','PUT','PATCH','DELETE'].includes(req.method)?await parseBody(req):{text:'',json:{}};
 
-  const PUBLIC=['/api/ping','/api/token','/api/billing/webhook','/api/plans','/api/auth/auto-login',
-    '/api/auth/providers',
+  const PUBLIC=['/api/ping','/api/token','/api/billing/webhook','/api/plans',
+    '/api/auth/register','/api/auth/login','/api/auth/providers',
     '/api/auth/github/start','/api/auth/github/callback',
     '/api/auth/google/start','/api/auth/google/callback'];
   if(route.startsWith('/api/')&&!PUBLIC.includes(route)){
@@ -1273,18 +1283,6 @@ const server=http.createServer(async(req,res)=>{
 
 
   // ── USER AUTH ROUTES ──────────────────────────────────────────────
-  // Auto-login: creates default user on first run (localhost-only, safe since server binds 127.0.0.1)
-  if(route==='/api/auth/auto-login'&&req.method==='POST'){
-    const d=UsersDB.load();
-    if(d.users.length===0){
-      const r=UsersDB.register('Zawadi','zawadi@axiom.dev','axiom2024','pro');
-      if(r.error)return sendJson(res,{error:r.error},500);
-      return sendJson(res,r);
-    }
-    const u=d.users[0];
-    const{hash:_h,salt:_s,...safe}=u;
-    return sendJson(res,{user:safe,token:makeJWT({id:u.id,email:u.email,plan:u.plan})});
-  }
   if(route==='/api/auth/register'&&req.method==='POST'){
     if(!data.email||!data.password||data.password.length<6)return sendJson(res,{error:'Email and password (6+ chars) required'},400);
     const r=UsersDB.register(data.name||'User',data.email,data.password,data.plan||'free');
@@ -2027,7 +2025,7 @@ function gracefulShutdown(signal){
     // Close all file watchers
     Object.keys(fileWatchers).forEach(d=>unwatchDirectory(d));
     // Close DB pool
-    try{dbPool.end(()=>logInfo('DB pool closed'));}catch(e){}
+    try{if(dbPool)dbPool.end(()=>logInfo('DB pool closed'));}catch(e){}
     process.exit(0);
   });
   setTimeout(()=>{logWarn('Forced shutdown after timeout');process.exit(1);},10000);
@@ -2039,7 +2037,10 @@ process.on('unhandledRejection',(reason)=>{logError('Unhandled rejection: '+reas
 
 // ── Start ────────────────────────────────────────────────────────
 server.listen(PORT,'127.0.0.1',async ()=>{
-  await DB.seedDemo();const mem=Mem.startSession();const hasKey=!!getKey();
+  // Test DB connectivity
+  if(dbPool){try{await dbPool.query('SELECT 1');dbAvailable=true;}catch(e){console.warn('[DB] MySQL not available:',e.message);dbAvailable=false;}}
+  if(dbAvailable)await DB.seedDemo();
+  const mem=Mem.startSession();const hasKey=!!getKey();
   console.clear();
   console.log('\n  ╔══════════════════════════════════════════════════════════════╗');
   console.log('  ║              A X I O M  v6 — East Africa Edition            ║');
@@ -2051,6 +2052,7 @@ server.listen(PORT,'127.0.0.1',async ()=>{
   console.log(`  ✦  Terminal →  WebSocket (ws://localhost:${PORT}/ws/terminal)`);
   console.log(`  ✦  Session  →  #${mem.sessions}`);
   console.log(`  ✦  API Key  →  ${hasKey?'✅ Ready':'⚠️  Add in Settings'}`);
+  console.log(`  ✦  MySQL   →  ${dbAvailable?'✅ Connected':'⚠️  Offline (file-only mode)'}`);
   console.log(`\n  Token: ${CFG.token}\n`);
   const open=process.platform==='darwin'?'open':process.platform==='win32'?'start':'xdg-open';
   require('child_process').exec(`${open} http://localhost:${PORT}`);
@@ -2245,6 +2247,5 @@ const OAuth={
   }
 };
 
-// Seed demo user if empty
-(()=>{const d=UsersDB.load();if(!d.users.length){UsersDB.register('Demo User','demo@axiom.dev','axiom123','pro');console.log('  Demo user: demo@axiom.dev / axiom123');}})();
+// No demo accounts — users must register or use OAuth
 
