@@ -502,6 +502,7 @@ let currencyCache=null;
 function safe(p){if(!p)return null;const r=path.resolve((p+'').replace(/^~/,os.homedir()));return[os.homedir(),'/tmp'].some(b=>r.startsWith(path.resolve(b)))?r:null;}
 
 function isAdmin(req,data){
+  if(req._adminUser&&req._adminUser.admin)return true;
   const token=req.headers['x-token']||req.headers.authorization?.replace('Bearer ','');
   if(token===CFG.token)return true;
   const email=data?.email||req.headers['x-user-email'];
@@ -1037,10 +1038,17 @@ const server=http.createServer(async(req,res)=>{
   const PUBLIC=['/api/ping','/api/token','/api/billing/webhook','/api/plans',
     '/api/auth/register','/api/auth/login','/api/auth/providers',
     '/api/auth/github/start','/api/auth/github/callback',
-    '/api/auth/google/start','/api/auth/google/callback'];
+    '/api/auth/google/start','/api/auth/google/callback',
+    '/api/admin/login'];
   if(route.startsWith('/api/')&&!PUBLIC.includes(route)){
     const tok=req.headers['x-axiom-token']||q.token||'';
-    if(tok!==CFG.token){res.writeHead(401);res.end(JSON.stringify({error:'Invalid token'}));return;}
+    if(tok!==CFG.token){
+      // Also accept admin JWT for /api/admin routes
+      const jwt=req.headers['x-admin-token']||req.headers.authorization?.replace('Bearer ','');
+      const payload=jwt?verifyJWT(jwt):null;
+      if(!payload||!payload.admin){res.writeHead(401);res.end(JSON.stringify({error:'Invalid token'}));return;}
+      req._adminUser=payload;
+    }
   }
 
   if(!route.startsWith('/api/')){
@@ -1217,6 +1225,17 @@ const server=http.createServer(async(req,res)=>{
       apiRes.on('end',()=>{res.end();const lastUser=msgs.length?msgs[msgs.length-1].content:'';if(lastUser&&typeof lastUser==='string')Mem.extract(lastUser,full);});
     });
     apiReq.on('error',()=>{try{res.end();}catch(x){}});apiReq.write(rb);apiReq.end();return;
+  }
+
+  // Admin login — password-based authentication for admin dashboard
+  if(route==='/api/admin/login'&&req.method==='POST'){
+    if(!data.email||!data.password)return sendJson(res,{error:'Email and password required'},400);
+    const r=UsersDB.login(data.email,data.password);
+    if(r.error)return sendJson(res,{error:r.error},401);
+    if(r.user.role!=='admin')return sendJson(res,{error:'Access denied: admin role required'},403);
+    const adminToken=makeJWT({id:r.user.id,email:r.user.email,plan:r.user.plan,admin:true});
+    auditLog('admin_login',{email:data.email},req);
+    return sendJson(res,{ok:true,token:adminToken,user:{name:r.user.name,email:r.user.email,plan:r.user.plan,avatar:r.user.avatar}});
   }
 
   // Admin routes — RBAC check

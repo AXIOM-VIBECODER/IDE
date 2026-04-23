@@ -468,9 +468,10 @@ tr:hover td { background: rgba(255,255,255,.015); }
   <p class="login-sub">Platform Administration Dashboard</p>
   <div class="login-card">
     <h2>Admin Access</h2>
-    <p>Enter your session token printed in the terminal when you run <code style="color:var(--ac);font-size:11px;">bash start.sh</code></p>
-    <input type="password" class="login-input" id="token-input" placeholder="Paste admin token..." autocomplete="off"/>
-    <button class="login-btn" id="login-btn">Enter Dashboard</button>
+    <p>Sign in with your admin account credentials.</p>
+    <input type="email" class="login-input" id="email-input" placeholder="Admin email" autocomplete="email"/>
+    <input type="password" class="login-input" id="password-input" placeholder="Password" autocomplete="current-password"/>
+    <button class="login-btn" id="login-btn">Sign In</button>
     <div class="login-err" id="login-err"></div>
   </div>
 </div>
@@ -733,6 +734,7 @@ tr:hover td { background: rgba(255,255,255,.015); }
 
 // ════════════ STATE ════════════
 let TOKEN = localStorage.getItem('axiom_admin_token') || '';
+let adminUser = null;
 let chatHistory = [];
 let refreshInterval = null;
 
@@ -748,42 +750,47 @@ const PLAN_COLORS = {
 // ════════════ AUTHENTICATION ════════════
 const $login   = document.getElementById('login-screen');
 const $app     = document.getElementById('app');
-const $tokInp  = document.getElementById('token-input');
+const $emailInp  = document.getElementById('email-input');
+const $pwInp   = document.getElementById('password-input');
 const $loginBtn= document.getElementById('login-btn');
 const $loginErr= document.getElementById('login-err');
 
 $loginBtn.addEventListener('click', doLogin);
-$tokInp.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+$pwInp.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+$emailInp.addEventListener('keydown', e => { if (e.key === 'Enter') $pwInp.focus(); });
 
 async function doLogin() {
-  const t = $tokInp.value.trim();
-  if (!t) return;
-  $loginBtn.textContent = 'Verifying...';
+  const email = $emailInp.value.trim();
+  const password = $pwInp.value;
+  if (!email || !password) { $loginErr.textContent = 'Enter your admin email and password.'; return; }
+  $loginBtn.textContent = 'Signing in...';
+  $loginErr.textContent = '';
   try {
-    const r = await fetch('/api/token', {
+    const r = await fetch('/api/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: t })
+      body: JSON.stringify({ email, password })
     });
     const d = await r.json();
-    if (d.ok) {
-      TOKEN = t;
-      localStorage.setItem('axiom_admin_token', t);
+    if (d.ok && d.token) {
+      TOKEN = d.token;
+      localStorage.setItem('axiom_admin_token', TOKEN);
+      if (d.user) adminUser = d.user;
       enterApp();
     } else {
-      $loginErr.textContent = 'Invalid token. Check your terminal output.';
+      $loginErr.textContent = d.error || 'Login failed.';
     }
   } catch (e) {
     $loginErr.textContent = 'Connection error: ' + e.message;
   }
-  $loginBtn.textContent = 'Enter Dashboard';
+  $loginBtn.textContent = 'Sign In';
 }
 
 // Auto-login if token exists
 (async () => {
   if (!TOKEN) return;
   try {
-    const r = await fetch('/api/ping', { headers: { 'X-Axiom-Token': TOKEN } });
+    const r = await fetch('/api/admin/analytics', { headers: { 'X-Admin-Token': TOKEN } });
     if (r.ok) enterApp();
     else { TOKEN = ''; localStorage.removeItem('axiom_admin_token'); }
   } catch (e) { /* server not running */ }
@@ -807,7 +814,7 @@ async function api(method, path, body) {
   try {
     const opts = {
       method,
-      headers: { 'Content-Type': 'application/json', 'X-Axiom-Token': TOKEN }
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': TOKEN }
     };
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(path, opts);
@@ -854,11 +861,13 @@ document.getElementById('refresh-btn').addEventListener('click', () => {
 
 document.getElementById('logout-btn').addEventListener('click', () => {
   TOKEN = '';
+  adminUser = null;
   localStorage.removeItem('axiom_admin_token');
   clearInterval(refreshInterval);
   $app.classList.remove('ready');
   $login.style.display = '';
-  $tokInp.value = '';
+  $emailInp.value = '';
+  $pwInp.value = '';
   $loginErr.textContent = '';
 });
 
@@ -1193,9 +1202,16 @@ document.getElementById('au-submit').addEventListener('click', async () => {
 });
 
 // Export
-document.getElementById('export-users-btn').addEventListener('click', () => {
-  window.open('/api/admin/users/export?token=' + TOKEN, '_blank');
-  toast('Downloading CSV...', 'info');
+document.getElementById('export-users-btn').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/admin/users/export', { headers: { 'X-Admin-Token': TOKEN } });
+    if (!r.ok) { toast('Export failed', 'err'); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'axiom_users.csv'; a.click();
+    URL.revokeObjectURL(url);
+    toast('Downloading CSV...', 'info');
+  } catch(e) { toast('Export error: ' + e.message, 'err'); }
 });
 
 // ════════════ PAYMENTS ════════════
@@ -1341,7 +1357,7 @@ async function sendChat() {
   try {
     const res = await fetch('/api/admin/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Axiom-Token': TOKEN },
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': TOKEN },
       body: JSON.stringify({ messages: chatHistory })
     });
 
