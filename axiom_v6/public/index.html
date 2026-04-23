@@ -1052,6 +1052,47 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
 /* Backdrop */
 .swal2-backdrop-show { background: rgba(0,0,0,.65) !important; backdrop-filter: blur(2px); }
 
+/* ── Folder Browser ───────────────────────────────────────── */
+.fb-container { text-align:left; }
+.fb-breadcrumb {
+  display:flex; flex-wrap:wrap; align-items:center; gap:2px;
+  padding:8px 12px; margin-bottom:8px;
+  background:#0d1117; border-radius:6px; border:1px solid #30363d;
+  font-family:'JetBrains Mono',monospace; font-size:12px; color:#8b949e;
+  overflow-x:auto; white-space:nowrap;
+}
+.fb-crumb { cursor:pointer; color:#58a6ff; padding:2px 4px; border-radius:3px; }
+.fb-crumb:hover { background:#30363d; color:#79c0ff; }
+.fb-sep { color:#484f58; margin:0 1px; }
+.fb-list {
+  max-height:360px; overflow-y:auto; border:1px solid #30363d;
+  border-radius:6px; background:#0d1117;
+}
+.fb-list::-webkit-scrollbar { width:6px; }
+.fb-list::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+.fb-row {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 12px; cursor:pointer; border-bottom:1px solid #21262d;
+  font-family:'JetBrains Mono',monospace; font-size:13px; color:#c9d1d9;
+  transition:background .12s;
+}
+.fb-row:last-child { border-bottom:none; }
+.fb-row:hover { background:#161b22; }
+.fb-icon { font-size:16px; flex-shrink:0; }
+.fb-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fb-empty {
+  padding:32px 16px; text-align:center;
+  color:#484f58; font-style:italic; font-size:13px;
+}
+.fb-footer {
+  margin-top:8px; padding:6px 12px;
+  background:#0d1117; border-radius:6px; border:1px solid #30363d;
+}
+.fb-path-display {
+  font-family:'JetBrains Mono',monospace; font-size:11px;
+  color:#8b949e; word-break:break-all;
+}
+
 /* ═══════════ AI ASSISTANT — Zed style: editor-like, minimal ═══════════ */
 .ai-panel {
   width: 320px; background: var(--panel); border-left: 1px solid var(--border);
@@ -5271,15 +5312,95 @@ function openFilePicker(){
   document.getElementById('file-picker').click();
 }
 async function openFolder(dir){
-  if(!dir){
-    const homeDir=await getHomeDir();
-    dir=await swalPrompt('Open folder path:',homeDir,{placeholder:'/home/user/project'});
-    if(!dir)return;
-  }
+  if(!dir){ dir=await folderBrowser(); if(!dir)return; }
   loadDir(dir);
 }
-function openFolderPicker(){
-  openFolder();
+function openFolderPicker(){ openFolder(); }
+
+/* ── Visual Folder Browser ─────────────────────────────────── */
+async function folderBrowser(startDir){
+  if(!startDir) startDir=await getHomeDir();
+  let browsePath=startDir;
+  const fbId='ax-folder-browser';
+
+  async function fetchEntries(dir){
+    try{
+      const r=await api('GET',`/api/files?path=${encodeURIComponent(dir)}`);
+      if(!r.entries) return {entries:[],current:dir};
+      return {entries:r.entries,current:r.current,home:r.home};
+    }catch(e){ return {entries:[],current:dir}; }
+  }
+
+  function renderBreadcrumb(p){
+    const parts=p.split('/').filter(Boolean);
+    let html='<span class="fb-crumb" data-path="/">/</span>';
+    let acc='';
+    for(const seg of parts){
+      acc+='/'+seg;
+      html+=`<span class="fb-sep">/</span><span class="fb-crumb" data-path="${esc(acc)}">${esc(seg)}</span>`;
+    }
+    return html;
+  }
+
+  function renderList(entries){
+    const dirs=entries.filter(e=>e.type==='dir');
+    if(!dirs.length) return '<div class="fb-empty">No subfolders</div>';
+    return dirs.map(e=>
+      `<div class="fb-row" data-path="${esc(e.path)}" title="${esc(e.path)}">
+        <span class="fb-icon">📁</span><span class="fb-name">${esc(e.name)}</span>
+      </div>`
+    ).join('');
+  }
+
+  async function render(){
+    const data=await fetchEntries(browsePath);
+    browsePath=data.current||browsePath;
+    const el=document.getElementById(fbId);
+    if(!el)return;
+    el.querySelector('.fb-breadcrumb').innerHTML=renderBreadcrumb(browsePath);
+    el.querySelector('.fb-list').innerHTML=renderList(data.entries);
+    el.querySelector('.fb-path-display').textContent=browsePath;
+  }
+
+  const initData=await fetchEntries(browsePath);
+  browsePath=initData.current||browsePath;
+
+  const html=`<div id="${fbId}" class="fb-container">
+    <div class="fb-breadcrumb">${renderBreadcrumb(browsePath)}</div>
+    <div class="fb-list">${renderList(initData.entries)}</div>
+    <div class="fb-footer">
+      <span class="fb-path-display">${esc(browsePath)}</span>
+    </div>
+  </div>`;
+
+  const result=await Swal.fire({
+    title:'Open Folder',
+    html,
+    width:'520px',
+    background:'#1a1d23',
+    color:'#c9d1d9',
+    showCancelButton:true,
+    confirmButtonText:'Open',
+    cancelButtonText:'Cancel',
+    confirmButtonColor:'#58a6ff',
+    cancelButtonColor:'#3a3f47',
+    customClass:{popup:'swal-axiom-popup',confirmButton:'swal-axiom-btn',cancelButton:'swal-axiom-btn'},
+    didOpen:()=>{
+      const container=document.getElementById(fbId);
+      container.addEventListener('click',async e=>{
+        const crumb=e.target.closest('.fb-crumb');
+        if(crumb){ browsePath=crumb.dataset.path; await render(); return; }
+        const row=e.target.closest('.fb-row');
+        if(row){ browsePath=row.dataset.path; await render(); return; }
+      });
+      container.addEventListener('dblclick',e=>{
+        const row=e.target.closest('.fb-row');
+        if(row){ Swal.clickConfirm(); }
+      });
+    }
+  });
+  if(result.isConfirmed) return browsePath;
+  return null;
 }
 async function getHomeDir(){
   try{
