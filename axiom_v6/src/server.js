@@ -510,6 +510,26 @@ function isAdmin(req,data){
   try{const ud=JSON.parse(fs.readFileSync(path.join(os.homedir(),'.axiom','users.json'),'utf8'));return !!ud.users?.find(u=>u.email===email&&u.role==='admin');}catch(e){return false;}
 }
 
+// Resolve current user from X-User-Token header
+function getReqUser(req){
+  const tok=req.headers['x-user-token'];
+  if(!tok)return null;
+  return UsersDB.getByToken(tok);
+}
+
+// Check if free trial has expired (2-day trial)
+const FREE_TRIAL_DAYS=2;
+function isTrialExpired(user){
+  if(!user)return false;
+  if(user.role==='admin')return false;
+  if(user.plan&&user.plan!=='free')return false;
+  const created=new Date(user.created_at);
+  const now=new Date();
+  const diffMs=now-created;
+  const diffDays=diffMs/(1000*60*60*24);
+  return diffDays>FREE_TRIAL_DAYS;
+}
+
 function sanitizeGitArg(arg){return (arg||'').replace(/[;&|`$(){}!#\n\r]/g,'');}
 
 function git(cwd,...args){return new Promise(resolve=>{const s=safe(cwd);if(!s)return resolve({ok:false,out:'Path not allowed'});const sanitized=args.map(a=>sanitizeGitArg(a));exec(`git -C "${s}" ${sanitized.join(' ')}`,{timeout:15000,env:{...process.env,GIT_TERMINAL_PROMPT:'0'}},(err,out,se)=>resolve({ok:!err,out:(out||'')+(se&&!out?se:''),err:err?.message||''}));});}
@@ -519,7 +539,7 @@ function git(cwd,...args){return new Promise(resolve=>{const s=safe(cwd);if(!s)r
 // shown on the M-Pesa billing panel. `features` drives the plan cards.
 const PLANS={
   free:{
-    name:'Free',price:0,kes:0,tagline:'For trying out AXIOM',
+    name:'Free Trial',price:0,kes:0,tagline:'2-day trial — explore AXIOM',trial_days:2,
     features:['Basic IDE + editor','Community support','1K AI tokens/day','1 workspace']
   },
   starter:{
@@ -745,10 +765,11 @@ const Snippets={
 const Chats={
   load(){try{return JSON.parse(fs.readFileSync(CHATS_FILE,'utf8'));}catch(e){return[];}},
   save(c){atomicWriteSync(CHATS_FILE,JSON.stringify(c,null,2),{mode:0o600});},
-  add(title,messages,lang){const c=this.load();const chat={id:crypto.randomUUID(),title:title.slice(0,120),messages,lang:lang||'',created:new Date().toISOString(),updated:new Date().toISOString()};c.unshift(chat);this.save(c.slice(0,200));return chat;},
-  update(id,messages,title){const c=this.load();const i=c.findIndex(x=>x.id===id);if(i===-1)return null;if(messages)c[i].messages=messages;if(title)c[i].title=title;c[i].updated=new Date().toISOString();this.save(c);return c[i];},
-  remove(id){const c=this.load().filter(x=>x.id!==id);this.save(c);},
-  get(id){return this.load().find(x=>x.id===id)||null;}
+  add(title,messages,lang,userId){const c=this.load();const chat={id:crypto.randomUUID(),user_id:userId||null,title:title.slice(0,120),messages,lang:lang||'',created:new Date().toISOString(),updated:new Date().toISOString()};c.unshift(chat);this.save(c.slice(0,500));return chat;},
+  update(id,messages,title,userId){const c=this.load();const i=c.findIndex(x=>x.id===id&&(!userId||x.user_id===userId));if(i===-1)return null;if(messages)c[i].messages=messages;if(title)c[i].title=title;c[i].updated=new Date().toISOString();this.save(c);return c[i];},
+  remove(id,userId){const c=this.load().filter(x=>!(x.id===id&&(!userId||x.user_id===userId)));this.save(c);},
+  get(id,userId){const c=this.load().find(x=>x.id===id);if(!c)return null;if(userId&&c.user_id&&c.user_id!==userId)return null;return c;},
+  listForUser(userId){return this.load().filter(c=>c.user_id===userId);}
 };
 
 // ── East African Proverbs ────────────────────────────────────────
@@ -1039,7 +1060,7 @@ const server=http.createServer(async(req,res)=>{
     '/api/auth/register','/api/auth/login','/api/auth/providers',
     '/api/auth/github/start','/api/auth/github/callback',
     '/api/auth/google/start','/api/auth/google/callback',
-    '/api/admin/login'];
+    '/api/admin/login','/api/billing/paystack/webhook'];
   if(route.startsWith('/api/')&&!PUBLIC.includes(route)){
     const tok=req.headers['x-axiom-token']||q.token||'';
     if(tok!==CFG.token){
@@ -1049,10 +1070,23 @@ const server=http.createServer(async(req,res)=>{
       if(!payload||!payload.admin){res.writeHead(401);res.end(JSON.stringify({error:'Invalid token'}));return;}
       req._adminUser=payload;
     }
+    // Trial enforcement — block expired free users from main API (except auth/billing)
+    if(!route.startsWith('/api/auth')&&!route.startsWith('/api/billing')&&!route.startsWith('/api/plans')&&!route.startsWith('/api/admin')){
+      const u=getReqUser(req);
+      if(u&&isTrialExpired(u)){return sendJson(res,{error:'trial_expired',message:'Your 2-day free trial has ended. Please subscribe to continue using AXIOM.'},403);}
+    }
   }
 
   if(!route.startsWith('/api/')){
     const pub=path.join(__dirname,'..','public');
+    // Block /admin for non-admin users
+    if(route==='/admin'||route==='/admin/'){
+      const adminTok=q.token||'';
+      const jwt=q.jwt||'';
+      const payload=jwt?verifyJWT(jwt):null;
+      const isAdm=adminTok===CFG.token||(payload&&payload.admin);
+      // Admin page itself handles login — serve it, the JS will require credentials
+    }
     let fp=route==='/'?path.join(pub,'index.html'):route==='/admin'||route==='/admin/'?path.join(pub,'admin.html'):path.join(pub,route.slice(1));
     const rfp=path.resolve(fp);
     if(!rfp.startsWith(path.resolve(pub))){res.writeHead(403);res.end('Forbidden');return;}
@@ -1319,7 +1353,10 @@ const server=http.createServer(async(req,res)=>{
     const tok=req.headers['x-user-token']||q.token;
     const u=tok?UsersDB.getByToken(tok):null;
     if(!u)return sendJson(res,{error:'Not authenticated'},401);
-    return sendJson(res,{user:u});
+    const trialExpired=isTrialExpired(u);
+    const created=new Date(u.created_at);
+    const trialEnds=new Date(created.getTime()+FREE_TRIAL_DAYS*24*60*60*1000);
+    return sendJson(res,{user:u,trial_expired:trialExpired,trial_ends:trialEnds.toISOString(),free_trial_days:FREE_TRIAL_DAYS});
   }
   if(route==='/api/auth/profile'&&req.method==='PUT'){
     const tok=req.headers['x-user-token'];
@@ -1447,6 +1484,105 @@ const server=http.createServer(async(req,res)=>{
     const mpLog=path.join(DATA,'mpesa_transactions.json');
     try{return sendJson(res,{transactions:JSON.parse(fs.readFileSync(mpLog,'utf8'))});}
     catch(e){return sendJson(res,{transactions:[]});}
+  }
+
+  // ── Paystack Integration ──────────────────────────────────────
+  const PAYSTACK_FILE=path.join(DATA,'paystack.json');
+  function getPaystackKey(){try{const c=JSON.parse(fs.readFileSync(PAYSTACK_FILE,'utf8'));return c;}catch(e){return null;}}
+
+  // Initialize a Paystack transaction
+  if(route==='/api/billing/paystack/initialize'&&req.method==='POST'){
+    const ps=getPaystackKey();
+    if(!ps||!ps.secret_key)return sendJson(res,{error:'Paystack not configured. Add keys in Settings.'},400);
+    const u=getReqUser(req);
+    if(!u)return sendJson(res,{error:'Authentication required'},401);
+    const plan=data.plan;if(!plan||!PLANS[plan]||plan==='free')return sendJson(res,{error:'Invalid plan'},400);
+    const amountKobo=Math.round((PLANS[plan].kes||PLANS[plan].price*130)*100); // Convert to kobo/pesewas
+    const payload=JSON.stringify({
+      email:u.email,
+      amount:amountKobo,
+      currency:'KES',
+      callback_url:data.callback_url||(req.headers.origin||`http://localhost:${PORT}`),
+      metadata:JSON.stringify({user_id:u.id,plan,user_email:u.email})
+    });
+    try{
+      const result=await new Promise((resolve,reject)=>{
+        const r=https.request({hostname:'api.paystack.co',path:'/transaction/initialize',method:'POST',
+          headers:{'Authorization':'Bearer '+ps.secret_key,'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}
+        },(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+        r.on('error',reject);r.write(payload);r.end();
+      });
+      if(result.status&&result.data){
+        auditLog('paystack_init',{email:u.email,plan,ref:result.data.reference},req);
+        return sendJson(res,{ok:true,authorization_url:result.data.authorization_url,reference:result.data.reference,access_code:result.data.access_code});
+      }
+      return sendJson(res,{error:result.message||'Paystack initialization failed'},400);
+    }catch(e){return sendJson(res,{error:'Paystack error: '+e.message},500);}
+  }
+
+  // Verify a Paystack transaction
+  if(route==='/api/billing/paystack/verify'&&req.method==='GET'){
+    const ps=getPaystackKey();
+    if(!ps||!ps.secret_key)return sendJson(res,{error:'Paystack not configured'},400);
+    const ref=q.reference;if(!ref)return sendJson(res,{error:'Missing reference'},400);
+    try{
+      const result=await new Promise((resolve,reject)=>{
+        const r=https.request({hostname:'api.paystack.co',path:'/transaction/verify/'+encodeURIComponent(ref),method:'GET',
+          headers:{'Authorization':'Bearer '+ps.secret_key}
+        },(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+        r.on('error',reject);r.end();
+      });
+      if(result.status&&result.data&&result.data.status==='success'){
+        const meta=typeof result.data.metadata==='string'?JSON.parse(result.data.metadata):result.data.metadata||{};
+        const userId=meta.user_id;const plan=meta.plan||'pro';
+        // Update user plan
+        if(userId){
+          const d=UsersDB.load();const u=d.users.find(x=>x.id===userId);
+          if(u){u.plan=plan;u.last_seen=new Date().toISOString();UsersDB.save(d);}
+        }
+        auditLog('paystack_success',{ref,plan,user_id:userId,amount:result.data.amount/100},req);
+        return sendJson(res,{ok:true,plan,message:'Payment successful! Plan upgraded to '+plan});
+      }
+      return sendJson(res,{ok:false,status:result.data?.status||'unknown',message:'Payment not yet confirmed'});
+    }catch(e){return sendJson(res,{error:'Verification error: '+e.message},500);}
+  }
+
+  // Paystack webhook
+  if(route==='/api/billing/paystack/webhook'&&req.method==='POST'){
+    const ps=getPaystackKey();
+    // Verify webhook signature
+    if(ps&&ps.secret_key){
+      const hash=crypto.createHmac('sha512',ps.secret_key).update(rawBody).digest('hex');
+      if(hash!==req.headers['x-paystack-signature']){return sendJson(res,{error:'Invalid signature'},401);}
+    }
+    const event=data.event;const txData=data.data||{};
+    if(event==='charge.success'){
+      const meta=typeof txData.metadata==='string'?JSON.parse(txData.metadata):txData.metadata||{};
+      const userId=meta.user_id;const plan=meta.plan||'pro';
+      if(userId){
+        const d=UsersDB.load();const u=d.users.find(x=>x.id===userId);
+        if(u){u.plan=plan;u.last_seen=new Date().toISOString();UsersDB.save(d);}
+      }
+      // Log transaction
+      const txLog=path.join(DATA,'paystack_transactions.json');
+      let txns=[];try{txns=JSON.parse(fs.readFileSync(txLog,'utf8'));}catch(e){}
+      txns.unshift({event,reference:txData.reference,amount:txData.amount/100,currency:txData.currency,email:txData.customer?.email,plan,user_id:userId,received:new Date().toISOString()});
+      atomicWriteSync(txLog,JSON.stringify(txns.slice(0,500),null,2),{mode:0o600});
+      auditLog('paystack_webhook',{event,ref:txData.reference,plan,user_id:userId},req);
+    }
+    return sendJson(res,{ok:true});
+  }
+
+  // Paystack config (save/get keys)
+  if(route==='/api/billing/paystack/config'&&req.method==='GET'){
+    try{const c=JSON.parse(fs.readFileSync(PAYSTACK_FILE,'utf8'));
+      return sendJson(res,{configured:true,public_key:c.public_key||''});}
+    catch(e){return sendJson(res,{configured:false});}
+  }
+  if(route==='/api/billing/paystack/config'&&req.method==='POST'){
+    const c={public_key:data.public_key,secret_key:data.secret_key,updated:new Date().toISOString()};
+    atomicWriteSync(PAYSTACK_FILE,JSON.stringify(c,null,2),{mode:0o600});
+    return sendJson(res,{ok:true});
   }
 
   // Collaboration management API
@@ -2013,12 +2149,12 @@ Return ONLY valid JSON array. No markdown.`;
     return new Promise(resolve=>{exec(cmd,{maxBuffer:512*1024},(err,out)=>{resolve(sendJson(res,{output:out||'',ok:!err}));});});
   }
 
-  // Chat history persistence
-  if(route==='/api/chats'&&req.method==='GET'){const chats=Chats.load();return sendJson(res,{chats:chats.map(c=>({id:c.id,title:c.title,lang:c.lang,messageCount:c.messages?.length||0,created:c.created,updated:c.updated}))});}
-  if(route==='/api/chats'&&req.method==='POST'){const chat=Chats.add(data.title||'New Chat',data.messages||[],data.lang||'');return sendJson(res,{chat});}
-  if(route.match(/^\/api\/chats\/[^/]+$/)&&req.method==='GET'){const chat=Chats.get(route.split('/')[3]);if(!chat)return sendJson(res,{error:'Not found'},404);return sendJson(res,{chat});}
-  if(route.match(/^\/api\/chats\/[^/]+$/)&&req.method==='PUT'){const chat=Chats.update(route.split('/')[3],data.messages,data.title);if(!chat)return sendJson(res,{error:'Not found'},404);return sendJson(res,{chat});}
-  if(route.match(/^\/api\/chats\/[^/]+$/)&&req.method==='DELETE'){Chats.remove(route.split('/')[3]);return sendJson(res,{ok:true});}
+  // Chat history persistence — scoped to authenticated user
+  if(route==='/api/chats'&&req.method==='GET'){const u=getReqUser(req);const uid=u?.id||null;const chats=uid?Chats.listForUser(uid):[];return sendJson(res,{chats:chats.map(c=>({id:c.id,title:c.title,lang:c.lang,messageCount:c.messages?.length||0,created:c.created,updated:c.updated}))});}
+  if(route==='/api/chats'&&req.method==='POST'){const u=getReqUser(req);const uid=u?.id||null;const chat=Chats.add(data.title||'New Chat',data.messages||[],data.lang||'',uid);return sendJson(res,{chat});}
+  if(route.match(/^\/api\/chats\/[^/]+$/)&&req.method==='GET'){const u=getReqUser(req);const uid=u?.id||null;const chat=Chats.get(route.split('/')[3],uid);if(!chat)return sendJson(res,{error:'Not found'},404);return sendJson(res,{chat});}
+  if(route.match(/^\/api\/chats\/[^/]+$/)&&req.method==='PUT'){const u=getReqUser(req);const uid=u?.id||null;const chat=Chats.update(route.split('/')[3],data.messages,data.title,uid);if(!chat)return sendJson(res,{error:'Not found'},404);return sendJson(res,{chat});}
+  if(route.match(/^\/api\/chats\/[^/]+$/)&&req.method==='DELETE'){const u=getReqUser(req);const uid=u?.id||null;Chats.remove(route.split('/')[3],uid);return sendJson(res,{ok:true});}
 
   sendJson(res,{error:'Not found'},404);
 });

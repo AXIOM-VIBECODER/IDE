@@ -2246,7 +2246,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
         <div class="pnav-sep"></div>
         <button class="pnav-btn" id="pn-set"      onclick="setPanel('set')">Settings</button>
         <div class="pnav-sep"></div>
-        <button class="pnav-btn" id="pn-billing"  onclick="setPanel('billing')">M-Pesa</button>
+        <button class="pnav-btn" id="pn-billing"  onclick="setPanel('billing')">Billing</button>
         <div class="pnav-sep"></div>
         <button class="pnav-btn" id="pn-community" onclick="setPanel('community')">Community</button>
         <div class="pnav-sep"></div>
@@ -2721,11 +2721,11 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
         </div>
       </div>
 
-      <!-- M-PESA / BILLING PANEL -->
+      <!-- BILLING PANEL -->
       <div class="panel-section" id="ps-billing">
         <div class="panel-hdr">
-          <span class="panel-title">M-Pesa Billing</span>
-          <div class="panel-acts"><button class="pact" onclick="loadMpesaTxns()">↺</button></div>
+          <span class="panel-title">Billing</span>
+          <div class="panel-acts"><button class="pact" onclick="loadMpesaTxns()">&#8634;</button></div>
         </div>
         <div style="flex:1;overflow-y:auto;padding:8px">
           <div style="background:var(--surface);border-radius:8px;padding:12px;margin-bottom:8px">
@@ -2734,12 +2734,34 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
               <span id="billing-plan" style="font-size:18px;font-weight:600;color:var(--ac)">Free</span>
               <span id="billing-price" style="font-size:12px;color:var(--tx2)">KES 0/mo</span>
             </div>
+            <div id="billing-trial-info" style="font-size:11px;color:var(--tx3);display:none"></div>
           </div>
-          <div style="font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;padding:0 4px">Upgrade via M-Pesa</div>
+          <div style="font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;padding:0 4px">Choose a Plan</div>
           <div class="billing-plans" id="billing-plans">
-            <div style="color:var(--tx3);padding:8px 0;font-size:11px">Loading plans…</div>
+            <div style="color:var(--tx3);padding:8px 0;font-size:11px">Loading plans...</div>
           </div>
-          <div id="mpesa-pay-form" style="display:none;margin-top:8px">
+
+          <!-- Payment method tabs -->
+          <div id="billing-pay-methods" style="display:none;margin-top:10px">
+            <div style="display:flex;gap:4px;margin-bottom:8px">
+              <button class="pay-tab on" id="pay-tab-paystack" onclick="switchPayTab('paystack')" style="flex:1;padding:6px;background:var(--ac3);border:1px solid var(--ac);border-radius:6px 6px 0 0;color:var(--ac);font-size:11px;font-weight:600;cursor:pointer">Paystack (Card/Bank)</button>
+              <button class="pay-tab" id="pay-tab-mpesa" onclick="switchPayTab('mpesa')" style="flex:1;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px 6px 0 0;color:var(--tx2);font-size:11px;font-weight:600;cursor:pointer">M-Pesa (Mobile)</button>
+            </div>
+
+            <!-- Paystack payment form -->
+            <div id="paystack-pay-form" style="background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;padding:12px">
+              <div style="font-size:12px;font-weight:500;color:var(--tx);margin-bottom:8px">Pay with Card / Bank Transfer</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <span id="paystack-amount" style="font-size:14px;font-weight:600;color:var(--ac)">KES 0</span>
+                <span id="paystack-plan-name" style="font-size:11px;color:var(--tx3)"></span>
+              </div>
+              <button onclick="initPaystackPay()" style="width:100%;padding:8px;background:#58a6ff;border:none;border-radius:6px;color:#000;font-size:13px;font-weight:600;cursor:pointer">Pay with Paystack</button>
+              <div id="paystack-status" style="font-size:11px;color:var(--tx3);text-align:center;min-height:14px;margin-top:4px"></div>
+              <div style="font-size:10px;color:var(--tx3);text-align:center;margin-top:4px">Visa, Mastercard, Bank Transfer, USSD</div>
+            </div>
+
+            <!-- M-Pesa payment form -->
+            <div id="mpesa-pay-form" style="display:none;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;padding:12px">
             <div style="font-size:12px;font-weight:500;color:var(--tx);margin-bottom:6px">Pay with M-Pesa</div>
             <div style="display:flex;flex-direction:column;gap:6px">
               <select id="mpesa-currency" class="sinp" style="padding:6px 8px" onchange="updateMpesaPrice()">
@@ -2755,16 +2777,19 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
               <button onclick="initMpesaPay()" style="width:100%;padding:8px;background:var(--green);border:none;border-radius:6px;color:#000;font-size:13px;font-weight:600">Lipa na M-Pesa</button>
               <div id="mpesa-status" style="font-size:11px;color:var(--tx3);text-align:center;min-height:14px"></div>
             </div>
-          </div>
+            </div>
+          </div><!-- end billing-pay-methods -->
+
           <div style="font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin:12px 4px 6px;display:flex;justify-content:space-between">
-            <span>M-Pesa Transactions</span>
+            <span>Transactions</span>
             <span id="mpesa-txn-count">0</span>
           </div>
           <div id="mpesa-txn-list" style="font-size:11px">
             <div style="color:var(--tx3);padding:8px 0">No transactions yet</div>
           </div>
           <div style="margin-top:10px;padding:8px;background:var(--surface);border-radius:6px">
-            <div style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">M-Pesa Config</div>
+            <div style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Payment Config</div>
+            <button onclick="showPaystackConfig()" style="width:100%;padding:6px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px;margin-bottom:4px">Configure Paystack API Keys</button>
             <button onclick="showMpesaConfig()" style="width:100%;padding:6px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px">Configure M-Pesa API Keys</button>
           </div>
         </div>
@@ -3309,6 +3334,12 @@ function afterAuth(d) {
   document.getElementById('app').style.flexDirection = 'column';
   document.getElementById('app').style.height = '100vh';
   renderUserAvatar();
+  // Show trial banner for free users
+  if (d.trial_ends && USER.plan === 'free') {
+    if (d.trial_expired) showTrialExpired();
+    else showTrialBanner(d.trial_ends);
+  }
+  checkPaystackReturn();
   boot();
 }
 
@@ -3766,7 +3797,7 @@ async function deleteAccount() {
     const r = await fetch('/api/auth/me', {headers: hdrs}).catch(()=>null);
     if (r?.ok) {
       const d = await r.json().catch(()=>({}));
-      if (d.user) { afterAuth({user:d.user, token:USER_TOKEN}); return; }
+      if (d.user) { afterAuth({user:d.user, token:USER_TOKEN, trial_expired:d.trial_expired, trial_ends:d.trial_ends}); return; }
     }
     localStorage.removeItem('ax_user_token');
   }
@@ -3787,10 +3818,11 @@ async function api(m, p, b) {
     if (b) o.body = JSON.stringify(b);
     const r = await fetch(p, o);
     if(!r.ok && r.status===401){
-      // Token may have expired - try to refresh
       return {error:'Authentication required'};
     }
-    return r.json().catch(()=>({error:'Parse error'}));
+    const j = await r.json().catch(()=>({error:'Parse error'}));
+    if(j.error==='trial_expired'){showTrialExpired();return j;}
+    return j;
   } catch(e) { return {error:e.message}; }
 }
 
@@ -6372,6 +6404,66 @@ function swalAlert(html, title='', opts={}) {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════
+// TRIAL EXPIRED / UPGRADE PROMPT
+// ═══════════════════════════════════════════════════════════════
+let _trialShown=false;
+function showTrialExpired(){
+  if(_trialShown) return;
+  _trialShown=true;
+  Swal.fire({
+    title:'Free Trial Ended',
+    html:`<div style="text-align:center">
+      <div style="font-size:48px;margin-bottom:12px">&#128274;</div>
+      <p style="color:#c9d1d9;font-size:13px;line-height:1.6;margin-bottom:16px">
+        Your <strong>2-day free trial</strong> has expired.<br>
+        Upgrade to a paid plan to keep using AXIOM.
+      </p>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <div style="background:#161b22;border:1px solid var(--green,#3fb950);border-radius:8px;padding:12px 16px;cursor:pointer;min-width:100px" onclick="Swal.close();setPanel('billing')">
+          <div style="font-weight:600;color:var(--green,#3fb950)">Starter</div>
+          <div style="font-size:14px;font-weight:700;color:#c9d1d9;margin:4px 0">$9/mo</div>
+          <div style="font-size:10px;color:#8b949e">KES 1,170</div>
+        </div>
+        <div style="background:#161b22;border:2px solid #58a6ff;border-radius:8px;padding:12px 16px;cursor:pointer;min-width:100px" onclick="Swal.close();setPanel('billing')">
+          <div style="font-weight:600;color:#58a6ff">Pro</div>
+          <div style="font-size:14px;font-weight:700;color:#c9d1d9;margin:4px 0">$19/mo</div>
+          <div style="font-size:10px;color:#8b949e">KES 2,470</div>
+        </div>
+        <div style="background:#161b22;border:1px solid #bc8cff;border-radius:8px;padding:12px 16px;cursor:pointer;min-width:100px" onclick="Swal.close();setPanel('billing')">
+          <div style="font-weight:600;color:#bc8cff">Team</div>
+          <div style="font-size:14px;font-weight:700;color:#c9d1d9;margin:4px 0">$49/mo</div>
+          <div style="font-size:10px;color:#8b949e">KES 6,370</div>
+        </div>
+      </div>
+    </div>`,
+    showConfirmButton:true,
+    confirmButtonText:'Go to Billing',
+    confirmButtonColor:'#58a6ff',
+    showCancelButton:false,
+    allowOutsideClick:false,
+    background:'#1a1d23',
+    color:'#c9d1d9',
+    customClass:{popup:'swal-axiom-popup',confirmButton:'swal-axiom-btn'}
+  }).then(()=>{setPanel('billing');_trialShown=false;});
+}
+
+function showTrialBanner(trialEnds){
+  const existing=document.getElementById('trial-banner');
+  if(existing)existing.remove();
+  const ends=new Date(trialEnds);
+  const now=new Date();
+  const hoursLeft=Math.max(0,Math.round((ends-now)/(1000*60*60)));
+  if(hoursLeft<=0)return;
+  const banner=document.createElement('div');
+  banner.id='trial-banner';
+  banner.style.cssText='background:linear-gradient(90deg,#161b22,#1a1d23);border-bottom:1px solid #30363d;padding:4px 12px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;color:#c9d1d9;z-index:100;flex-shrink:0';
+  const timeStr=hoursLeft>=24?Math.ceil(hoursLeft/24)+' day'+(hoursLeft>=48?'s':''):hoursLeft+' hour'+(hoursLeft!==1?'s':'');
+  banner.innerHTML='<span style="color:#f0883e">&#9200;</span> Free trial ends in <strong style="color:#58a6ff">'+timeStr+'</strong> <button onclick="setPanel(\'billing\')" style="margin-left:8px;padding:2px 10px;background:#58a6ff;border:none;border-radius:4px;color:#000;font-size:10px;font-weight:600;cursor:pointer">Upgrade Now</button><button onclick="this.parentElement.remove()" style="margin-left:4px;background:none;border:none;color:#8b949e;cursor:pointer;font-size:14px">&#10005;</button>';
+  const app=document.getElementById('app');
+  if(app)app.prepend(banner);
+}
+
 
 // ═══════════════════════════════════════════════════════════════
 // MULTI-CURSOR — Alt+Click adds cursor
@@ -7422,7 +7514,7 @@ function replLoadFile() {
 }
 
 // ═══════════════════════════════════════════════════════
-// M-PESA / BILLING PANEL
+// BILLING PANEL (Paystack + M-Pesa)
 // ═══════════════════════════════════════════════════════
 let selectedPlan = null;
 const PLAN_PRICES = { starter: { USD: 9, KES: 1170, TZS: 23850, UGX: 34200 }, pro: { USD: 19, KES: 2470, TZS: 50350, UGX: 72200 }, team: { USD: 49, KES: 6370, TZS: 129850, UGX: 186200 } };
@@ -7431,12 +7523,101 @@ function selectBillingPlan(plan, el) {
   selectedPlan = plan;
   document.querySelectorAll('.billing-plan-card').forEach(c => c.classList.remove('selected'));
   if (el) el.classList.add('selected');
-  const form = document.getElementById('mpesa-pay-form');
-  // The Free plan isn't purchasable — just mark it current, no M-Pesa form.
-  if (plan === 'free') { if (form) form.style.display = 'none'; return; }
-  if (form) form.style.display = 'block';
-  document.getElementById('mpesa-plan-name').textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const methods = document.getElementById('billing-pay-methods');
+  if (plan === 'free') { if (methods) methods.style.display = 'none'; return; }
+  if (methods) methods.style.display = 'block';
+  const label = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const el1 = document.getElementById('mpesa-plan-name'); if (el1) el1.textContent = label;
+  const el2 = document.getElementById('paystack-plan-name'); if (el2) el2.textContent = label;
+  const el3 = document.getElementById('paystack-amount');
+  if (el3) el3.textContent = 'KES ' + (PLAN_PRICES[plan]?.KES || 0).toLocaleString();
   updateMpesaPrice();
+}
+
+function switchPayTab(tab) {
+  const ps = document.getElementById('paystack-pay-form');
+  const mp = document.getElementById('mpesa-pay-form');
+  const tabPs = document.getElementById('pay-tab-paystack');
+  const tabMp = document.getElementById('pay-tab-mpesa');
+  if (tab === 'paystack') {
+    if (ps) ps.style.display = 'block';
+    if (mp) mp.style.display = 'none';
+    if (tabPs) { tabPs.style.background = 'var(--ac3)'; tabPs.style.borderColor = 'var(--ac)'; tabPs.style.color = 'var(--ac)'; }
+    if (tabMp) { tabMp.style.background = 'var(--surface)'; tabMp.style.borderColor = 'var(--border)'; tabMp.style.color = 'var(--tx2)'; }
+  } else {
+    if (ps) ps.style.display = 'none';
+    if (mp) mp.style.display = 'block';
+    if (tabMp) { tabMp.style.background = 'var(--ac3)'; tabMp.style.borderColor = 'var(--ac)'; tabMp.style.color = 'var(--ac)'; }
+    if (tabPs) { tabPs.style.background = 'var(--surface)'; tabPs.style.borderColor = 'var(--border)'; tabPs.style.color = 'var(--tx2)'; }
+  }
+}
+
+async function initPaystackPay() {
+  if (!selectedPlan) return notif('Select a plan first', 'warn');
+  const status = document.getElementById('paystack-status');
+  status.textContent = 'Initializing payment...';
+  status.style.color = 'var(--ac)';
+  try {
+    const r = await api('POST', '/api/billing/paystack/initialize', {
+      plan: selectedPlan,
+      callback_url: window.location.origin + '/?paystack_verify=1'
+    });
+    if (r.ok && r.authorization_url) {
+      status.textContent = 'Redirecting to Paystack...';
+      status.style.color = 'var(--green)';
+      window.open(r.authorization_url, '_blank');
+      notif('Complete payment in the new tab, then return here', 'info');
+      // Poll for verification
+      if (r.reference) pollPaystackVerify(r.reference);
+    } else {
+      status.textContent = r.error || 'Payment initialization failed';
+      status.style.color = 'var(--red)';
+      notif(r.error || 'Paystack initialization failed', 'err');
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+async function pollPaystackVerify(ref) {
+  let attempts = 0;
+  const poll = setInterval(async () => {
+    attempts++;
+    if (attempts > 60) { clearInterval(poll); return; } // Stop after 5 minutes
+    try {
+      const r = await api('GET', '/api/billing/paystack/verify?reference=' + encodeURIComponent(ref));
+      if (r.ok && r.plan) {
+        clearInterval(poll);
+        USER.plan = r.plan;
+        notif('Payment successful! You are now on the ' + r.plan.charAt(0).toUpperCase() + r.plan.slice(1) + ' plan.', 'ok');
+        document.getElementById('paystack-status').textContent = 'Payment confirmed!';
+        document.getElementById('paystack-status').style.color = 'var(--green)';
+        loadMpesaTxns(); // Refresh billing panel
+        renderUserAvatar();
+        const banner = document.getElementById('trial-banner');
+        if (banner) banner.remove();
+      }
+    } catch (e) { /* keep polling */ }
+  }, 5000);
+}
+
+// Check URL for Paystack callback on page load
+function checkPaystackReturn() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('paystack_verify') === '1' && params.get('reference')) {
+    const ref = params.get('reference');
+    window.history.replaceState({}, '', window.location.pathname);
+    setTimeout(() => {
+      api('GET', '/api/billing/paystack/verify?reference=' + encodeURIComponent(ref)).then(r => {
+        if (r.ok && r.plan) {
+          USER.plan = r.plan;
+          notif('Payment verified! Plan upgraded to ' + r.plan, 'ok');
+          loadMpesaTxns();
+        }
+      });
+    }, 1000);
+  }
 }
 
 // Fetch /api/plans and render all four subscription tiers as cards.
@@ -7510,6 +7691,25 @@ async function loadMpesaTxns() {
   const priceMap = { free: 0, starter: 1170, pro: 2470, team: 6370 };
   const priceEl = document.getElementById('billing-price');
   if (priceEl) priceEl.textContent = 'KES ' + (priceMap[plan] || 0).toLocaleString() + '/mo';
+  // Show trial info
+  const trialEl = document.getElementById('billing-trial-info');
+  if (trialEl && plan === 'free') {
+    try {
+      const me = await api('GET', '/api/auth/me');
+      if (me.trial_ends) {
+        const ends = new Date(me.trial_ends);
+        const now = new Date();
+        const hoursLeft = Math.max(0, Math.round((ends - now) / (1000*60*60)));
+        if (hoursLeft <= 0) {
+          trialEl.innerHTML = '<span style="color:var(--red)">Trial expired</span> &mdash; upgrade to continue';
+        } else {
+          const timeStr = hoursLeft >= 24 ? Math.ceil(hoursLeft/24) + ' day' + (hoursLeft >= 48 ? 's' : '') : hoursLeft + ' hours';
+          trialEl.innerHTML = 'Trial ends in <strong style="color:var(--ac)">' + timeStr + '</strong>';
+        }
+        trialEl.style.display = 'block';
+      }
+    } catch(e) {}
+  } else if (trialEl) { trialEl.style.display = 'none'; }
   renderBillingPlans();
   try {
     const r = await api('GET', '/api/billing/mpesa/transactions');
@@ -7558,6 +7758,34 @@ async function saveMpesaConfig() {
   });
   if (r.ok) { notif('M-Pesa configured', 'ok'); document.getElementById('mpesa-config-modal')?.remove(); }
   else notif('Config failed', 'err');
+}
+
+function showPaystackConfig() {
+  const html = `<div id="paystack-config-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">
+    <div style="background:var(--panel);border:1px solid var(--border2);border-radius:12px;padding:20px;width:380px;max-width:90vw">
+      <div style="font-size:15px;font-weight:600;margin-bottom:12px">Paystack API Configuration</div>
+      <div style="font-size:11px;color:var(--tx2);margin-bottom:12px">Get credentials from <a href="https://dashboard.paystack.com/#/settings/developers" target="_blank" style="color:var(--ac)">dashboard.paystack.com</a></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <input type="text" id="ps-pubkey" class="sinp" placeholder="Public Key (pk_...)" style="padding:8px"/>
+        <input type="text" id="ps-seckey" class="sinp" placeholder="Secret Key (sk_...)" style="padding:8px"/>
+        <button onclick="savePaystackConfig()" style="padding:10px;background:#58a6ff;border:none;border-radius:6px;color:#000;font-weight:600;font-size:13px">Save Configuration</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  // Pre-fill if already configured
+  api('GET', '/api/billing/paystack/config').then(r => {
+    if (r.public_key) document.getElementById('ps-pubkey').value = r.public_key;
+  });
+}
+
+async function savePaystackConfig() {
+  const r = await api('POST', '/api/billing/paystack/config', {
+    public_key: document.getElementById('ps-pubkey').value.trim(),
+    secret_key: document.getElementById('ps-seckey').value.trim()
+  });
+  if (r.ok) { notif('Paystack configured', 'ok'); document.getElementById('paystack-config-modal')?.remove(); }
+  else notif(r.error || 'Config failed', 'err');
 }
 
 // ═══════════════════════════════════════════════════════
