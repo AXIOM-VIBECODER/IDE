@@ -4,6 +4,8 @@
  * AXIOM v5 — Complete IDE Backend
  * Real WebSocket terminal · Admin Dashboard · Memory Engine · Zero npm deps
  */
+// Load .env from project root into process.env (no external deps)
+(function loadEnv(){try{const p=require('path').join(__dirname,'../.env');const lines=require('fs').readFileSync(p,'utf8').split('\n');for(const l of lines){const t=l.trim();if(!t||t.startsWith('#'))continue;const i=t.indexOf('=');if(i<1)continue;const k=t.slice(0,i).trim(),v=t.slice(i+1).trim();if(!(k in process.env))process.env[k]=v;}}catch(e){}})();
 const http=require('http'),https=require('https'),fs=require('fs'),path=require('path');
 const os=require('os'),urlMod=require('url'),crypto=require('crypto'),net=require('net');
 const {exec,spawn,execSync}=require('child_process');
@@ -13,12 +15,14 @@ const mysql=require('mysql2/promise');
 // ── Security Headers ────────────────────────────────────────────
 function setSecurityHeaders(res){
   res.setHeader('X-Content-Type-Options','nosniff');
-  res.setHeader('X-Frame-Options','SAMEORIGIN');
+  res.setHeader('X-Frame-Options','DENY');
   res.setHeader('X-XSS-Protection','1; mode=block');
   res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');
+  res.setHeader('X-DNS-Prefetch-Control','off');
   if(process.env.NODE_ENV==='production'){
-    res.setHeader('Strict-Transport-Security','max-age=31536000; includeSubDomains');
-    res.setHeader('Content-Security-Policy',"default-src 'self' 'unsafe-inline' 'unsafe-eval' https://api.anthropic.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self' ws: wss: https://api.anthropic.com https://api.github.com https://oauth2.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net");
+    res.setHeader('Strict-Transport-Security','max-age=63072000; includeSubDomains; preload');
+    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; connect-src 'self' ws: wss: https://api.anthropic.com https://api.paystack.co https://api.github.com https://oauth2.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; frame-src https://checkout.paystack.com; object-src 'none'; base-uri 'self'");
   }
 }
 
@@ -517,6 +521,81 @@ function getReqUser(req){
   return UsersDB.getByToken(tok);
 }
 
+// ── Credential Encryption (AES-256-GCM) ─────────────────────────
+// All stored API keys / secrets are encrypted at rest.
+const CRED_KEY_FILE=path.join(DATA,'cred.key');
+function getCredKey(){
+  try{return Buffer.from(fs.readFileSync(CRED_KEY_FILE,'utf8').trim(),'hex');}
+  catch(e){const k=crypto.randomBytes(32);atomicWriteSync(CRED_KEY_FILE,k.toString('hex'),{mode:0o600});return k;}
+}
+const CRED_KEY=getCredKey();
+function encryptCred(text){
+  const iv=crypto.randomBytes(12);
+  const cipher=crypto.createCipheriv('aes-256-gcm',CRED_KEY,iv);
+  let enc=cipher.update(text,'utf8','hex');enc+=cipher.final('hex');
+  const tag=cipher.getAuthTag().toString('hex');
+  return iv.toString('hex')+':'+tag+':'+enc;
+}
+function decryptCred(blob){
+  try{
+    const[ivH,tagH,enc]=blob.split(':');
+    const decipher=crypto.createDecipheriv('aes-256-gcm',CRED_KEY,Buffer.from(ivH,'hex'));
+    decipher.setAuthTag(Buffer.from(tagH,'hex'));
+    let dec=decipher.update(enc,'hex','utf8');dec+=decipher.final('utf8');
+    return dec;
+  }catch(e){return blob;} // Fallback for unencrypted legacy values
+}
+
+// ── Token Budget Enforcement ─────────────────────────────────────
+// Returns {allowed,used,limit,remaining,plan} for a user this month.
+function getTokenBudget(user){
+  if(!user)return{allowed:false,used:0,limit:0,remaining:0,plan:'free'};
+  const plan=user.plan||'free';
+  const limit=PLANS[plan]?.tokens_month||0;
+  // tokens_in + tokens_out from DB track cumulative; we need monthly
+  // For file-based users, use in-memory tracking
+  const used=(user.tokens_used_month||0);
+  const bonus=(user.bonus_tokens||0);
+  const total=limit+bonus;
+  const remaining=Math.max(0,total-used);
+  return{allowed:remaining>0,used,limit,bonus,remaining,plan,total};
+}
+
+// Reset monthly token usage (called on plan cycle or start of month)
+function resetMonthlyTokens(userId){
+  if(dbPool){
+    const now=new Date().toISOString().slice(0,19).replace('T',' ');
+    dbPool.query('UPDATE users SET tokens_used_month=0, month_reset_at=? WHERE id=?',[now,userId]).catch(()=>{});
+  }
+  // File-based users
+  try{
+    const ud=JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));
+    const u=ud.users?.find(x=>x.id===userId);
+    if(u){u.tokens_used_month=0;u.month_reset_at=new Date().toISOString();atomicWriteSync(USERS_FILE,JSON.stringify(ud,null,2),{mode:0o600});}
+  }catch(e){}
+}
+
+// ── Auth Rate Limiter (stricter for login/register) ──────────────
+const authRL=new Map();
+function authRateOk(ip){
+  const n=Date.now();
+  const b=authRL.get(ip)||{c:0,r:n+300000}; // 5 minute window
+  if(n>b.r){b.c=0;b.r=n+300000;}
+  b.c++;authRL.set(ip,b);
+  return b.c<=10; // max 10 auth attempts per 5 minutes
+}
+
+// ── Security Event Logger ────────────────────────────────────────
+function securityLog(event,details,req){
+  const entry={ts:new Date().toISOString(),event,details,ip:req?.socket?.remoteAddress||'',ua:req?.headers?.['user-agent']||''};
+  try{fs.appendFileSync(path.join(DATA,'security.log'),JSON.stringify(entry)+'\n');}catch(e){}
+  if(dbPool){
+    const now=new Date().toISOString().slice(0,19).replace('T',' ');
+    dbPool.query('INSERT INTO audit_log (user_id,action,resource,details,ip_address,created_at) VALUES (?,?,?,?,?,?)',
+      [null,'security:'+event,details?.route||'',JSON.stringify(entry),entry.ip,now]).catch(()=>{});
+  }
+}
+
 // Check if free trial has expired (2-day trial)
 const FREE_TRIAL_DAYS=2;
 function isTrialExpired(user){
@@ -535,26 +614,37 @@ function sanitizeGitArg(arg){return (arg||'').replace(/[;&|`$(){}!#\n\r]/g,'');}
 function git(cwd,...args){return new Promise(resolve=>{const s=safe(cwd);if(!s)return resolve({ok:false,out:'Path not allowed'});const sanitized=args.map(a=>sanitizeGitArg(a));exec(`git -C "${s}" ${sanitized.join(' ')}`,{timeout:15000,env:{...process.env,GIT_TERMINAL_PROMPT:'0'}},(err,out,se)=>resolve({ok:!err,out:(out||'')+(se&&!out?se:''),err:err?.message||''}));});}
 
 // ── Plans ────────────────────────────────────────────────────────
-// Four subscription tiers. `price` is USD/month; `kes` is the KES/month
-// shown on the M-Pesa billing panel. `features` drives the plan cards.
+// Cheapest AI-powered IDE on the market. Monthly token budgets strictly enforced.
+// tokens_month = total input+output tokens allowed per calendar month.
+// Extra tokens can be purchased via /api/billing/tokens/buy.
 const PLANS={
   free:{
     name:'Free Trial',price:0,kes:0,tagline:'2-day trial — explore AXIOM',trial_days:2,
-    features:['Basic IDE + editor','Community support','1K AI tokens/day','1 workspace']
+    tokens_month:5000,
+    features:['Basic IDE + editor','5K AI tokens (trial)','Community support','1 workspace']
   },
   starter:{
-    name:'Starter',price:9,kes:1170,tagline:'For hobbyists and students',
-    features:['Everything in Free','5K AI tokens/day','GitHub + Google login','Email support']
+    name:'Starter',price:4,kes:520,tagline:'Cheapest AI IDE — for students & hobbyists',
+    tokens_month:50000,
+    features:['Everything in Free','50K AI tokens/month','GitHub + Google login','Email support','3 workspaces']
   },
   pro:{
-    name:'Pro',price:19,kes:2470,tagline:'For professional developers',
-    features:['Everything in Starter','Unlimited AI tokens','Priority response times','Advanced debugging + LSP']
+    name:'Pro',price:9,kes:1170,tagline:'For professional developers',
+    tokens_month:500000,
+    features:['Everything in Starter','500K AI tokens/month','Priority support','Advanced debugging + LSP','Unlimited workspaces']
   },
   team:{
-    name:'Team',price:49,kes:6370,tagline:'For small teams',
-    features:['Everything in Pro','5 seats included','Admin dashboard + analytics','Shared workspaces & billing']
+    name:'Team',price:19,kes:2470,tagline:'For teams that ship fast',
+    tokens_month:2000000,
+    features:['Everything in Pro','2M AI tokens/month','5 seats included','Admin dashboard + analytics','Shared workspaces & billing']
   }
 };
+const TOKEN_TOPUP_PRICES=[
+  {tokens:10000,  price:1, kes:130, label:'10K tokens'},
+  {tokens:50000,  price:3, kes:390, label:'50K tokens'},
+  {tokens:200000, price:10,kes:1300,label:'200K tokens'},
+  {tokens:1000000,price:40,kes:5200,label:'1M tokens'},
+];
 
 // ── MySQL Database ───────────────────────────────────────────────
 const DB_PASS=process.env.DB_PASS;
@@ -594,7 +684,7 @@ const DB={
   },
   async updateUser(id,p){
     try{
-      const ALLOWED_COLS=['name','email','plan','role','status','avatar_url','github_id','google_id','total_paid','total_cost','chat_count','tokens_in','tokens_out','last_seen'];
+      const ALLOWED_COLS=['name','email','plan','role','status','avatar_url','github_id','google_id','total_paid','total_cost','chat_count','tokens_in','tokens_out','tokens_used_month','bonus_tokens','month_reset_at','last_seen'];
       const sets=[];const vals=[];
       for(const [k,v] of Object.entries(p)){if(!ALLOWED_COLS.includes(k))continue;sets.push(k+'=?');vals.push(v);}
       if(!sets.length)return null;
@@ -1231,6 +1321,14 @@ const server=http.createServer(async(req,res)=>{
   // AI chat streaming
   if(route==='/api/chat'&&req.method==='POST'){
     const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key — add in Settings ⚙'},401);
+    // ── Token budget enforcement ──
+    const chatUser=getReqUser(req);
+    if(chatUser){
+      const budget=getTokenBudget(chatUser);
+      if(!budget.allowed){
+        return sendJson(res,{error:'tokens_exhausted',message:`You've used all ${budget.limit.toLocaleString()} tokens for this month. Buy extra tokens or upgrade your plan.`,used:budget.used,limit:budget.limit,plan:budget.plan},429);
+      }
+    }
     const msgs=(data.messages||[]).slice(-50);
     const fileCtx=data.fileContext?`\n\nFile open: ${data.fileName||'file'}\n\`\`\`${data.fileLang||''}\n${data.fileContext.slice(0,8000)}\n\`\`\``:'';
     // Project-aware AI context
@@ -1254,9 +1352,32 @@ const server=http.createServer(async(req,res)=>{
     }
     res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','Access-Control-Allow-Origin':'*','X-Accel-Buffering':'no'});
     const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,stream:true,system:sysPrompt(projCtx+fileCtx+relCtx),messages:msgs});
+    const inputTokens=Math.ceil(Buffer.byteLength(rb)/4); // Rough estimate: 1 token ~ 4 bytes
     const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},apiRes=>{
-      let full='';apiRes.on('data',chunk=>{res.write(chunk);const s=chunk.toString();const m=s.match(/"text":"((?:[^"\\]|\\.)*)"/);if(m)full+=m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/\\\\/g,'\\');});
-      apiRes.on('end',()=>{res.end();const lastUser=msgs.length?msgs[msgs.length-1].content:'';if(lastUser&&typeof lastUser==='string')Mem.extract(lastUser,full);});
+      let full='';let outputTokens=0;
+      apiRes.on('data',chunk=>{res.write(chunk);const s=chunk.toString();const m=s.match(/"text":"((?:[^"\\]|\\.)*)"/);if(m){const t=m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/\\\\/g,'\\');full+=t;outputTokens+=Math.ceil(t.length/4);}
+        // Extract usage from message_delta event
+        const um=s.match(/"usage"\s*:\s*\{[^}]*"output_tokens"\s*:\s*(\d+)/);if(um)outputTokens=parseInt(um[1]);
+        const im=s.match(/"usage"\s*:\s*\{[^}]*"input_tokens"\s*:\s*(\d+)/);if(im&&parseInt(im[1])>0)outputTokens=outputTokens; // keep existing
+      });
+      apiRes.on('end',()=>{
+        res.end();
+        const lastUser=msgs.length?msgs[msgs.length-1].content:'';if(lastUser&&typeof lastUser==='string')Mem.extract(lastUser,full);
+        // Record token usage for budget tracking
+        if(chatUser){
+          const totalUsed=inputTokens+outputTokens;
+          // Update monthly usage
+          if(dbPool){
+            dbPool.query('UPDATE users SET tokens_used_month=tokens_used_month+? WHERE id=?',[totalUsed,chatUser.id]).catch(()=>{});
+          }
+          try{
+            const ud=JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));
+            const u=ud.users?.find(x=>x.id===chatUser.id);
+            if(u){u.tokens_used_month=(u.tokens_used_month||0)+totalUsed;atomicWriteSync(USERS_FILE,JSON.stringify(ud,null,2),{mode:0o600});}
+          }catch(e){}
+          DB.recordUsage({user_id:chatUser.id,action:'chat',tokens_in:inputTokens,tokens_out:outputTokens,cost:totalUsed*0.000003});
+        }
+      });
     });
     apiReq.on('error',()=>{try{res.end();}catch(x){}});apiReq.write(rb);apiReq.end();return;
   }
@@ -1300,7 +1421,143 @@ const server=http.createServer(async(req,res)=>{
     const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},apiRes=>{apiRes.on('data',chunk=>res.write(chunk));apiRes.on('end',()=>res.end());});
     apiReq.on('error',()=>{try{res.end();}catch(x){}});apiReq.write(rb);apiReq.end();return;
   }
-  if(route==='/api/admin/users/export'&&req.method==='GET'){const users=await DB.getUsers();const csv='id,name,email,plan,status,total_paid,chat_count,created_at\n'+users.map(u=>[u.id,u.name,u.email,u.plan,u.status,u.total_paid||0,u.chat_count||0,u.created_at].join(',')).join('\n');res.writeHead(200,{'Content-Type':'text/csv','Content-Disposition':'attachment; filename="axiom_users.csv"','Access-Control-Allow-Origin':'*'});res.end(csv);return;}
+  if(route==='/api/admin/users/export'&&req.method==='GET'){const users=await DB.getUsers();const csv='id,name,email,plan,status,total_paid,chat_count,tokens_in,tokens_out,tokens_used_month,created_at,last_seen\n'+users.map(u=>[u.id,u.name,u.email,u.plan,u.status,u.total_paid||0,u.chat_count||0,u.tokens_in||0,u.tokens_out||0,u.tokens_used_month||0,u.created_at,u.last_seen||''].join(',')).join('\n');res.writeHead(200,{'Content-Type':'text/csv','Content-Disposition':'attachment; filename="axiom_users.csv"','Access-Control-Allow-Origin':'*'});res.end(csv);return;}
+
+  // ── Admin: Token usage overview ──────────────────────────────────
+  if(route==='/api/admin/token-usage'&&req.method==='GET'){
+    try{
+      const users=await DB.getUsers();
+      const summary=users.map(u=>({
+        id:u.id,name:u.name,email:u.email,plan:u.plan,
+        tokens_used_month:u.tokens_used_month||0,
+        tokens_limit:PLANS[u.plan]?.tokens_month||0,
+        bonus_tokens:u.bonus_tokens||0,
+        tokens_in:u.tokens_in||0,tokens_out:u.tokens_out||0,
+        pct_used:PLANS[u.plan]?.tokens_month?Math.round(((u.tokens_used_month||0)/PLANS[u.plan].tokens_month)*100):0
+      }));
+      const totalUsed=summary.reduce((s,u)=>s+u.tokens_used_month,0);
+      const totalLimit=summary.reduce((s,u)=>s+u.tokens_limit,0);
+      return sendJson(res,{users:summary,total_used:totalUsed,total_limit:totalLimit,plans:PLANS,topup_prices:TOKEN_TOPUP_PRICES});
+    }catch(e){return sendJson(res,{error:e.message},500);}
+  }
+
+  // ── Admin: Security audit log ────────────────────────────────────
+  if(route==='/api/admin/security-log'&&req.method==='GET'){
+    try{
+      const logFile=path.join(DATA,'security.log');
+      if(!fs.existsSync(logFile))return sendJson(res,{events:[]});
+      const lines=fs.readFileSync(logFile,'utf8').trim().split('\n').filter(Boolean);
+      const events=lines.slice(-500).reverse().map(l=>{try{return JSON.parse(l);}catch(e){return null;}}).filter(Boolean);
+      // Filter by type if requested
+      if(q.type)return sendJson(res,{events:events.filter(e=>e.event===q.type)});
+      return sendJson(res,{events,total:lines.length});
+    }catch(e){return sendJson(res,{events:[],error:e.message});}
+  }
+
+  // ── Admin: Audit trail ──────────────────────────────────────────
+  if(route==='/api/admin/audit-log'&&req.method==='GET'){
+    try{
+      const logFile=path.join(DATA,'audit.log');
+      if(!fs.existsSync(logFile))return sendJson(res,{events:[]});
+      const lines=fs.readFileSync(logFile,'utf8').trim().split('\n').filter(Boolean);
+      const events=lines.slice(-500).reverse().map(l=>{try{return JSON.parse(l);}catch(e){return null;}}).filter(Boolean);
+      return sendJson(res,{events,total:lines.length});
+    }catch(e){return sendJson(res,{events:[],error:e.message});}
+  }
+
+  // ── Admin: Suspend/unsuspend user ──────────────────────────────
+  if(route.match(/^\/api\/admin\/users\/[^/]+\/suspend$/)&&req.method==='POST'){
+    const uid=route.split('/')[4];
+    const u=await DB.updateUser(uid,{status:data.suspend?'suspended':'active'});
+    auditLog('admin_user_suspend',{user_id:uid,suspended:!!data.suspend},req);
+    return sendJson(res,{user:u});
+  }
+
+  // ── Admin: System health ────────────────────────────────────────
+  if(route==='/api/admin/system'&&req.method==='GET'){
+    const mem=process.memoryUsage();
+    const up=process.uptime();
+    const diskFiles=['users.json','config.json','audit.log','security.log','mpesa.json','paystack.json','mpesa_transactions.json','paystack_transactions.json'].map(f=>{
+      const fp=path.join(DATA,f);
+      try{const st=fs.statSync(fp);return{name:f,size:st.size,modified:st.mtime.toISOString()};}
+      catch(e){return{name:f,size:0,exists:false};}
+    });
+    return sendJson(res,{
+      uptime_seconds:Math.round(up),uptime_human:Math.floor(up/3600)+'h '+Math.floor((up%3600)/60)+'m',
+      memory:{rss:Math.round(mem.rss/1024/1024),heapUsed:Math.round(mem.heapUsed/1024/1024),heapTotal:Math.round(mem.heapTotal/1024/1024)},
+      node_version:process.version,platform:os.platform(),hostname:os.hostname(),
+      db_connected:dbAvailable,data_dir:DATA,
+      files:diskFiles,
+      active_terminals:Object.keys(terminals||{}).length,
+      active_lsp:Object.keys(lspServers||{}).length,
+      rate_limit_entries:rl.size,
+      credential_files:diskFiles.filter(f=>['mpesa.json','paystack.json','config.json'].includes(f.name)&&f.size>0).map(f=>f.name)
+    });
+  }
+
+  // ── Admin: Paystack transactions ──────────────────────────────
+  if(route==='/api/admin/paystack-transactions'&&req.method==='GET'){
+    try{
+      const f=path.join(DATA,'paystack_transactions.json');
+      const txns=fs.existsSync(f)?JSON.parse(fs.readFileSync(f,'utf8')):[];
+      return sendJson(res,{transactions:txns.slice(-200).reverse(),total:txns.length});
+    }catch(e){return sendJson(res,{transactions:[],error:e.message});}
+  }
+
+  // ── Admin: Grant bonus tokens to user ──────────────────────────
+  if(route.match(/^\/api\/admin\/users\/[^/]+\/tokens$/)&&req.method==='POST'){
+    const uid=route.split('/')[4];
+    const amount=parseInt(data.tokens)||0;
+    if(amount<=0)return sendJson(res,{error:'Invalid token amount'},400);
+    // Update in DB
+    if(dbPool){await dbPool.query('UPDATE users SET bonus_tokens=COALESCE(bonus_tokens,0)+? WHERE id=?',[amount,uid]).catch(()=>{});}
+    // Update in file
+    try{
+      const ud=JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));
+      const u=ud.users?.find(x=>x.id===uid);
+      if(u){u.bonus_tokens=(u.bonus_tokens||0)+amount;atomicWriteSync(USERS_FILE,JSON.stringify(ud,null,2),{mode:0o600});}
+    }catch(e){}
+    auditLog('admin_grant_tokens',{user_id:uid,tokens:amount},req);
+    return sendJson(res,{ok:true,tokens_granted:amount});
+  }
+
+  // ── Token budget endpoint (for any authenticated user) ─────────
+  if(route==='/api/billing/token-budget'&&req.method==='GET'){
+    const u=getReqUser(req);
+    if(!u)return sendJson(res,{error:'Not authenticated'},401);
+    const budget=getTokenBudget(u);
+    return sendJson(res,{...budget,topup_prices:TOKEN_TOPUP_PRICES});
+  }
+
+  // ── Extra token purchase ──────────────────────────────────────
+  if(route==='/api/billing/tokens/buy'&&req.method==='POST'){
+    const u=getReqUser(req);
+    if(!u)return sendJson(res,{error:'Not authenticated'},401);
+    const pkg=TOKEN_TOPUP_PRICES.find(p=>p.tokens===parseInt(data.tokens));
+    if(!pkg)return sendJson(res,{error:'Invalid token package'},400);
+    // Initialize Paystack transaction for token purchase
+    const ps=getPaystackKey();
+    if(!ps||!ps.secret_key)return sendJson(res,{error:'Payment not configured'},400);
+    const amountKobo=Math.round(pkg.kes*100);
+    const payload=JSON.stringify({
+      email:u.email,amount:amountKobo,currency:'KES',
+      callback_url:data.callback_url||(req.headers.origin||`http://localhost:${PORT}`),
+      metadata:JSON.stringify({user_id:u.id,type:'token_topup',tokens:pkg.tokens,user_email:u.email})
+    });
+    try{
+      const result=await new Promise((resolve,reject)=>{
+        const r=https.request({hostname:'api.paystack.co',path:'/transaction/initialize',method:'POST',
+          headers:{'Authorization':'Bearer '+ps.secret_key,'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}
+        },(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+        r.on('error',reject);r.write(payload);r.end();
+      });
+      if(result.status&&result.data){
+        auditLog('token_purchase_init',{email:u.email,tokens:pkg.tokens,amount:pkg.kes},req);
+        return sendJson(res,{ok:true,authorization_url:result.data.authorization_url,reference:result.data.reference,tokens:pkg.tokens,price:pkg.kes});
+      }
+      return sendJson(res,{error:result.message||'Payment initialization failed'},400);
+    }catch(e){return sendJson(res,{error:'Payment error: '+e.message},500);}
+  }
 
   // Lint — basic static analysis for Problems panel
   if(route==='/api/lint'&&req.method==='POST'){
@@ -1337,16 +1594,21 @@ const server=http.createServer(async(req,res)=>{
 
   // ── USER AUTH ROUTES ──────────────────────────────────────────────
   if(route==='/api/auth/register'&&req.method==='POST'){
-    if(!data.email||!data.password||data.password.length<6)return sendJson(res,{error:'Email and password (6+ chars) required'},400);
+    if(!authRateOk(ip)){securityLog('register_rate_limit',{email:data.email},req);return sendJson(res,{error:'Too many attempts. Try again in 5 minutes.'},429);}
+    if(!data.email||!data.password||data.password.length<8)return sendJson(res,{error:'Email and password (8+ chars) required'},400);
+    // Password strength: require at least one letter and one number
+    if(!/[a-zA-Z]/.test(data.password)||!/\d/.test(data.password))return sendJson(res,{error:'Password must contain letters and numbers'},400);
     const r=UsersDB.register(data.name||'User',data.email,data.password,data.plan||'free');
-    if(r.error)return sendJson(res,r,409);
+    if(r.error){securityLog('register_fail',{email:data.email,reason:r.error},req);return sendJson(res,r,409);}
     auditLog('user_register',{email:data.email},req);
     return sendJson(res,r);
   }
   if(route==='/api/auth/login'&&req.method==='POST'){
+    if(!authRateOk(ip)){securityLog('login_rate_limit',{email:data.email},req);return sendJson(res,{error:'Too many login attempts. Try again in 5 minutes.'},429);}
     if(!data.email||!data.password)return sendJson(res,{error:'Email and password required'},400);
     const r=UsersDB.login(data.email,data.password);
-    if(r.error)return sendJson(res,r,401);
+    if(r.error){securityLog('login_fail',{email:data.email,reason:r.error},req);return sendJson(res,r,401);}
+    securityLog('login_success',{email:data.email},req);
     return sendJson(res,r);
   }
   if(route==='/api/auth/me'&&req.method==='GET'){
@@ -1356,7 +1618,8 @@ const server=http.createServer(async(req,res)=>{
     const trialExpired=isTrialExpired(u);
     const created=new Date(u.created_at);
     const trialEnds=new Date(created.getTime()+FREE_TRIAL_DAYS*24*60*60*1000);
-    return sendJson(res,{user:u,trial_expired:trialExpired,trial_ends:trialEnds.toISOString(),free_trial_days:FREE_TRIAL_DAYS});
+    const budget=getTokenBudget(u);
+    return sendJson(res,{user:u,trial_expired:trialExpired,trial_ends:trialEnds.toISOString(),free_trial_days:FREE_TRIAL_DAYS,token_budget:budget});
   }
   if(route==='/api/auth/profile'&&req.method==='PUT'){
     const tok=req.headers['x-user-token'];
@@ -1488,7 +1751,7 @@ const server=http.createServer(async(req,res)=>{
 
   // ── Paystack Integration ──────────────────────────────────────
   const PAYSTACK_FILE=path.join(DATA,'paystack.json');
-  function getPaystackKey(){try{const c=JSON.parse(fs.readFileSync(PAYSTACK_FILE,'utf8'));return c;}catch(e){return null;}}
+  function getPaystackKey(){try{const c=JSON.parse(fs.readFileSync(PAYSTACK_FILE,'utf8'));return{public_key:c.public_key?decryptCred(c.public_key):'',secret_key:c.secret_key?decryptCred(c.secret_key):''};}catch(e){return null;}}
 
   // Initialize a Paystack transaction
   if(route==='/api/billing/paystack/initialize'&&req.method==='POST'){
@@ -1553,35 +1816,47 @@ const server=http.createServer(async(req,res)=>{
     // Verify webhook signature
     if(ps&&ps.secret_key){
       const hash=crypto.createHmac('sha512',ps.secret_key).update(rawBody).digest('hex');
-      if(hash!==req.headers['x-paystack-signature']){return sendJson(res,{error:'Invalid signature'},401);}
+      if(hash!==req.headers['x-paystack-signature']){securityLog('paystack_invalid_sig',{},req);return sendJson(res,{error:'Invalid signature'},401);}
     }
     const event=data.event;const txData=data.data||{};
     if(event==='charge.success'){
       const meta=typeof txData.metadata==='string'?JSON.parse(txData.metadata):txData.metadata||{};
-      const userId=meta.user_id;const plan=meta.plan||'pro';
-      if(userId){
+      const userId=meta.user_id;const plan=meta.plan;const txType=meta.type||'subscription';
+      if(txType==='token_topup'&&userId){
+        // Token top-up purchase — add bonus tokens
+        const bonusTokens=parseInt(meta.tokens)||0;
+        if(bonusTokens>0){
+          if(dbPool){dbPool.query('UPDATE users SET bonus_tokens=COALESCE(bonus_tokens,0)+? WHERE id=?',[bonusTokens,userId]).catch(()=>{});}
+          try{const d=UsersDB.load();const u=d.users.find(x=>x.id===userId);if(u){u.bonus_tokens=(u.bonus_tokens||0)+bonusTokens;UsersDB.save(d);}}catch(e){}
+          auditLog('token_topup_complete',{user_id:userId,tokens:bonusTokens,amount:txData.amount/100},req);
+        }
+      } else if(userId&&plan){
+        // Plan subscription payment
         const d=UsersDB.load();const u=d.users.find(x=>x.id===userId);
-        if(u){u.plan=plan;u.last_seen=new Date().toISOString();UsersDB.save(d);}
+        if(u){u.plan=plan;u.last_seen=new Date().toISOString();u.tokens_used_month=0;u.month_reset_at=new Date().toISOString();UsersDB.save(d);}
+        if(dbPool){dbPool.query('UPDATE users SET plan=?,tokens_used_month=0,month_reset_at=NOW() WHERE id=?',[plan,userId]).catch(()=>{});}
+        DB.recordPayment({user_id:userId,email:txData.customer?.email,plan,amount:txData.amount/100,status:'succeeded',type:'paystack',stripe_id:txData.reference});
       }
       // Log transaction
       const txLog=path.join(DATA,'paystack_transactions.json');
       let txns=[];try{txns=JSON.parse(fs.readFileSync(txLog,'utf8'));}catch(e){}
-      txns.unshift({event,reference:txData.reference,amount:txData.amount/100,currency:txData.currency,email:txData.customer?.email,plan,user_id:userId,received:new Date().toISOString()});
+      txns.unshift({event,reference:txData.reference,amount:txData.amount/100,currency:txData.currency,email:txData.customer?.email,plan:plan||'',type:txType,tokens:meta.tokens||0,user_id:userId,received:new Date().toISOString()});
       atomicWriteSync(txLog,JSON.stringify(txns.slice(0,500),null,2),{mode:0o600});
-      auditLog('paystack_webhook',{event,ref:txData.reference,plan,user_id:userId},req);
+      auditLog('paystack_webhook',{event,ref:txData.reference,plan:plan||'',type:txType,user_id:userId},req);
     }
     return sendJson(res,{ok:true});
   }
 
-  // Paystack config (save/get keys)
+  // Paystack config (save/get keys) — credentials encrypted at rest
   if(route==='/api/billing/paystack/config'&&req.method==='GET'){
     try{const c=JSON.parse(fs.readFileSync(PAYSTACK_FILE,'utf8'));
-      return sendJson(res,{configured:true,public_key:c.public_key||''});}
+      return sendJson(res,{configured:true,public_key:c.public_key?decryptCred(c.public_key):''});}
     catch(e){return sendJson(res,{configured:false});}
   }
   if(route==='/api/billing/paystack/config'&&req.method==='POST'){
-    const c={public_key:data.public_key,secret_key:data.secret_key,updated:new Date().toISOString()};
+    const c={public_key:encryptCred(data.public_key||''),secret_key:encryptCred(data.secret_key||''),updated:new Date().toISOString()};
     atomicWriteSync(PAYSTACK_FILE,JSON.stringify(c,null,2),{mode:0o600});
+    auditLog('paystack_config_update',{},req);
     return sendJson(res,{ok:true});
   }
 
