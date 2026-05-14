@@ -910,6 +910,12 @@ const SKIP=['node_modules','.git','__pycache__','.axiom','dist','build','.next',
 function listDir(dir){const s=safe(dir);if(!s)return[];try{return fs.readdirSync(s,{withFileTypes:true}).filter(e=>!SKIP.includes(e.name)).map(e=>{try{const fp=path.join(s,e.name),st=fs.statSync(fp);return{name:e.name,type:e.isDirectory()?'dir':'file',path:fp,size:st.size,mtime:st.mtime.toISOString(),ext:path.extname(e.name).slice(1)};}catch(e){return null;}}).filter(Boolean).sort((a,b)=>a.type===b.type?a.name.localeCompare(b.name):a.type==='dir'?-1:1);}catch(e){return[];}}
 function runCode(code,lang,stdin=''){return new Promise(resolve=>{const R={python:'python3',javascript:'node',bash:'bash',sh:'bash',ruby:'ruby'};const E={python:'.py',javascript:'.js',bash:'.sh',ruby:'.rb'};const runner=R[lang?.toLowerCase()];if(!runner)return resolve({output:`Language '${lang}' not supported`,error:true});const tmp=path.join(os.tmpdir(),`ax_${Date.now()}${E[lang.toLowerCase()]||'.py'}`);fs.writeFileSync(tmp,code,{mode:0o600});const p=spawn(runner,[tmp],{timeout:30000});let out='',err='';if(stdin){p.stdin.write(stdin);p.stdin.end();}p.stdout.on('data',d=>out+=d);p.stderr.on('data',d=>err+=d);p.on('close',code=>{try{fs.unlinkSync(tmp);}catch(e){}resolve({output:(out+(err?'\n'+err:'')).trim()||'(no output)',exitCode:code,error:code!==0});});p.on('error',e=>{try{fs.unlinkSync(tmp);}catch(x){}resolve({output:'Error: '+e.message,error:true});});});}
 
+// ── TOTP helpers (RFC 6238) ─────────────────────────────────────
+function base32Decode(s){const A='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';s=s.toUpperCase().replace(/=+$/,'');let bits=0,val=0;const out=[];for(const c of s){const i=A.indexOf(c);if(i===-1)continue;val=(val<<5)|i;bits+=5;if(bits>=8){bits-=8;out.push((val>>>bits)&0xFF);}}return Buffer.from(out);}
+function totpNow(secret,window=0){const key=base32Decode(secret);const step=Math.floor(Date.now()/30000)+window;const buf=Buffer.allocUnsafe(8);buf.writeUInt32BE(0,0);buf.writeUInt32BE(step>>>0,4);const h=crypto.createHmac('sha1',key).update(buf).digest();const off=h[h.length-1]&0xf;const code=((h[off]&0x7f)<<24)|(h[off+1]<<16)|(h[off+2]<<8)|h[off+3];return String(code%1000000).padStart(6,'0');}
+function verifyTotp(secret,token){for(let w=-1;w<=1;w++){if(totpNow(secret,w)===String(token))return true;}return false;}
+function isInternalUrl(u){try{const h=new URL(u).hostname.toLowerCase();return h==='localhost'||h==='127.0.0.1'||h==='::1'||h.startsWith('192.168.')||h.startsWith('10.')||/^172\.(1[6-9]|2\d|3[01])\./.test(h)||h.endsWith('.local')||h==='0.0.0.0'||h==='169.254.169.254'||h==='metadata.google.internal';}catch(e){return true;}}
+
 // ════════════════════════════════════════════════════════════════
 // PURE-NODE WEBSOCKET TERMINAL — Real bash shell, no npm needed
 // ════════════════════════════════════════════════════════════════
@@ -2431,11 +2437,429 @@ Return ONLY valid JSON array. No markdown.`;
   if(route.match(/^\/api\/chats\/[^/]+$/)&&req.method==='PUT'){const u=getReqUser(req);const uid=u?.id||null;const chat=Chats.update(route.split('/')[3],data.messages,data.title,uid);if(!chat)return sendJson(res,{error:'Not found'},404);return sendJson(res,{chat});}
   if(route.match(/^\/api\/chats\/[^/]+$/)&&req.method==='DELETE'){const u=getReqUser(req);const uid=u?.id||null;Chats.remove(route.split('/')[3],uid);return sendJson(res,{ok:true});}
 
+  // ── Replace in Files ──────────────────────────────────────────
+  if(route==='/api/replace'&&req.method==='POST'){
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    const pattern=data.pattern||'',replacement=data.replacement||'';
+    const useRegex=!!data.regex,caseSensitive=!!data.caseSensitive,dryRun=!!data.dryRun;
+    if(!pattern)return sendJson(res,{error:'Pattern required'},400);
+    const results=[];let totalReplaced=0;
+    function walkReplace(d,depth){if(depth>5||results.length>500)return;try{fs.readdirSync(d,{withFileTypes:true}).forEach(e=>{if(SKIP.includes(e.name)||e.name.startsWith('.'))return;const fp=path.join(d,e.name);if(e.isDirectory()){walkReplace(fp,depth+1);return;}const ext=path.extname(e.name).slice(1);if(!['js','ts','jsx','tsx','py','go','rs','java','c','cpp','h','css','html','json','md','txt','yml','yaml','sh','rb','php'].includes(ext))return;try{const orig=fs.readFileSync(fp,'utf8');let regex;try{regex=useRegex?new RegExp(pattern,caseSensitive?'g':'gi'):new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),caseSensitive?'g':'gi');}catch(e){return;}const matches=[...orig.matchAll(regex)];if(!matches.length)return;const updated=orig.replace(regex,replacement);const rel=fp.replace(dir+'/','');results.push({file:rel,matches:matches.length,preview:orig.slice(Math.max(0,(matches[0]?.index||0)-40),Math.min(orig.length,(matches[0]?.index||0)+80)).replace(/\n/g,'↵')});totalReplaced+=matches.length;if(!dryRun){fs.writeFileSync(fp,updated);};}catch(e){}});}catch(e){}}
+    walkReplace(dir,0);
+    auditLog('replace_in_files',{dir,pattern,dryRun,files:results.length},req);
+    return sendJson(res,{ok:true,dryRun,results,totalFiles:results.length,totalReplaced});
+  }
+
+  // ── GitHub PR Review (gh CLI) ──────────────────────────────────
+  if(route==='/api/github/prs'&&req.method==='GET'){
+    const dir=safe(q.dir)||os.homedir();
+    return new Promise(resolve=>{exec(`cd "${dir}" && gh pr list --json number,title,author,state,updatedAt,headRefName --limit 20 2>&1`,{maxBuffer:512*1024},(err,out)=>{
+      if(err||out.startsWith('error')||out.includes('gh: command not found')){return resolve(sendJson(res,{error:out.trim()||'gh CLI not available',prs:[]}));}
+      try{const prs=JSON.parse(out);resolve(sendJson(res,{prs}));}catch(e){resolve(sendJson(res,{error:'Parse error',prs:[]}));}
+    });});
+  }
+  if(route==='/api/github/pr/view'&&req.method==='GET'){
+    const dir=safe(q.dir)||os.homedir();const num=parseInt(q.number)||0;
+    if(!num)return sendJson(res,{error:'PR number required'},400);
+    return new Promise(resolve=>{exec(`cd "${dir}" && gh pr view ${num} --json number,title,body,author,state,additions,deletions,files,commits,baseRefName,headRefName 2>&1`,{maxBuffer:1024*1024},(_err,out)=>{
+      try{const pr=JSON.parse(out);resolve(sendJson(res,{pr}));}catch(e){resolve(sendJson(res,{error:out.trim()||e.message}));}
+    });});
+  }
+  if(route==='/api/github/pr/checkout'&&req.method==='POST'){
+    const dir=safe(data.dir)||os.homedir();const num=parseInt(data.number)||0;
+    if(!num)return sendJson(res,{error:'PR number required'},400);
+    return new Promise(resolve=>{exec(`cd "${dir}" && gh pr checkout ${num} 2>&1`,{maxBuffer:256*1024},(err,out)=>{resolve(sendJson(res,{ok:!err,output:out.trim()}));});});
+  }
+
+  // ── HTTP Proxy for REST Client ─────────────────────────────────
+  if(route==='/api/http'&&req.method==='POST'){
+    const {url:targetUrl,method:method2='GET',headers:reqHeaders={},body:reqBody=''}=data;
+    if(!targetUrl)return sendJson(res,{error:'url required'},400);
+    if(isInternalUrl(targetUrl))return sendJson(res,{error:'Internal URLs not allowed'},403);
+    const t0=Date.now();
+    try{
+      const parsed2=new URL(targetUrl);
+      const isHttps=parsed2.protocol==='https:';
+      const options={hostname:parsed2.hostname,port:parsed2.port||(isHttps?443:80),path:parsed2.pathname+(parsed2.search||''),method:method2.toUpperCase(),headers:{'User-Agent':'AXIOM-REST-Client/1.0',...reqHeaders},timeout:15000};
+      const result=await new Promise((resolve,reject)=>{
+        const mod=isHttps?https:http;
+        const r=mod.request(options,resp=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>resolve({status:resp.statusCode,statusText:resp.statusMessage||'',headers:resp.headers,body:d,time:Date.now()-t0}));});
+        r.on('error',reject);r.on('timeout',()=>{r.destroy();reject(new Error('Request timed out'));});
+        if(reqBody&&['POST','PUT','PATCH'].includes(method2.toUpperCase()))r.write(reqBody);
+        r.end();
+      });
+      return sendJson(res,result);
+    }catch(e){return sendJson(res,{error:e.message,time:Date.now()-t0},502);}
+  }
+
+  // ── 2FA (TOTP) Routes ──────────────────────────────────────────
+  if(route==='/api/2fa/setup'&&req.method==='POST'){
+    const u=getReqUser(req);if(!u)return sendJson(res,{error:'Auth required'},401);
+    const gen=()=>{const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let s='';for(let i=0;i<16;i++)s+=chars[Math.floor(Math.random()*chars.length)];return s;};
+    const newSecret=gen();
+    const d=UsersDB.load();const usr=d.users.find(x=>x.id===u.id);
+    if(!usr)return sendJson(res,{error:'User not found'},404);
+    usr.totp_pending=newSecret;UsersDB.save(d);
+    const otpUrl='otpauth://totp/AXIOM:'+encodeURIComponent(u.email||usr.email||'user')+'?secret='+newSecret+'&issuer=AXIOM&digits=6&period=30';
+    return sendJson(res,{secret:newSecret,otpUrl});
+  }
+  if(route==='/api/2fa/verify'&&req.method==='POST'){
+    const u=getReqUser(req);if(!u)return sendJson(res,{error:'Auth required'},401);
+    const token=String(data.token||'').replace(/\s/g,'');
+    const d=UsersDB.load();const usr=d.users.find(x=>x.id===u.id);
+    if(!usr)return sendJson(res,{error:'User not found'},404);
+    const secret=usr.totp_pending||usr.totp_secret;
+    if(!secret)return sendJson(res,{error:'No 2FA setup in progress'},400);
+    if(!verifyTotp(secret,token))return sendJson(res,{error:'Invalid code'},400);
+    usr.totp_secret=secret;delete usr.totp_pending;usr.totp_enabled=true;UsersDB.save(d);
+    auditLog('2fa_enabled',{user_id:u.id},req);
+    return sendJson(res,{ok:true,message:'2FA enabled'});
+  }
+  if(route==='/api/2fa/disable'&&req.method==='POST'){
+    const u=getReqUser(req);if(!u)return sendJson(res,{error:'Auth required'},401);
+    const token=String(data.token||'');
+    const d=UsersDB.load();const usr=d.users.find(x=>x.id===u.id);
+    if(!usr)return sendJson(res,{error:'User not found'},404);
+    if(usr.totp_enabled&&usr.totp_secret&&!verifyTotp(usr.totp_secret,token))return sendJson(res,{error:'Invalid code — enter current TOTP to disable'},400);
+    delete usr.totp_secret;delete usr.totp_pending;usr.totp_enabled=false;UsersDB.save(d);
+    auditLog('2fa_disabled',{user_id:u.id},req);
+    return sendJson(res,{ok:true});
+  }
+  if(route==='/api/2fa/status'&&req.method==='GET'){
+    const u=getReqUser(req);if(!u)return sendJson(res,{error:'Auth required'},401);
+    const d=UsersDB.load();const usr=d.users.find(x=>x.id===u.id);
+    return sendJson(res,{enabled:!!(usr?.totp_enabled),hasPending:!!(usr?.totp_pending)});
+  }
+
+  // ── Merge Conflict Routes ──────────────────────────────────────
+  if(route==='/api/git/conflicts'&&req.method==='GET'){
+    const dir=safe(q.dir)||os.homedir();
+    return new Promise(resolve=>{exec(`cd "${dir}" && git diff --name-only --diff-filter=U 2>&1`,{maxBuffer:256*1024},(err,out)=>{
+      const files=(out||'').trim().split('\n').filter(Boolean);
+      if(err&&!files.length)return resolve(sendJson(res,{files:[],error:out.trim()}));
+      resolve(sendJson(res,{files}));
+    });});
+  }
+  if(route==='/api/git/conflict-resolve'&&req.method==='POST'){
+    const dir=safe(data.dir);const file=safe(data.file);const choice=data.choice||'ours';
+    if(!dir||!file)return sendJson(res,{error:'dir and file required'},400);
+    if(!['ours','theirs','union'].includes(choice))return sendJson(res,{error:'choice must be ours/theirs/union'},400);
+    return new Promise(resolve=>{
+      exec(`cd "${dir}" && git checkout --${choice==='ours'?'ours':choice==='theirs'?'theirs':'ours'} "${path.basename(file)}" 2>&1`,{maxBuffer:256*1024},(err,out1)=>{
+        if(err)return resolve(sendJson(res,{ok:false,output:out1.trim()}));
+        exec(`cd "${dir}" && git add "${path.basename(file)}" 2>&1`,{maxBuffer:256*1024},(err2,out2)=>{
+          auditLog('conflict_resolve',{file:data.file,choice},req);
+          resolve(sendJson(res,{ok:!err2,output:(out1+out2).trim()}));
+        });
+      });
+    });
+  }
+
+  // ── Keybindings (per-user, server-backed) ─────────────────────
+  const KB_DIR=path.join(DATA,'keybindings');
+  if(route==='/api/keybindings'&&req.method==='GET'){
+    const u=getReqUser(req);const uid=u?.id||'default';
+    try{fs.mkdirSync(KB_DIR,{recursive:true});}catch(e){}
+    try{return sendJson(res,{keybindings:JSON.parse(fs.readFileSync(path.join(KB_DIR,uid+'.json'),'utf8'))});}
+    catch(e){return sendJson(res,{keybindings:{}});}
+  }
+  if(route==='/api/keybindings'&&req.method==='POST'){
+    const u=getReqUser(req);const uid=u?.id||'default';
+    try{fs.mkdirSync(KB_DIR,{recursive:true});}catch(e){}
+    atomicWriteSync(path.join(KB_DIR,uid+'.json'),JSON.stringify(data.keybindings||{}));
+    return sendJson(res,{ok:true});
+  }
+
+  // ── Multi-line ghost completion (Cursor Tab style) ────────────
+  if(route==='/api/complete/multiline'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{completion:''});
+    const prefix=(data.prefix||'').slice(-600),suffix=(data.suffix||'').slice(0,200);
+    const lang=data.lang||'',file=data.file||'';
+    if(!prefix.trim())return sendJson(res,{completion:''});
+    const sys='You are a code completion engine. Given code context, predict the next 1-5 lines. Return ONLY the code to insert — no explanation, no markdown, no backticks. If uncertain, return an empty string.';
+    const msg=`Language: ${lang}\nFile: ${file||'unknown'}\nCode before cursor:\n${prefix}\nCode after cursor:\n${suffix}\n\nCompletion:`;
+    try{
+      const rb=JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:150,system:sys,messages:[{role:'user',content:msg}]});
+      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+      let completion=result.content?.[0]?.text||'';
+      completion=completion.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
+      return sendJson(res,{completion});
+    }catch(e){return sendJson(res,{completion:''});}
+  }
+
+  // ── Codebase indexing (TF-IDF) ────────────────────────────────
+  const codebaseIndexes=global._axiomCbIdx=global._axiomCbIdx||new Map();
+  if(route==='/api/codebase/index'&&req.method==='POST'){
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    const docs={};
+    (function walk(d,depth){if(depth>5||Object.keys(docs).length>500)return;try{fs.readdirSync(d,{withFileTypes:true}).forEach(e=>{if(SKIP.includes(e.name)||e.name.startsWith('.'))return;const fp=path.join(d,e.name);if(e.isDirectory()){walk(fp,depth+1);return;}const ext=path.extname(e.name).slice(1);if(!['js','ts','jsx','tsx','py','go','rs','java','c','cpp','h','css','html','json','md','rb','php','sh'].includes(ext))return;let st;try{st=fs.statSync(fp);}catch(e){return;}if(st.size>200000)return;const rel=fp.replace(dir+'/','');try{docs[rel]=fs.readFileSync(fp,'utf8');}catch(e){}});}catch(e){}})(dir,0);
+    function tokenize(text){return text.toLowerCase().replace(/[^\w\s]/g,' ').split(/\s+/).filter(t=>t.length>2&&!/^\d+$/.test(t));}
+    const N=Math.max(Object.keys(docs).length,1);const df={};
+    Object.values(docs).forEach(c=>{new Set(tokenize(c)).forEach(t=>{df[t]=(df[t]||0)+1;});});
+    const idx={};
+    Object.entries(docs).forEach(([file,content])=>{const tokens=tokenize(content+' '+path.basename(file));const tf={};tokens.forEach(t=>{tf[t]=(tf[t]||0)+1;});const top=Object.entries(tf).sort((a,b)=>b[1]-a[1]).slice(0,60).map(([t,c])=>({t,score:c*Math.log(N/(df[t]||1))})).filter(x=>x.score>0);idx[file]={tokens:top,preview:content.slice(0,300)};});
+    codebaseIndexes.set(dir,{idx,ts:Date.now(),count:Object.keys(docs).length});
+    return sendJson(res,{ok:true,files:Object.keys(docs).length});
+  }
+  if(route==='/api/codebase/search'&&req.method==='POST'){
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    const query=data.query||'';const ci=codebaseIndexes.get(dir);
+    if(!ci)return sendJson(res,{results:[],indexed:false});
+    function tokenize2(text){return text.toLowerCase().replace(/[^\w\s]/g,' ').split(/\s+/).filter(t=>t.length>2);}
+    const qT=new Set(tokenize2(query));
+    const results=Object.entries(ci.idx).map(([file,{tokens,preview}])=>{let score=0;tokens.forEach(({t,score:s})=>{if(qT.has(t))score+=s;});return{file,score,preview};}).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,10);
+    return sendJson(res,{results,indexed:true,lastIndexed:new Date(ci.ts).toISOString()});
+  }
+
+  // ── @-mention context expansion ───────────────────────────────
+  if(route==='/api/context/expand'&&req.method==='POST'){
+    const dir=safe(data.dir)||os.homedir();const mentions=data.mentions||[];const openFiles=data.openFiles||[];
+    const pieces=[];
+    for(const m of mentions){
+      try{
+        if(m.type==='file'&&m.path){const s=safe(m.path);if(s&&fs.existsSync(s)){const c=fs.readFileSync(s,'utf8').slice(0,4000);pieces.push('@file:'+path.basename(m.path)+'\n```\n'+c+'\n```');}}
+        else if(m.type==='folder'&&m.path){const s=safe(m.path);if(s){const ents=listDir(s).slice(0,30);pieces.push('@folder:'+path.basename(m.path)+'\n'+ents.map(e=>(e.type==='dir'?'📁 ':'📄 ')+e.name).join('\n'));}}
+        else if(m.type==='git'){const r=await git(dir,'diff','HEAD','--stat');pieces.push('@git:diff-stat\n'+(r.out||'No uncommitted changes'));}
+        else if(m.type==='open-files'){for(const f of openFiles.slice(0,5)){const s=safe(f.path);if(s&&fs.existsSync(s)){const c=fs.readFileSync(s,'utf8').slice(0,2000);pieces.push('@open:'+f.name+'\n```\n'+c+'\n```');}}}
+        else if(m.type==='codebase'){
+          const ci=codebaseIndexes.get(dir);
+          if(ci&&m.query){function tkn(t){return t.toLowerCase().replace(/[^\w\s]/g,' ').split(/\s+/).filter(x=>x.length>2);}
+            const qt=new Set(tkn(m.query));const top=Object.entries(ci.idx).map(([file,{tokens,preview}])=>{let s=0;tokens.forEach(({t,score})=>{if(qt.has(t))s+=score;});return{file,s,preview};}).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,3);
+            for(const r of top){const fp=safe(dir+'/'+r.file);if(fp&&fs.existsSync(fp)){try{pieces.push('@codebase:'+r.file+'\n```\n'+fs.readFileSync(fp,'utf8').slice(0,2000)+'\n```');}catch(e){}}}
+          }
+        }
+        else if(m.type==='rules'){for(const n of['.axiomrules','.cursorrules','AGENTS.md','CLAUDE.md']){const fp=path.join(dir,n);if(fs.existsSync(fp)){pieces.push('@rules:'+n+'\n'+fs.readFileSync(fp,'utf8').slice(0,3000));break;}}}
+        else if(m.type==='web'&&m.content){pieces.push('@web:'+m.query+'\n'+m.content);}
+      }catch(e){}
+    }
+    return sendJson(res,{context:pieces.join('\n\n---\n\n'),pieces});
+  }
+
+  // ── Composer: multi-file edit proposal ────────────────────────
+  if(route==='/api/composer'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'No project open'},400);
+    const instruction=data.instruction||'',fileContext=data.fileContext||'',extraContext=data.extraContext||'',rules=data.rules||'';
+    const sys=`You are AXIOM Composer, an AI that proposes multi-file code edits.${rules?'\n\nProject rules:\n'+rules:''}\nRespond with ONLY a JSON object:\n{"summary":"brief description","files":[{"path":"rel/path","action":"edit|create|delete","content":"full file content","explanation":"what changed"}]}`;
+    const msg=`Project: ${dir}\n${extraContext?extraContext+'\n':''}${fileContext?'Current file:\n'+fileContext.slice(0,3000)+'\n':''}Instruction: ${instruction}`;
+    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:msg}]});
+    try{
+      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+      let text=result.content?.[0]?.text||'{}';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
+      let proposal;try{proposal=JSON.parse(text);}catch(e){return sendJson(res,{error:'AI returned invalid JSON',raw:text.slice(0,500)});}
+      for(const f of(proposal.files||[])){if(f.action==='edit'){try{const fp=path.resolve(dir,f.path);if(fp.startsWith(dir))f.original=fs.readFileSync(fp,'utf8').slice(0,5000);}catch(e){f.original='';}}};
+      auditLog('composer_propose',{dir,files:(proposal.files||[]).length},req);
+      return sendJson(res,{ok:true,proposal});
+    }catch(e){return sendJson(res,{error:e.message},500);}
+  }
+  if(route==='/api/composer/apply'&&req.method==='POST'){
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    const applied=[];
+    for(const f of(data.files||[]).slice(0,30)){
+      try{const fp=path.resolve(dir,f.path);if(!fp.startsWith(dir)){applied.push({path:f.path,status:'denied'});continue;}
+        if(f.action==='delete'){fs.unlinkSync(fp);applied.push({path:f.path,status:'deleted'});}
+        else{fs.mkdirSync(path.dirname(fp),{recursive:true});fs.writeFileSync(fp,f.content||'');applied.push({path:f.path,status:'applied'});}
+      }catch(e){applied.push({path:f.path,status:'error',error:e.message});}
+    }
+    auditLog('composer_apply',{dir,count:applied.length},req);
+    return sendJson(res,{ok:true,applied});
+  }
+
+  // ── Bug Finder (AI diff review) ───────────────────────────────
+  if(route==='/api/bug-finder'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const dir=safe(data.dir)||os.homedir();
+    return new Promise(resolve=>{
+      exec(`cd "${dir}" && git diff HEAD 2>&1`,{maxBuffer:2*1024*1024},(_err,diff)=>{
+        if(!diff||diff.length<10)return resolve(sendJson(res,{issues:[],message:'No uncommitted changes to review'}));
+        const sys='You are a code reviewer. Analyze this git diff for bugs, security issues, and code quality problems. Return ONLY a JSON array: [{"severity":"error|warning|info","file":"path","line":42,"title":"Issue title","description":"Details","fix":"Suggested fix"}]. Focus on real bugs, not style nitpicks.';
+        const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:[{role:'user',content:'Review this diff:\n\n'+diff.slice(0,12000)}]});
+        const req2=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{
+          let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{
+            try{const r=JSON.parse(d);let text=r.content?.[0]?.text||'[]';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');let issues;try{issues=JSON.parse(text);}catch(e){issues=[];}resolve(sendJson(res,{issues,diffSize:diff.length}));}
+            catch(e){resolve(sendJson(res,{issues:[],error:e.message}));}
+          });
+        });req2.on('error',e=>resolve(sendJson(res,{issues:[],error:e.message})));req2.end(rb);
+      });
+    });
+  }
+
+  // ── Web search (DuckDuckGo HTML scrape) ───────────────────────
+  if(route==='/api/web/search'&&req.method==='POST'){
+    const q2=encodeURIComponent(data.query||'');if(!q2)return sendJson(res,{results:[]});
+    try{
+      const html=await new Promise((resolve,reject)=>{
+        const r=https.get({hostname:'html.duckduckgo.com',path:'/html/?q='+q2,headers:{'User-Agent':'Mozilla/5.0 (compatible; AXIOM-IDE/1.0)','Accept':'text/html','Accept-Language':'en-US,en;q=0.9'}},{timeout:8000},resp=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>resolve(d));});
+        r.on('error',reject);r.on('timeout',()=>{r.destroy();reject(new Error('timeout'));});
+      });
+      const results=[];
+      const titleRe=/<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
+      const snippetRe=/<a[^>]+class="result__snippet"[^>]*>([^<]*)<\/a>/g;
+      const snips=[];let sm;while((sm=snippetRe.exec(html))!==null)snips.push(sm[1].replace(/&#x27;/g,"'").replace(/&amp;/g,'&').trim());
+      let tm;let si=0;
+      while((tm=titleRe.exec(html))!==null&&results.length<8){
+        let url=tm[1];if(url.startsWith('//'))url='https:'+url;if(url.startsWith('/l/?'))continue;
+        const title=tm[2].replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
+        results.push({url,title,snippet:snips[si++]||''});
+      }
+      return sendJson(res,{results,query:data.query});
+    }catch(e){return sendJson(res,{results:[],error:e.message});}
+  }
+
+  // ── Per-hunk staging ─────────────────────────────────────────
+  if(route==='/api/git/hunks'&&req.method==='GET'){
+    const dir=safe(q.dir)||os.homedir();const file=q.file||'';
+    const cmd=file?`cd "${dir}" && git diff --no-color -- "${sanitizeGitArg(file)}" 2>&1`:`cd "${dir}" && git diff --no-color 2>&1`;
+    return new Promise(resolve=>{exec(cmd,{maxBuffer:2*1024*1024},(_e,out)=>{
+      const hunks=[];let cur=null,fileHdr='';
+      for(const line of(out||'').split('\n')){
+        if(line.startsWith('diff --git')){if(cur)hunks.push(cur);cur=null;fileHdr=line;}
+        else if(line.startsWith('--- ')||line.startsWith('+++ ')){fileHdr+='\n'+line;}
+        else if(line.startsWith('@@')){
+          if(cur)hunks.push(cur);
+          const m=line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/);
+          cur={file:fileHdr.split('\n')[0].replace('diff --git a/','').split(' ')[0],header:fileHdr,oldLine:+(m?.[1]||0),newLine:+(m?.[2]||0),context:(m?.[3]||'').trim(),lines:[line],patch:fileHdr+'\n'+line};
+        }
+        else if(cur){cur.lines.push(line);cur.patch+='\n'+line;}
+      }
+      if(cur)hunks.push(cur);
+      resolve(sendJson(res,{hunks:hunks.slice(0,50)}));
+    });});
+  }
+  if(route==='/api/git/stage-hunk'&&req.method==='POST'){
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    const patch=data.patch||'';if(!patch)return sendJson(res,{error:'No patch'},400);
+    return new Promise(resolve=>{
+      const tmp=path.join(os.tmpdir(),'ax_hunk_'+Date.now()+'.patch');
+      fs.writeFileSync(tmp,patch+'\n');
+      exec(`cd "${dir}" && git apply --cached "${tmp}" 2>&1`,{maxBuffer:256*1024},(err,out)=>{
+        try{fs.unlinkSync(tmp);}catch(e){}resolve(sendJson(res,{ok:!err,output:(out||'').trim()}));
+      });
+    });
+  }
+
+  // ── AI Refactor ───────────────────────────────────────────────
+  if(route==='/api/refactor'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const {action='',code='',lang='',selection=''}=data;
+    const prompts={
+      extract_function:'Extract the selected code into a well-named function. Return JSON: {"refactored":"full new file content","functionName":"name","explanation":"what changed"}',
+      extract_variable:'Extract the selected expression into a named constant. Return JSON: {"refactored":"full new file content","variableName":"name"}',
+      inline:'Inline the selected variable/function where it is used. Return JSON: {"refactored":"full new file content","explanation":"what changed"}',
+      organize_imports:'Group, sort, and deduplicate imports. Return JSON: {"refactored":"full new file content"}',
+      async_convert:'Convert to async/await if using callbacks/promises, or vice-versa. Return JSON: {"refactored":"full new file content","explanation":"what changed"}',
+    };
+    const sys='You are a code refactoring engine. '+(prompts[action]||'Improve the code. Return JSON: {"refactored":"full new file content","explanation":"what changed"}');
+    const msg=`Language: ${lang}\nFull file:\n${code}\n${selection?'\nSelected code:\n'+selection:''}`;
+    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:msg}]});
+    try{
+      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+      let text=result.content?.[0]?.text||'{}';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
+      let out2;try{out2=JSON.parse(text);}catch(e){out2={refactored:text};}
+      return sendJson(res,out2);
+    }catch(e){return sendJson(res,{error:e.message},500);}
+  }
+
+  // ── Notepads ──────────────────────────────────────────────────
+  const NOTEPADS_FILE=path.join(DATA,'notepads.json');
+  const loadNotepads=()=>{try{return JSON.parse(fs.readFileSync(NOTEPADS_FILE,'utf8'));}catch(e){return[];}};
+  const saveNotepads=(np)=>{atomicWriteSync(NOTEPADS_FILE,JSON.stringify(np));};
+  if(route==='/api/notepads'&&req.method==='GET')return sendJson(res,{notepads:loadNotepads()});
+  if(route==='/api/notepads'&&req.method==='POST'){const np=loadNotepads();const n={id:crypto.randomUUID(),title:data.title||'Untitled',content:data.content||'',created:new Date().toISOString()};np.unshift(n);saveNotepads(np);return sendJson(res,{ok:true,notepad:n});}
+  if(route.match(/^\/api\/notepads\/[^/]+$/)&&req.method==='PUT'){const nid=route.split('/')[3];const np=loadNotepads();const n=np.find(x=>x.id===nid);if(!n)return sendJson(res,{error:'Not found'},404);if(data.title!==undefined)n.title=data.title;if(data.content!==undefined)n.content=data.content;n.updated=new Date().toISOString();saveNotepads(np);return sendJson(res,{ok:true,notepad:n});}
+  if(route.match(/^\/api\/notepads\/[^/]+$/)&&req.method==='DELETE'){const nid=route.split('/')[3];saveNotepads(loadNotepads().filter(x=>x.id!==nid));return sendJson(res,{ok:true});}
+
+  // ── MCP Client (stdio JSON-RPC) ───────────────────────────────
+  const mcpProcs=global._axiomMcp=global._axiomMcp||new Map();
+  if(route==='/api/mcp/start'&&req.method==='POST'){
+    const{command,args:mcpArgs=[],name:mcpName='mcp-'+Date.now()}=data;
+    if(!command)return sendJson(res,{error:'command required'},400);
+    if(mcpProcs.has(mcpName)){try{mcpProcs.get(mcpName).proc.kill();}catch(e){}mcpProcs.delete(mcpName);}
+    try{
+      const proc=spawn(command,mcpArgs,{stdio:['pipe','pipe','pipe'],env:{...process.env}});
+      const state={proc,name:mcpName,command,seq:1,pending:{},buf:'',started:new Date().toISOString()};
+      proc.stdout.on('data',chunk=>{state.buf+=chunk.toString();let nl;while((nl=state.buf.indexOf('\n'))!==-1){const line=state.buf.slice(0,nl);state.buf=state.buf.slice(nl+1);try{const msg=JSON.parse(line);if(msg.id!==undefined&&state.pending[msg.id]){state.pending[msg.id](msg);delete state.pending[msg.id];}}catch(e){}}});
+      proc.on('close',()=>mcpProcs.delete(mcpName));
+      mcpProcs.set(mcpName,state);
+      proc.stdin.write(JSON.stringify({jsonrpc:'2.0',id:state.seq++,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'AXIOM',version:'6.0'}}})+'\n');
+      await new Promise(r=>setTimeout(r,300));
+      return sendJson(res,{ok:true,name:mcpName,pid:proc.pid});
+    }catch(e){return sendJson(res,{error:e.message},500);}
+  }
+  if(route==='/api/mcp/stop'&&req.method==='POST'){const s=mcpProcs.get(data.name);if(s)try{s.proc.kill();}catch(e){}mcpProcs.delete(data.name);return sendJson(res,{ok:true});}
+  if(route==='/api/mcp/list'&&req.method==='GET')return sendJson(res,{servers:[...mcpProcs.entries()].map(([name,s])=>({name,command:s.command,started:s.started}))});
+  if(route==='/api/mcp/call'&&req.method==='POST'){
+    const{name:mcpSrv,method:mcpMethod,params:mcpParams={}}=data;const s=mcpProcs.get(mcpSrv);
+    if(!s)return sendJson(res,{error:'Server not running — start it first'},404);
+    const mid=s.seq++;
+    try{
+      const result=await new Promise((resolve,reject)=>{
+        s.pending[mid]=resolve;
+        setTimeout(()=>{if(s.pending[mid]){delete s.pending[mid];reject(new Error('MCP timeout'));}},10000);
+        s.proc.stdin.write(JSON.stringify({jsonrpc:'2.0',id:mid,method:mcpMethod,params:mcpParams})+'\n');
+      });
+      return sendJson(res,{ok:true,result:result.result||null,error:result.error||null});
+    }catch(e){return sendJson(res,{error:e.message},500);}
+  }
+
+  // ── Workspace Problems ────────────────────────────────────────
+  if(route==='/api/workspace/problems'&&req.method==='POST'){
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    const problems=[];
+    const PATS=[
+      {re:/\bTODO\b[:\s]*(.*)/i,sev:'info',type:'TODO'},
+      {re:/\bFIXME\b[:\s]*(.*)/i,sev:'warning',type:'FIXME'},
+      {re:/\bHACK\b[:\s]*(.*)/i,sev:'warning',type:'HACK'},
+      {re:/\bconsole\.log\s*\(/,sev:'warning',type:'console.log'},
+      {re:/\bdebugger\b/,sev:'error',type:'debugger'},
+    ];
+    (function walk(d,depth){if(depth>5||problems.length>500)return;try{fs.readdirSync(d,{withFileTypes:true}).forEach(e=>{if(SKIP.includes(e.name)||e.name.startsWith('.'))return;const fp=path.join(d,e.name);if(e.isDirectory()){walk(fp,depth+1);return;}const ext=path.extname(e.name).slice(1);if(!['js','ts','jsx','tsx','py','go','rs','java','c','cpp','rb','php','sh'].includes(ext))return;let st;try{st=fs.statSync(fp);}catch(e){return;}if(st.size>300000)return;try{const lines=fs.readFileSync(fp,'utf8').split('\n');const rel=fp.replace(dir+'/','');lines.forEach((line,i)=>{PATS.forEach(({re,sev,type})=>{if(re.test(line))problems.push({file:rel,line:i+1,severity:sev,type,text:line.trim().slice(0,100)});});});}catch(e){}});}catch(e){}})(dir,0);
+    return sendJson(res,{problems:problems.slice(0,300),total:problems.length});
+  }
+
+  // ── File watcher (long-poll) ──────────────────────────────────
+  const fwChanges=global._axiomFwChg=global._axiomFwChg||new Map();
+  const fwWatchers=global._axiomFwW=global._axiomFwW||new Map();
+  if(route==='/api/files/watch'&&req.method==='POST'){
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    if(!fwWatchers.has(dir)){
+      try{const w=fs.watch(dir,{recursive:true},(event,file)=>{if(!file||SKIP.some(s=>file.includes(s)))return;const ch=fwChanges.get(dir)||[];ch.push({type:event,file,ts:Date.now()});fwChanges.set(dir,ch.slice(-50));});fwWatchers.set(dir,w);}catch(e){}
+    }
+    const since=+(data.since||0);const changes=(fwChanges.get(dir)||[]).filter(c=>c.ts>since);
+    return sendJson(res,{changes,ts:Date.now()});
+  }
+
+  // ── Rules file (.axiomrules / .cursorrules / AGENTS.md) ───────
+  if(route==='/api/rules'&&req.method==='GET'){
+    const dir=safe(q.dir)||os.homedir();
+    for(const n of['.axiomrules','.cursorrules','AGENTS.md','CLAUDE.md','.github/copilot-instructions.md']){
+      try{const fp=path.join(dir,n);if(fs.existsSync(fp))return sendJson(res,{content:fs.readFileSync(fp,'utf8').slice(0,8000),file:n,found:true});}catch(e){}
+    }
+    return sendJson(res,{content:'',file:'',found:false});
+  }
+
+  // ── Settings sync export/import ───────────────────────────────
+  if(route==='/api/settings/export'&&req.method==='GET'){
+    const u=getReqUser(req);const uid=u?.id||'default';
+    let kb={};try{kb=JSON.parse(fs.readFileSync(path.join(DATA,'keybindings',uid+'.json'),'utf8'));}catch(e){}
+    let settings={};try{settings=JSON.parse(fs.readFileSync(SETTINGS_FILE,'utf8'));}catch(e){}
+    const notepads=loadNotepads();
+    res.writeHead(200,{'Content-Type':'application/json','Content-Disposition':'attachment; filename="axiom_settings_sync.json"','Access-Control-Allow-Origin':'*'});
+    res.end(JSON.stringify({version:'6.0',exported:new Date().toISOString(),keybindings:kb,settings,notepads},null,2));return;
+  }
+  if(route==='/api/settings/import'&&req.method==='POST'){
+    const u=getReqUser(req);const uid=u?.id||'default';
+    if(data.keybindings){try{fs.mkdirSync(path.join(DATA,'keybindings'),{recursive:true});atomicWriteSync(path.join(DATA,'keybindings',uid+'.json'),JSON.stringify(data.keybindings));}catch(e){}}
+    if(data.settings){try{atomicWriteSync(SETTINGS_FILE,JSON.stringify(data.settings));}catch(e){}}
+    if(data.notepads){try{saveNotepads(data.notepads);}catch(e){}}
+    return sendJson(res,{ok:true});
+  }
+
   sendJson(res,{error:'Not found'},404);
 });
 
 // ── WebSocket upgrade handler ────────────────────────────────────
-server.on('upgrade',(req,socket,head)=>{
+server.on('upgrade',(req,socket,_head)=>{
   const u=urlMod.parse(req.url,true);
   if(u.pathname.startsWith('/ws/')){
     socket.on('error',()=>{});
@@ -2451,7 +2875,7 @@ function gracefulShutdown(signal){
   server.close(()=>{
     logInfo('HTTP server closed');
     // Close all terminal sessions
-    terminals.forEach((t,id)=>{try{if(t.shell)t.shell.kill();}catch(e){}});
+    terminals.forEach((t,_id)=>{try{if(t.shell)t.shell.kill();}catch(e){}});
     // Close all file watchers
     Object.keys(fileWatchers).forEach(d=>unwatchDirectory(d));
     // Close DB pool

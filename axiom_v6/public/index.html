@@ -2633,7 +2633,7 @@ kbd { background: var(--elevated); padding: 1px 6px; border-radius: 3px; font-fa
                   <div style="font-size:13px;font-weight:500;color:var(--tx)">Two-Factor Authentication</div>
                   <div style="font-size:10px;color:var(--tx3);margin-top:2px">Protect your account with 2FA</div>
                 </div>
-                <button onclick="alert('2FA coming soon')" style="padding:4px 10px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px">Enable</button>
+                <button onclick="setup2FA()" id="btn-2fa-enable" style="padding:4px 10px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px">Enable</button>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--surface);border-radius:6px">
                 <div>
@@ -4120,10 +4120,11 @@ function refreshDiagnostics() {
 // ═══════════════════════════════════════════════════════
 let collabLink = '';
 function startCollab() {
-  collabLink = `axiom://collab/${crypto.randomUUID().slice(0,8)}`;
+  const roomId = crypto.randomUUID().slice(0,8);
+  collabLink = location.origin + location.pathname + '?room=' + roomId;
   const el = document.getElementById('collab-link');
-  el.textContent = collabLink;
-  el.style.display = 'block';
+  if (el) { el.textContent = collabLink; el.style.display = 'block'; }
+  startCollabSession(roomId);
   addSystemNotif('Collab session created', 'Share the link to invite collaborators.', '🔗');
   notif('Session link created — click to copy','info');
 }
@@ -5895,8 +5896,37 @@ function toggleReplace(){
   }
 }
 function replaceInFiles(){
-  setPanel('search');
-  notif('Use Search panel for replace in files','info');
+  if(!curDir){notif('Open a project folder first','warn');return;}
+  swalAlert(`
+    <div style="display:flex;flex-direction:column;gap:8px;min-width:380px">
+      <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:4px">Replace in Files</div>
+      <input id="rif-find" placeholder="Find..." style="padding:6px 10px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx);font-size:13px;font-family:inherit" autocomplete="off">
+      <input id="rif-replace" placeholder="Replace with..." style="padding:6px 10px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx);font-size:13px;font-family:inherit" autocomplete="off">
+      <div style="display:flex;gap:12px;font-size:12px;color:var(--tx2)">
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="rif-regex"> Regex</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="rif-case"> Case sensitive</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="rif-dry" checked> Dry run preview</label>
+      </div>
+      <button onclick="doReplaceInFiles()" style="padding:7px 14px;background:var(--ac);border:none;border-radius:6px;color:#fff;font-size:13px;cursor:pointer;font-weight:500">Preview / Replace</button>
+      <div id="rif-results" style="max-height:200px;overflow-y:auto;font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--tx2)"></div>
+    </div>
+  `, 'Replace in Files');
+}
+async function doReplaceInFiles(){
+  const find=document.getElementById('rif-find')?.value||'';
+  const replace=document.getElementById('rif-replace')?.value||'';
+  const regex=document.getElementById('rif-regex')?.checked||false;
+  const caseSens=document.getElementById('rif-case')?.checked||false;
+  const dryRun=document.getElementById('rif-dry')?.checked||true;
+  const el=document.getElementById('rif-results');
+  if(!find){notif('Enter a search pattern','warn');return;}
+  if(el)el.innerHTML='<div style="color:var(--tx3);padding:4px">Searching...</div>';
+  const r=await api('POST','/api/replace',{dir:curDir,pattern:find,replacement:replace,regex,caseSensitive:caseSens,dryRun});
+  if(r.error){if(el)el.innerHTML='<div style="color:var(--red)">'+esc(r.error)+'</div>';return;}
+  if(!r.results.length){if(el)el.innerHTML='<div style="color:var(--tx3);padding:4px">No matches found</div>';return;}
+  const summary=`Found ${r.totalReplaced} match(es) in ${r.totalFiles} file(s)${dryRun?' (preview — uncheck Dry run to apply)':''}`;
+  if(el)el.innerHTML='<div style="color:var(--green);padding:4px 0;font-weight:600">'+esc(summary)+'</div>'+r.results.slice(0,20).map(f=>`<div style="padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--ac)">${esc(f.file)}</span> — ${f.matches} match(es)<div style="color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(f.preview)}</div></div>`).join('');
+  if(!dryRun)notif(`Replaced ${r.totalReplaced} occurrence(s) in ${r.totalFiles} file(s)`, 'ok');
 }
 function toggleLineComment(){
   const ed=getEd(1);
@@ -9178,6 +9208,104 @@ onEdit=function(pane){_origOnEdit3(pane);if(pane===1)sendCollabEdit();};
 const _origUpdPos2=updPos;
 updPos=function(pane){_origUpdPos2(pane);if(pane===1)sendCollabCursor();};
 
+// Auto-join collab room from URL param
+(function(){const p=new URLSearchParams(location.search);const room=p.get('room');if(room){setTimeout(()=>{startCollabSession(room);},1500);}})();
+
+// ═══════════════════════════════════════════════════════
+// REST CLIENT
+// ═══════════════════════════════════════════════════════
+let lastRestReq=null;
+function openRestClient(){
+  const last=lastRestReq||{method:'GET',url:'',headers:'',body:''};
+  const html=`<div style="min-width:500px;display:flex;flex-direction:column;gap:8px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:2px">REST Client</div>
+    <div style="display:flex;gap:6px">
+      <select id="rc-method" style="padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx);font-size:12px">
+        ${['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].map(m=>`<option${m===last.method?' selected':''}>${m}</option>`).join('')}
+      </select>
+      <input id="rc-url" value="${esc(last.url)}" placeholder="https://api.example.com/endpoint" style="flex:1;padding:6px 10px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx);font-size:12px;font-family:'JetBrains Mono',monospace">
+    </div>
+    <textarea id="rc-headers" placeholder="Headers (one per line, e.g. Authorization: Bearer token)" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx);font-size:11px;font-family:'JetBrains Mono',monospace;height:60px;resize:vertical">${esc(last.headers)}</textarea>
+    <textarea id="rc-body" placeholder="Request body (JSON, etc.)" style="padding:6px 10px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx);font-size:11px;font-family:'JetBrains Mono',monospace;height:80px;resize:vertical">${esc(last.body)}</textarea>
+    <button onclick="sendRestRequest()" style="padding:7px 14px;background:var(--ac);border:none;border-radius:6px;color:#fff;font-size:13px;cursor:pointer;font-weight:500;align-self:flex-start">Send Request</button>
+    <div id="rc-status" style="font-size:11px;color:var(--tx3)"></div>
+    <pre id="rc-response" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--tx);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;max-height:200px;overflow:auto;white-space:pre-wrap;display:none"></pre>
+  </div>`;
+  swalAlert(html,'REST Client');
+}
+async function sendRestRequest(){
+  const method=document.getElementById('rc-method')?.value||'GET';
+  const url=document.getElementById('rc-url')?.value||'';
+  const headersRaw=document.getElementById('rc-headers')?.value||'';
+  const body=document.getElementById('rc-body')?.value||'';
+  if(!url){notif('Enter a URL','warn');return;}
+  const statusEl=document.getElementById('rc-status');
+  const respEl=document.getElementById('rc-response');
+  if(statusEl)statusEl.textContent='Sending...';
+  if(respEl){respEl.style.display='none';}
+  const headers={};
+  headersRaw.split('\n').forEach(line=>{const i=line.indexOf(':');if(i>0){headers[line.slice(0,i).trim()]=line.slice(i+1).trim();}});
+  lastRestReq={method,url,headers:headersRaw,body};
+  const r=await api('POST','/api/http',{url,method,headers,body});
+  if(r.error){if(statusEl)statusEl.innerHTML=`<span style="color:var(--red)">Error: ${esc(r.error)}</span>`;return;}
+  const statusColor=r.status>=200&&r.status<300?'var(--green)':r.status>=400?'var(--red)':'var(--yellow)';
+  if(statusEl)statusEl.innerHTML=`<span style="color:${statusColor};font-weight:600">${r.status} ${esc(r.statusText||'')}</span> <span style="color:var(--tx3)">${r.time}ms · ${(r.body||'').length} bytes</span>`;
+  if(respEl){
+    let body2=r.body||'';
+    try{body2=JSON.stringify(JSON.parse(r.body),null,2);}catch(e){}
+    respEl.textContent=body2;respEl.style.display='block';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// KEYBINDINGS — server-backed persistence
+// ═══════════════════════════════════════════════════════
+async function loadKeybindings(){
+  try{const r=await api('GET','/api/keybindings');if(r.keybindings&&Object.keys(r.keybindings).length){customKeybinds={...customKeybinds,...r.keybindings};localStorage.setItem('ax_keybinds',JSON.stringify(customKeybinds));}}catch(e){}
+}
+async function saveKeybindingsToServer(){
+  try{await api('POST','/api/keybindings',{keybindings:customKeybinds});}catch(e){}
+}
+// Override startRebind to also persist to server
+const _origStartRebind=startRebind;
+startRebind=function(cmd,el){
+  el.textContent='Press key…';el.style.color='var(--ac)';
+  const h=e=>{if(e.key==='Escape'){el.textContent=customKeybinds[cmd]||DEFAULT_KEYBINDS[cmd];el.style.color='';}else{const parts=[];if(e.ctrlKey||e.metaKey)parts.push('Ctrl');if(e.shiftKey)parts.push('Shift');if(e.altKey)parts.push('Alt');if(e.key.length===1)parts.push(e.key.toUpperCase());else if(!['Control','Shift','Alt','Meta'].includes(e.key))parts.push(e.key);const combo=parts.join('+');customKeybinds[cmd]=combo;localStorage.setItem('ax_keybinds',JSON.stringify(customKeybinds));saveKeybindingsToServer();el.textContent=combo;el.style.color='';notif(cmd+' → '+combo,'ok');}e.preventDefault();document.removeEventListener('keydown',h,true);};
+  document.addEventListener('keydown',h,true);
+};
+// Load keybindings from server on startup
+setTimeout(loadKeybindings,2500);
+
+// ═══════════════════════════════════════════════════════
+// MERGE CONFLICTS PANEL
+// ═══════════════════════════════════════════════════════
+async function showConflicts(){
+  if(!curDir){notif('Open a project folder first','warn');return;}
+  const r=await api('GET','/api/git/conflicts?dir='+encodeURIComponent(curDir));
+  if(r.error){notif('Conflicts: '+r.error,'err');return;}
+  const files=r.files||[];
+  if(!files.length){notif('No merge conflicts detected','ok');return;}
+  const html=`<div style="min-width:380px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px">Merge Conflicts (${files.length} file${files.length!==1?'s':''})</div>
+    <div style="max-height:250px;overflow-y:auto">`+files.map(f=>`
+      <div style="padding:8px;border-bottom:1px solid var(--border)">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--tx);margin-bottom:5px">${esc(f)}</div>
+        <div style="display:flex;gap:5px">
+          <button onclick="resolveConflictFile('${esc(f)}','ours')" style="padding:3px 8px;background:transparent;border:1px solid var(--green);border-radius:4px;color:var(--green);font-size:11px;cursor:pointer">Accept Ours</button>
+          <button onclick="resolveConflictFile('${esc(f)}','theirs')" style="padding:3px 8px;background:transparent;border:1px solid var(--blue,#4da6ff);border-radius:4px;color:var(--blue,#4da6ff);font-size:11px;cursor:pointer">Accept Theirs</button>
+          <button onclick="openFile('${esc(curDir+'/'+f)}','${esc(f)}')" style="padding:3px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px;cursor:pointer">Edit</button>
+        </div>
+      </div>`).join('')+`</div>
+    <div style="margin-top:8px;font-size:11px;color:var(--tx3)">After resolving all files, use Git panel to commit.</div>
+  </div>`;
+  swalAlert(html,'Resolve Merge Conflicts');
+}
+async function resolveConflictFile(file,choice){
+  const r=await api('POST','/api/git/conflict-resolve',{dir:curDir,file:curDir+'/'+file,choice});
+  notif(r.ok?`Resolved ${file} (${choice})`:'Resolve failed: '+(r.output||''),r.ok?'ok':'err');
+  if(r.ok){loadGit();showConflicts();}
+}
+
 // ═══════════════════════════════════════════════════════
 // TASK RUNNER
 // ═══════════════════════════════════════════════════════
@@ -9440,8 +9568,46 @@ loadDir=function(dir){
 // PR REVIEW (GitHub API Integration)
 // ═══════════════════════════════════════════════════════
 async function showPRReview(){
-  notif('PR Review: Use "gh pr list" in terminal to view pull requests. GitHub CLI integration coming soon.','info');
-  showBottom();setBpTab('terminal');
+  if(!curDir){notif('Open a project folder first','warn');return;}
+  const r=await api('GET','/api/github/prs?dir='+encodeURIComponent(curDir));
+  if(r.error){notif('PR list: '+r.error,'err');showBottom();setBpTab('terminal');return;}
+  const prs=r.prs||[];
+  if(!prs.length){swalAlert('<div style="color:var(--tx3);padding:20px;text-align:center">No open pull requests found</div>','PR Review');return;}
+  const html=`<div style="min-width:420px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px">Open Pull Requests</div>
+    <div style="max-height:300px;overflow-y:auto">`+prs.map(pr=>`
+      <div style="padding:8px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="color:var(--ac);font-weight:600">#${pr.number}</span>
+          <span style="color:var(--tx);font-size:13px">${esc(pr.title)}</span>
+          <span style="margin-left:auto;font-size:10px;color:var(--tx3)">${esc(pr.state)}</span>
+        </div>
+        <div style="font-size:11px;color:var(--tx3)">${esc(pr.author?.login||'')} · ${esc(pr.headRefName||'')}</div>
+        <div style="display:flex;gap:6px;margin-top:2px">
+          <button onclick="viewPR(${pr.number})" style="padding:3px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px;cursor:pointer">View</button>
+          <button onclick="checkoutPR(${pr.number})" style="padding:3px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px;cursor:pointer">Checkout</button>
+        </div>
+      </div>`).join('')+`</div></div>`;
+  swalAlert(html,'PR Review');
+}
+async function viewPR(num){
+  const r=await api('GET','/api/github/pr/view?dir='+encodeURIComponent(curDir||'')+'&number='+num);
+  if(r.error){notif('PR view: '+r.error,'err');return;}
+  const pr=r.pr||{};
+  const html=`<div style="min-width:440px;max-height:400px;overflow-y:auto">
+    <div style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:6px">#${pr.number}: ${esc(pr.title||'')}</div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:8px">${esc(pr.baseRefName||'')} ← ${esc(pr.headRefName||'')} · +${pr.additions||0}/-${pr.deletions||0}</div>
+    <div style="font-size:12px;color:var(--tx2);white-space:pre-wrap;border:1px solid var(--border);border-radius:6px;padding:8px;max-height:150px;overflow-y:auto">${esc(pr.body||'(no description)')}</div>
+    ${pr.files?.length?`<div style="margin-top:8px;font-size:11px;color:var(--tx3)">Changed files (${pr.files.length}):</div><div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--tx2);max-height:100px;overflow-y:auto">`+pr.files.slice(0,20).map(f=>`<div>${esc(f.path||f)}</div>`).join('')+'</div>':''}
+    <div style="margin-top:8px"><button onclick="checkoutPR(${pr.number})" style="padding:5px 12px;background:var(--ac);border:none;border-radius:5px;color:#fff;font-size:12px;cursor:pointer">Checkout This PR</button></div>
+  </div>`;
+  swalAlert(html,'PR #'+num);
+}
+async function checkoutPR(num){
+  notif('Checking out PR #'+num+'...','info');
+  const r=await api('POST','/api/github/pr/checkout',{dir:curDir,number:num});
+  notif(r.ok?'Checked out PR #'+num+' ✓':'Checkout failed: '+(r.output||''),r.ok?'ok':'err');
+  if(r.ok)loadGit();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -9454,15 +9620,39 @@ function generate2FASecret(){
 }
 
 async function setup2FA(){
-  const secret=generate2FASecret();
-  const email=localStorage.getItem('ax_email')||'user@axiom.dev';
-  const otpUrl='otpauth://totp/AXIOM:'+email+'?secret='+secret+'&issuer=AXIOM&digits=6&period=30';
-  localStorage.setItem('ax_2fa_secret',secret);
-  localStorage.setItem('ax_2fa_enabled','1');
-  notif('2FA enabled! Secret: '+secret+' — Add to your authenticator app','ok');
-  showBottom();setBpTab('output');
-  const out=document.getElementById('bp-output');
-  if(out){out.textContent='2FA Setup\n=========\nSecret: '+secret+'\nOTP URL: '+otpUrl+'\n\nAdd this to Google Authenticator, Authy, or similar.\nYou will need the 6-digit code on next login.';out.classList.add('on');}
+  if(!window.AX_TOKEN&&!localStorage.getItem('ax_jwt')){notif('Sign in to enable 2FA','warn');return;}
+  const status=await api('GET','/api/2fa/status').catch(()=>({}));
+  if(status.enabled){
+    const token=prompt('Enter current TOTP code to disable 2FA:');
+    if(token===null)return;
+    const r=await api('POST','/api/2fa/disable',{token});
+    notif(r.ok?'2FA disabled':'Disable failed: '+(r.error||''),r.ok?'ok':'err');
+    load2FAStatus();return;
+  }
+  const r=await api('POST','/api/2fa/setup');
+  if(r.error){notif('2FA setup: '+r.error,'err');return;}
+  const html=`<div style="min-width:360px;text-align:center">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px">Scan QR or enter secret</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:8px">Secret key:</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:16px;letter-spacing:2px;color:var(--ac);background:var(--surface);padding:8px 16px;border-radius:6px;margin-bottom:10px">${esc(r.secret)}</div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:10px">Add to Google Authenticator, Authy, or any TOTP app</div>
+    <input id="totp-verify-input" placeholder="Enter 6-digit code..." style="padding:7px 12px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx);font-size:16px;letter-spacing:4px;font-family:'JetBrains Mono',monospace;width:180px;text-align:center" maxlength="6">
+    <div style="margin-top:8px"><button onclick="verify2FACode('${esc(r.secret)}')" style="padding:7px 16px;background:var(--ac);border:none;border-radius:6px;color:#fff;font-size:13px;cursor:pointer;font-weight:500">Verify &amp; Enable</button></div>
+  </div>`;
+  swalAlert(html,'Setup Two-Factor Authentication');
+}
+async function verify2FACode(secret){
+  const input=document.getElementById('totp-verify-input');
+  const token=(input?.value||'').trim();
+  if(token.length!==6){notif('Enter a 6-digit code','warn');return;}
+  const r=await api('POST','/api/2fa/verify',{token,secret});
+  if(r.ok){notif('2FA enabled! Your account is now protected.','ok');document.querySelector('.swal-overlay')?.remove();load2FAStatus();}
+  else notif('Invalid code: '+(r.error||'try again'),'err');
+}
+async function load2FAStatus(){
+  const status=await api('GET','/api/2fa/status').catch(()=>({}));
+  const btn=document.getElementById('btn-2fa-enable');
+  if(btn)btn.textContent=status.enabled?'Disable':'Enable';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -9471,6 +9661,7 @@ async function setup2FA(){
 setTimeout(initLsp, 2000);
 setTimeout(loadPluginsFromDir, 3000);
 formatOnSave = localStorage.getItem('ax_format_on_save') === '1';
+setTimeout(load2FAStatus, 3500);
 
 // ═══════════════════════════════════════════════════════
 // DEBUG SESSION LAUNCHER
@@ -9544,6 +9735,10 @@ document.addEventListener('keydown', e => {
       { ic: '🌐', n: 'Connect Remote (SSH)', fn: connectRemote },
       { ic: '📋', n: 'PR Review', fn: showPRReview },
       { ic: '🔐', n: 'Setup 2FA', fn: setup2FA },
+      { ic: '🔌', n: 'REST Client', fn: openRestClient },
+      { ic: '🔀', n: 'Show Merge Conflicts', fn: showConflicts },
+      { ic: '🔎', n: 'Replace in Files', fn: replaceInFiles },
+      { ic: '📋', n: 'Keybindings Editor', fn: () => { setPanel('set'); renderKeybindEditor(); } },
       { ic: '🐛', n: 'Debug Python File', fn: () => startDebugSession('python') },
       { ic: '🐛', n: 'Debug Go File', fn: () => startDebugSession('go') },
     ];
@@ -10192,6 +10387,499 @@ setTimeout(loadServerSettings,1500);
 <!-- Hidden file/folder inputs for native file picker -->
 <input type="file" id="file-picker" style="display:none" onchange="handleFilePick(event)"/>
 <input type="file" id="folder-picker" style="display:none" webkitdirectory directory multiple onchange="handleFolderPick(event)"/>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// CURSOR TAB — Ghost text multi-line completion
+// ═══════════════════════════════════════════════════════
+// ghostTimer, ghostText, ghostActive, GHOST_DELAY already declared above — reuse them
+function initGhostCompletion(){
+  const ed=getEd(1);if(!ed)return;
+  ed.addEventListener('input',()=>{clearTimeout(ghostTimer);dismissGhost();ghostTimer=setTimeout(triggerGhost,GHOST_DELAY);});
+  ed.addEventListener('keydown',e=>{if(ghostActive&&e.key==='Tab'){e.preventDefault();acceptGhost();return;}if(ghostActive&&e.key==='Escape'){e.preventDefault();dismissGhost();}});
+}
+async function triggerGhost(){
+  const ed=getEd(1);if(!ed||!window.AX_TOKEN)return;
+  const tab=tabs.find(t=>t.id===atab);if(!tab)return;
+  const pos=ed.selectionStart,val=ed.value;
+  const prefix=val.slice(0,pos),suffix=val.slice(pos);
+  const r=await api('POST','/api/complete/multiline',{prefix,suffix,lang:getLangKey(tab.name||''),file:tab.name||''}).catch(()=>({}));
+  if(!r.completion||!r.completion.trim())return;
+  ghostText=r.completion;showGhost(prefix,ghostText,suffix);
+}
+function showGhost(before,ghost,after){
+  ghostActive=true;
+  let el=document.getElementById('ghost-overlay');
+  if(!el){el=document.createElement('div');el.id='ghost-overlay';el.style.cssText='position:fixed;bottom:60px;right:20px;background:var(--elevated);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--tx3);max-width:400px;white-space:pre;z-index:200;box-shadow:0 4px 16px rgba(0,0,0,.3);';document.body.appendChild(el);}
+  el.innerHTML='<div style="color:var(--tx3);font-size:10px;margin-bottom:4px">Tab to accept · Esc to dismiss</div><div style="color:var(--ac);opacity:.85">'+esc(ghost.slice(0,300))+'</div>';
+  el.style.display='block';
+}
+function dismissGhost(){ghostActive=false;ghostText='';const el=document.getElementById('ghost-overlay');if(el)el.style.display='none';}
+function acceptGhost(){
+  if(!ghostText)return;
+  const ed=getEd(1);if(!ed)return;
+  const pos=ed.selectionStart;const before=ed.value.slice(0,pos),after=ed.value.slice(pos);
+  ed.value=before+ghostText+after;ed.selectionStart=ed.selectionEnd=pos+ghostText.length;
+  onEdit(1);updateHL(1);updateGutter(1);updateMinimap(1);dismissGhost();
+}
+setTimeout(initGhostCompletion,1000);
+
+// ═══════════════════════════════════════════════════════
+// @-MENTION CONTEXT PICKER
+// ═══════════════════════════════════════════════════════
+let mentionDropdownActive=false;
+const MENTION_TYPES=[
+  {type:'file',label:'@file',icon:'📄',desc:'Attach a specific file'},
+  {type:'folder',label:'@folder',icon:'📁',desc:'List folder contents'},
+  {type:'codebase',label:'@codebase',icon:'🔍',desc:'Semantic search'},
+  {type:'git',label:'@git',icon:'⎇',desc:'Git diff stat'},
+  {type:'open-files',label:'@open-files',icon:'📑',desc:'All open tabs'},
+  {type:'rules',label:'@rules',icon:'📋',desc:'.axiomrules / .cursorrules'},
+  {type:'web',label:'@web',icon:'🌐',desc:'Web search results'},
+];
+let chatMentions=[];
+function initMentionPicker(){
+  const inp=document.getElementById('chat-in');if(!inp)return;
+  inp.addEventListener('input',()=>{
+    const val=inp.value,pos=inp.selectionStart;
+    const before=val.slice(0,pos);const atIdx=before.lastIndexOf('@');
+    if(atIdx>=0&&!before.slice(atIdx+1).includes(' ')){showMentionDropdown(atIdx,inp);}
+    else hideMentionDropdown();
+  });
+  inp.addEventListener('keydown',e=>{if(e.key==='Escape'&&mentionDropdownActive){hideMentionDropdown();e.stopPropagation();}});
+}
+function showMentionDropdown(atIdx,inp){
+  mentionDropdownActive=true;
+  let dd=document.getElementById('mention-dd');
+  if(!dd){dd=document.createElement('div');dd.id='mention-dd';dd.style.cssText='position:fixed;background:var(--elevated);border:1px solid var(--border2);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.3);z-index:300;min-width:240px;overflow:hidden;';document.body.appendChild(dd);}
+  const rect=inp.getBoundingClientRect();
+  dd.style.bottom=(window.innerHeight-rect.top+4)+'px';dd.style.left=rect.left+'px';
+  const partial=inp.value.slice(atIdx+1,inp.selectionStart).toLowerCase();
+  const filtered=MENTION_TYPES.filter(m=>m.label.slice(1).startsWith(partial));
+  dd.innerHTML=filtered.map(m=>`<div class="mention-item" onclick="insertMention('${m.type}','${m.label}')" style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:12px" onmouseenter="this.style.background='var(--border)'" onmouseleave="this.style.background=''"><span style="font-size:14px">${m.icon}</span><div><div style="color:var(--tx);font-weight:500">${esc(m.label)}</div><div style="color:var(--tx3);font-size:10px">${esc(m.desc)}</div></div></div>`).join('');
+  dd.style.display=filtered.length?'block':'none';
+}
+function hideMentionDropdown(){mentionDropdownActive=false;const dd=document.getElementById('mention-dd');if(dd)dd.style.display='none';}
+async function insertMention(type,label){
+  hideMentionDropdown();
+  const inp=document.getElementById('chat-in');if(!inp)return;
+  const val=inp.value,pos=inp.selectionStart;
+  const atIdx=val.lastIndexOf('@',pos);
+  let mention={type,label};
+  if(type==='file'){const fp=prompt('File path:',activeFile||'');if(!fp)return;mention.path=fp;mention.label='@file:'+fp.split('/').pop();}
+  else if(type==='folder'){const fp=prompt('Folder path:',curDir||'');if(!fp)return;mention.path=fp;mention.label='@folder:'+fp.split('/').pop();}
+  else if(type==='codebase'){const q2=prompt('Search query:','');if(!q2)return;mention.query=q2;mention.label='@codebase:'+q2;}
+  else if(type==='web'){const q2=prompt('Web search query:','');if(!q2)return;mention.query=q2;const r=await api('POST','/api/web/search',{query:q2});mention.content=r.results?.map(x=>x.title+': '+x.url+(x.snippet?' — '+x.snippet:'')).join('\n')||'No results';mention.label='@web:'+q2;if(r.results?.length)notif('Found '+r.results.length+' results for "'+q2+'"','ok');}
+  chatMentions.push(mention);
+  inp.value=val.slice(0,atIdx)+mention.label+' '+val.slice(pos);
+  inp.selectionStart=inp.selectionEnd=atIdx+mention.label.length+1;
+  renderMentionChips();
+}
+function renderMentionChips(){
+  let el=document.getElementById('mention-chips');
+  if(!el){el=document.createElement('div');el.id='mention-chips';el.style.cssText='display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px;';const chatIn=document.getElementById('chat-in');chatIn?.parentNode?.insertBefore(el,chatIn);}
+  el.innerHTML=chatMentions.map((m,i)=>`<span style="background:var(--ac4);color:var(--ac);padding:2px 8px;border-radius:10px;font-size:11px;cursor:pointer" onclick="chatMentions.splice(${i},1);renderMentionChips()">${esc(m.label)} ✕</span>`).join('');
+}
+async function expandMentionsForChat(){
+  if(!chatMentions.length)return '';
+  const r=await api('POST','/api/context/expand',{dir:curDir,mentions:chatMentions,openFiles:tabs.filter(t=>t.path).map(t=>({name:t.name,path:t.path}))}).catch(()=>({}));
+  return r.context||'';
+}
+setTimeout(initMentionPicker,1500);
+
+// ═══════════════════════════════════════════════════════
+// COMPOSER (Ctrl+I) — Multi-file AI edit
+// ═══════════════════════════════════════════════════════
+let composerProposal=null;
+async function openComposer(){
+  const tab=tabs.find(t=>t.id===atab);
+  const rulesR=await api('GET','/api/rules?dir='+encodeURIComponent(curDir||os?.homedir?.())).catch(()=>({}));
+  const mentionCtx=await expandMentionsForChat();
+  const html=`<div style="min-width:520px;display:flex;flex-direction:column;gap:8px">
+    <div style="font-size:14px;font-weight:600;color:var(--tx)">Composer <span style="font-size:11px;color:var(--tx3);font-weight:400">Ctrl+I — multi-file AI edit</span></div>
+    ${rulesR.found?`<div style="font-size:11px;color:var(--tx3);background:var(--surface);padding:4px 8px;border-radius:4px">📋 Rules loaded: ${esc(rulesR.file)}</div>`:''}
+    <textarea id="composer-prompt" placeholder="Describe what you want to build or change..." style="padding:8px 12px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;color:var(--tx);font-size:13px;height:100px;resize:vertical;font-family:inherit" autocomplete="off"></textarea>
+    <button onclick="runComposer()" style="padding:8px 16px;background:var(--ac);border:none;border-radius:6px;color:#fff;font-size:13px;cursor:pointer;font-weight:500;align-self:flex-start">Generate Proposal</button>
+    <div id="composer-result" style="display:none"></div>
+  </div>`;
+  swalAlert(html,'Composer');
+  setTimeout(()=>document.getElementById('composer-prompt')?.focus(),100);
+  window._composerFileCtx=tab?getEd(1)?.value:'';
+  window._composerMentionCtx=mentionCtx;
+  window._composerRules=rulesR.content||'';
+}
+async function runComposer(){
+  const prompt2=document.getElementById('composer-prompt')?.value||'';
+  if(!prompt2.trim()){notif('Enter a description','warn');return;}
+  const resEl=document.getElementById('composer-result');
+  if(resEl){resEl.style.display='block';resEl.innerHTML='<div style="color:var(--tx3);padding:8px;font-size:12px">Generating proposal...</div>';}
+  const r=await api('POST','/api/composer',{instruction:prompt2,dir:curDir,fileContext:window._composerFileCtx||'',extraContext:window._composerMentionCtx||'',rules:window._composerRules||''});
+  if(r.error){if(resEl)resEl.innerHTML=`<div style="color:var(--red);font-size:12px">Error: ${esc(r.error)}</div>`;return;}
+  composerProposal=r.proposal;
+  const files=r.proposal?.files||[];
+  if(resEl)resEl.innerHTML=`
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:8px">${esc(r.proposal?.summary||'')}</div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:6px">${files.length} file(s) to change:</div>
+    <div id="composer-files" style="max-height:250px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">`+
+    files.map((f,i)=>`<div style="padding:8px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:4px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" checked data-idx="${i}" class="composer-file-chk">
+        <span style="font-weight:500;color:var(--tx);font-family:'JetBrains Mono',monospace;font-size:12px">${esc(f.path)}</span>
+        <span style="font-size:10px;color:var(--tx3);background:var(--surface);padding:1px 5px;border-radius:3px">${esc(f.action)}</span>
+      </label>
+      <div style="font-size:11px;color:var(--tx3)">${esc(f.explanation||'')}</div>
+      ${f.original&&f.content?`<details style="font-size:11px"><summary style="color:var(--ac);cursor:pointer">Show diff</summary><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px;font-family:'JetBrains Mono',monospace;font-size:10px"><div style="background:#300;padding:4px;border-radius:4px;white-space:pre;overflow:auto;max-height:120px">${esc(f.original.slice(0,600))}</div><div style="background:#030;padding:4px;border-radius:4px;white-space:pre;overflow:auto;max-height:120px">${esc(f.content.slice(0,600))}</div></div></details>`:''}
+    </div>`).join('')+
+    `</div><div style="margin-top:8px;display:flex;gap:6px">
+      <button onclick="applyComposer()" style="padding:7px 14px;background:var(--green);border:none;border-radius:6px;color:#fff;font-size:13px;cursor:pointer;font-weight:500">Apply Selected</button>
+      <button onclick="document.querySelector('.swal-overlay')?.remove()" style="padding:7px 14px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--tx2);font-size:13px;cursor:pointer">Cancel</button>
+    </div>`;
+}
+async function applyComposer(){
+  if(!composerProposal)return;
+  const checked=[...document.querySelectorAll('.composer-file-chk:checked')].map(el=>+el.dataset.idx);
+  const filesToApply=composerProposal.files.filter((_,i)=>checked.includes(i));
+  if(!filesToApply.length){notif('No files selected','warn');return;}
+  const r=await api('POST','/api/composer/apply',{dir:curDir,files:filesToApply});
+  const applied=r.applied||[];
+  const ok=applied.filter(x=>x.status!=='error'&&x.status!=='denied');
+  notif(`Applied ${ok.length}/${applied.length} file(s) ✓`,'ok');
+  document.querySelector('.swal-overlay')?.remove();
+  for(const a of ok){const t=tabs.find(x=>x.path&&x.path.endsWith(a.path.replace(/^.*\//,'')));if(t&&atab===t.id){const rd=await api('GET','/api/file?path='+encodeURIComponent(t.path));if(rd.content!==undefined){getEd(1).value=rd.content;updateHL(1);updateGutter(1);}}}
+  loadDir(curDir);
+}
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='i'){e.preventDefault();openComposer();}});
+
+// ═══════════════════════════════════════════════════════
+// BUG FINDER
+// ═══════════════════════════════════════════════════════
+async function runBugFinder(){
+  if(!curDir){notif('Open a project folder first','warn');return;}
+  notif('Analyzing changes for bugs...','info');
+  const r=await api('POST','/api/bug-finder',{dir:curDir});
+  if(r.error){notif('Bug Finder: '+r.error,'err');return;}
+  if(r.message){notif(r.message,'info');return;}
+  const issues=r.issues||[];
+  if(!issues.length){swalAlert('<div style="color:var(--green);padding:20px;text-align:center;font-size:14px">✅ No issues found in current changes</div>','Bug Finder');return;}
+  const sevColor={error:'var(--red)',warning:'var(--yellow)',info:'var(--ac)'};
+  const html=`<div style="min-width:480px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px">${issues.length} issue(s) found in uncommitted changes</div>
+    <div style="max-height:350px;overflow-y:auto">`+
+    issues.map(iss=>`<div style="padding:8px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:3px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:${sevColor[iss.severity]||'var(--tx)'};font-size:10px;font-weight:700;text-transform:uppercase">${esc(iss.severity)}</span>
+        <span style="color:var(--tx);font-weight:500;font-size:13px">${esc(iss.title)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--tx3);font-family:'JetBrains Mono',monospace">${esc(iss.file||'')}${iss.line?' :'+iss.line:''}</div>
+      <div style="font-size:12px;color:var(--tx2)">${esc(iss.description||'')}</div>
+      ${iss.fix?`<div style="font-size:11px;color:var(--green)">Fix: ${esc(iss.fix)}</div>`:''}
+    </div>`).join('')+`</div></div>`;
+  swalAlert(html,'Bug Finder');
+}
+
+// ═══════════════════════════════════════════════════════
+// WEB SEARCH
+// ═══════════════════════════════════════════════════════
+async function openWebSearch(){
+  const html=`<div style="min-width:440px;display:flex;flex-direction:column;gap:8px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx)">Web Search</div>
+    <div style="display:flex;gap:6px">
+      <input id="ws-query" placeholder="Search the web..." style="flex:1;padding:7px 12px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx);font-size:13px" autocomplete="off">
+      <button onclick="doWebSearch()" style="padding:7px 14px;background:var(--ac);border:none;border-radius:6px;color:#fff;font-size:13px;cursor:pointer">Search</button>
+    </div>
+    <div id="ws-results" style="max-height:300px;overflow-y:auto;display:none"></div>
+  </div>`;
+  swalAlert(html,'Web Search');
+  setTimeout(()=>{const el=document.getElementById('ws-query');if(el){el.focus();el.addEventListener('keydown',e=>{if(e.key==='Enter')doWebSearch();});}},100);
+}
+async function doWebSearch(){
+  const q2=document.getElementById('ws-query')?.value||'';if(!q2)return;
+  const el=document.getElementById('ws-results');if(el){el.style.display='block';el.innerHTML='<div style="color:var(--tx3);font-size:12px;padding:8px">Searching...</div>';}
+  const r=await api('POST','/api/web/search',{query:q2});
+  if(!r.results?.length){if(el)el.innerHTML='<div style="color:var(--tx3);padding:8px;font-size:12px">No results found</div>';return;}
+  if(el)el.innerHTML=r.results.map(res=>`<div style="padding:8px;border-bottom:1px solid var(--border)">
+    <a href="${esc(res.url)}" target="_blank" style="color:var(--ac);font-size:13px;font-weight:500;text-decoration:none">${esc(res.title)}</a>
+    <div style="font-size:10px;color:var(--tx3);margin:1px 0">${esc(res.url)}</div>
+    ${res.snippet?`<div style="font-size:12px;color:var(--tx2)">${esc(res.snippet)}</div>`:''}
+    <button onclick="useWebResult('${esc(res.url)}','${esc(res.title)}','${esc(res.snippet||'')}')" style="margin-top:4px;padding:2px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--tx3);font-size:10px;cursor:pointer">Use in chat</button>
+  </div>`).join('');
+}
+function useWebResult(url,title,snippet){
+  const inp=document.getElementById('chat-in');if(!inp)return;
+  chatMentions.push({type:'web',label:'@web:'+title.slice(0,30),query:title,content:title+': '+url+(snippet?'\n'+snippet:'')});
+  renderMentionChips();
+  notif('Added to chat context','ok');
+  document.querySelector('.swal-overlay')?.remove();
+}
+
+// ═══════════════════════════════════════════════════════
+// PER-HUNK STAGING
+// ═══════════════════════════════════════════════════════
+async function showHunkStaging(){
+  if(!curDir){notif('Open a project folder first','warn');return;}
+  const r=await api('GET','/api/git/hunks?dir='+encodeURIComponent(curDir));
+  if(r.error){notif('Hunks: '+r.error,'err');return;}
+  const hunks=r.hunks||[];
+  if(!hunks.length){notif('No unstaged changes found','info');return;}
+  const html=`<div style="min-width:500px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px">Stage Hunks (${hunks.length})</div>
+    <div style="max-height:380px;overflow-y:auto">`+
+    hunks.map((h,i)=>`<div style="padding:8px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--tx2)">${esc(h.file)} — line ${h.newLine}${h.context?' '+esc(h.context):''}</div>
+        <button onclick="stageHunk(${i})" style="padding:3px 10px;background:var(--green);border:none;border-radius:4px;color:#fff;font-size:11px;cursor:pointer">Stage hunk</button>
+      </div>
+      <pre style="font-size:10px;font-family:'JetBrains Mono',monospace;background:var(--surface);padding:6px;border-radius:4px;max-height:100px;overflow:auto;white-space:pre;color:var(--tx2)">${esc(h.lines.slice(0,20).join('\n'))}</pre>
+    </div>`).join('')+`</div>
+    <div style="padding:8px;font-size:11px;color:var(--tx3)">After staging hunks, use Git panel to commit.</div>
+  </div>`;
+  window._hunkData=hunks;
+  swalAlert(html,'Stage Hunks');
+}
+async function stageHunk(idx){
+  const h=window._hunkData?.[idx];if(!h)return;
+  const r=await api('POST','/api/git/stage-hunk',{dir:curDir,patch:h.patch});
+  notif(r.ok?'Hunk staged ✓':'Stage failed: '+(r.output||''),r.ok?'ok':'err');
+  if(r.ok)loadGit();
+}
+
+// ═══════════════════════════════════════════════════════
+// REFACTOR MENU
+// ═══════════════════════════════════════════════════════
+function showRefactorMenu(){
+  const ed=getEd(1);const tab=tabs.find(t=>t.id===atab);
+  if(!ed||!tab){notif('Open a file first','warn');return;}
+  const sel=ed.value.slice(ed.selectionStart,ed.selectionEnd);
+  const actions=[
+    {id:'extract_function',label:'Extract Function',icon:'ƒ',needsSel:true},
+    {id:'extract_variable',label:'Extract Variable',icon:'x=',needsSel:true},
+    {id:'inline',label:'Inline Variable/Function',icon:'→',needsSel:false},
+    {id:'organize_imports',label:'Organize Imports',icon:'⬆',needsSel:false},
+    {id:'async_convert',label:'Convert to Async/Await',icon:'⟳',needsSel:false},
+  ];
+  const html=`<div style="min-width:280px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px">Refactor</div>
+    ${sel?`<div style="font-size:11px;color:var(--tx3);margin-bottom:8px">Selection: "${esc(sel.slice(0,50))}"</div>`:'<div style="font-size:11px;color:var(--tx3);margin-bottom:8px">No selection — whole file operations</div>'}
+    `+actions.map(a=>`<div class="fm-item" onclick="doRefactor('${a.id}')" style="padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;${a.needsSel&&!sel?'opacity:.4;pointer-events:none':''}"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--surface);padding:2px 6px;border-radius:3px;color:var(--ac)">${esc(a.icon)}</span><span style="font-size:12px;color:var(--tx)">${esc(a.label)}</span></div>`).join('')+`</div>`;
+  swalAlert(html,'Refactor');
+}
+async function doRefactor(action){
+  const ed=getEd(1);const tab=tabs.find(t=>t.id===atab);if(!ed||!tab)return;
+  document.querySelector('.swal-overlay')?.remove();
+  notif('Refactoring...','info');
+  const r=await api('POST','/api/refactor',{action,code:ed.value,lang:getLangKey(tab.name||''),selection:ed.value.slice(ed.selectionStart,ed.selectionEnd)});
+  if(r.error){notif('Refactor: '+r.error,'err');return;}
+  if(r.refactored){
+    ed.value=r.refactored;onEdit(1);updateHL(1);updateGutter(1);
+    notif(r.explanation||r.functionName||r.variableName?'Refactored: '+(r.explanation||r.functionName||r.variableName||'done'):'Refactored ✓','ok');
+    if(tab.path)api('POST','/api/file',{path:tab.path,content:r.refactored}).then(()=>{tab.dirty=false;renderTabs();});
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// NOTEPADS
+// ═══════════════════════════════════════════════════════
+let notepads=[];
+async function openNotepads(){
+  const r=await api('GET','/api/notepads');notepads=r.notepads||[];
+  const html=`<div style="min-width:460px;display:flex;gap:12px;height:320px">
+    <div style="width:160px;border-right:1px solid var(--border);padding-right:10px;display:flex;flex-direction:column;gap:4px">
+      <button onclick="newNotepad()" style="padding:5px;background:var(--ac);border:none;border-radius:5px;color:#fff;font-size:12px;cursor:pointer;margin-bottom:4px">+ New</button>
+      <div id="notepad-list" style="flex:1;overflow-y:auto">`+
+      notepads.map((n,i)=>`<div class="fm-item" onclick="selectNotepad(${i})" id="npl-${i}" style="padding:5px 8px;cursor:pointer;font-size:12px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.title)}</div>`).join('')+
+      `</div></div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+      <input id="np-title" placeholder="Title..." style="padding:5px 8px;background:var(--surface);border:1px solid var(--border2);border-radius:5px;color:var(--tx);font-size:12px">
+      <textarea id="np-content" placeholder="Write reusable prompt template, code snippet, or notes here..." style="flex:1;padding:8px;background:var(--surface);border:1px solid var(--border2);border-radius:5px;color:var(--tx);font-size:12px;resize:none;font-family:inherit"></textarea>
+      <div style="display:flex;gap:6px">
+        <button onclick="saveNotepad()" style="padding:5px 12px;background:var(--ac);border:none;border-radius:5px;color:#fff;font-size:12px;cursor:pointer">Save</button>
+        <button onclick="useNotepad()" style="padding:5px 12px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--tx2);font-size:12px;cursor:pointer">Use in Chat</button>
+        <button onclick="deleteNotepad()" style="padding:5px 12px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--red);font-size:12px;cursor:pointer;margin-left:auto">Delete</button>
+      </div>
+    </div>
+  </div>`;
+  swalAlert(html,'Notepads');
+  window._notepadIdx=-1;
+}
+function selectNotepad(i){
+  window._notepadIdx=i;const n=notepads[i];if(!n)return;
+  const title=document.getElementById('np-title');const cont=document.getElementById('np-content');
+  if(title)title.value=n.title;if(cont)cont.value=n.content;
+  document.querySelectorAll('[id^="npl-"]').forEach(el=>el.style.background='');
+  const el=document.getElementById('npl-'+i);if(el)el.style.background='var(--border)';
+}
+async function newNotepad(){
+  window._notepadIdx=-1;
+  const title=document.getElementById('np-title');const cont=document.getElementById('np-content');
+  if(title)title.value='';if(cont)cont.value='';
+  if(title)title.focus();
+}
+async function saveNotepad(){
+  const title2=document.getElementById('np-title')?.value||'Untitled';
+  const content2=document.getElementById('np-content')?.value||'';
+  if(window._notepadIdx>=0&&notepads[window._notepadIdx]){
+    await api('PUT','/api/notepads/'+notepads[window._notepadIdx].id,{title:title2,content:content2});
+  }else{await api('POST','/api/notepads',{title:title2,content:content2});}
+  notif('Notepad saved','ok');
+  const r=await api('GET','/api/notepads');notepads=r.notepads||[];
+  document.getElementById('notepad-list').innerHTML=notepads.map((n,i)=>`<div class="fm-item" onclick="selectNotepad(${i})" id="npl-${i}" style="padding:5px 8px;cursor:pointer;font-size:12px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.title)}</div>`).join('');
+}
+async function deleteNotepad(){
+  if(window._notepadIdx<0||!notepads[window._notepadIdx])return;
+  await api('DELETE','/api/notepads/'+notepads[window._notepadIdx].id);
+  notif('Deleted','ok');openNotepads();
+}
+function useNotepad(){
+  const cont=document.getElementById('np-content')?.value||'';if(!cont)return;
+  const inp=document.getElementById('chat-in');if(!inp)return;
+  inp.value=inp.value?inp.value+'\n'+cont:cont;
+  document.querySelector('.swal-overlay')?.remove();
+  notif('Inserted into chat','ok');
+}
+
+// ═══════════════════════════════════════════════════════
+// MCP SERVER MANAGER
+// ═══════════════════════════════════════════════════════
+async function openMcpManager(){
+  const r=await api('GET','/api/mcp/list');const servers=r.servers||[];
+  const html=`<div style="min-width:440px;display:flex;flex-direction:column;gap:8px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx)">MCP Server Manager</div>
+    <div id="mcp-server-list">`+
+    (servers.length?servers.map(s=>`<div style="padding:8px;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0"></span>
+      <div style="flex:1"><div style="font-size:12px;color:var(--tx);font-weight:500">${esc(s.name)}</div><div style="font-size:10px;color:var(--tx3)">${esc(s.command)}</div></div>
+      <button onclick="callMcpServer('${esc(s.name)}')" style="padding:3px 8px;background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--tx2);font-size:11px;cursor:pointer">Call</button>
+      <button onclick="stopMcpServer('${esc(s.name)}')" style="padding:3px 8px;background:transparent;border:1px solid var(--red);border-radius:4px;color:var(--red);font-size:11px;cursor:pointer">Stop</button>
+    </div>`).join(''):'<div style="color:var(--tx3);font-size:12px;padding:8px">No MCP servers running</div>')+`</div>
+    <div style="border-top:1px solid var(--border);padding-top:8px">
+      <div style="font-size:12px;font-weight:500;color:var(--tx);margin-bottom:6px">Start new server</div>
+      <input id="mcp-cmd" placeholder="Command (e.g. npx @modelcontextprotocol/server-filesystem)" style="width:100%;padding:6px 10px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx);font-size:12px;box-sizing:border-box">
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <input id="mcp-name" placeholder="Name (optional)" style="flex:1;padding:5px 8px;background:var(--surface);border:1px solid var(--border2);border-radius:5px;color:var(--tx);font-size:11px">
+        <button onclick="startMcpServer()" style="padding:5px 12px;background:var(--ac);border:none;border-radius:5px;color:#fff;font-size:12px;cursor:pointer">Start</button>
+      </div>
+    </div>
+  </div>`;
+  swalAlert(html,'MCP Servers');
+}
+async function startMcpServer(){
+  const cmd=document.getElementById('mcp-cmd')?.value||'';if(!cmd){notif('Enter a command','warn');return;}
+  const name=document.getElementById('mcp-name')?.value||undefined;
+  const parts=cmd.split(' ');
+  const r=await api('POST','/api/mcp/start',{command:parts[0],args:parts.slice(1),name});
+  notif(r.ok?'MCP server started: '+r.name:'Failed: '+(r.error||''),r.ok?'ok':'err');
+  if(r.ok){document.querySelector('.swal-overlay')?.remove();setTimeout(openMcpManager,300);}
+}
+async function stopMcpServer(name){
+  await api('POST','/api/mcp/stop',{name});
+  notif('Stopped: '+name,'ok');
+  document.querySelector('.swal-overlay')?.remove();setTimeout(openMcpManager,300);
+}
+async function callMcpServer(name){
+  const method=prompt('Method (e.g. tools/list):','tools/list');if(!method)return;
+  const r=await api('POST','/api/mcp/call',{name,method,params:{}});
+  swalAlert('<pre style="font-size:11px;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:var(--tx)">'+esc(JSON.stringify(r.result||r.error,null,2))+'</pre>','MCP Response: '+method);
+}
+
+// ═══════════════════════════════════════════════════════
+// WORKSPACE PROBLEMS
+// ═══════════════════════════════════════════════════════
+async function showWorkspaceProblems(){
+  if(!curDir){notif('Open a project folder first','warn');return;}
+  notif('Scanning for problems...','info');
+  const r=await api('POST','/api/workspace/problems',{dir:curDir});
+  const problems=r.problems||[];
+  if(!problems.length){swalAlert('<div style="color:var(--green);padding:20px;text-align:center;font-size:14px">✅ No problems found</div>','Workspace Problems');return;}
+  const sevColor={error:'var(--red)',warning:'var(--yellow)',info:'var(--ac)'};
+  const grouped={};problems.forEach(p=>{grouped[p.type]=(grouped[p.type]||[]);grouped[p.type].push(p);});
+  const html=`<div style="min-width:500px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px">${r.total} problem(s) in workspace</div>
+    <div style="max-height:380px;overflow-y:auto">`+
+    Object.entries(grouped).map(([type,items])=>`<details open>
+      <summary style="padding:6px 8px;cursor:pointer;font-size:12px;font-weight:600;color:${sevColor[items[0].severity]||'var(--tx)'};">${esc(type)} (${items.length})</summary>
+      `+items.slice(0,30).map(p=>`<div style="padding:5px 8px 5px 20px;border-bottom:1px solid var(--border);font-size:11px;cursor:pointer" onclick="openFile('${esc(curDir+'/'+p.file)}','${esc(p.file.split('/').pop())}')">
+        <span style="font-family:'JetBrains Mono',monospace;color:var(--tx2)">${esc(p.file)}:${p.line}</span>
+        <div style="color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.text)}</div>
+      </div>`).join('')+`</details>`).join('')+`</div></div>`;
+  swalAlert(html,'Workspace Problems');
+}
+
+// ═══════════════════════════════════════════════════════
+// FILE WATCHER — auto-refresh tree on external changes
+// ═══════════════════════════════════════════════════════
+let fwLastTs=Date.now();
+async function pollFileWatcher(){
+  if(!curDir)return;
+  try{
+    const r=await api('POST','/api/files/watch',{dir:curDir,since:fwLastTs});
+    if(r.ts)fwLastTs=r.ts;
+    if(r.changes&&r.changes.length){loadDir(curDir);addSystemNotif('Files changed','External changes detected in project','📂');}
+  }catch(e){}
+}
+setInterval(pollFileWatcher,5000);
+
+// ═══════════════════════════════════════════════════════
+// SETTINGS SYNC
+// ═══════════════════════════════════════════════════════
+async function exportSettingsSync(){
+  const url='/api/settings/export';const a=document.createElement('a');a.href=url+'?token='+window.AX_TOKEN;a.download='axiom_settings_sync.json';a.click();notif('Settings exported','ok');
+}
+async function importSettingsSync(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='.json';
+  inp.onchange=async()=>{
+    const file=inp.files[0];if(!file)return;
+    try{const data=JSON.parse(await file.text());const r=await api('POST','/api/settings/import',data);
+    notif('Settings imported ✓','ok');if(r.ok)loadServerSettings();}
+    catch(e){notif('Import failed: '+e.message,'err');}
+  };inp.click();
+}
+
+// ═══════════════════════════════════════════════════════
+// REAL PROFILE SWITCHING
+// ═══════════════════════════════════════════════════════
+const PROFILES={
+  'Default':{theme:'dark',fontSize:14,tabSize:2},
+  'Python Dev':{theme:'dracula',fontSize:13,tabSize:4},
+  'Web Dev':{theme:'dark',fontSize:14,tabSize:2},
+  'Data Science':{theme:'github-dark',fontSize:13,tabSize:4},
+  'DevOps':{theme:'monokai',fontSize:12,tabSize:2},
+};
+function switchProfile(name){
+  const p=PROFILES[name];if(!p)return;
+  const ts=document.getElementById('s-theme');const fs2=document.getElementById('s-fs');const tab=document.getElementById('s-ts');
+  if(ts)ts.value=p.theme;if(fs2)fs2.value=p.fontSize;if(tab)tab.value=p.tabSize;
+  edFS=p.fontSize;edTS=p.tabSize;
+  applyPrefs();notif('Profile: '+name,'ok');
+}
+
+// ═══════════════════════════════════════════════════════
+// WIRE NEW COMMANDS INTO PALETTE
+// ═══════════════════════════════════════════════════════
+(function addCursorParity(){
+  try{
+    const extra=[
+      {ic:'✨',n:'Composer (Ctrl+I) — Multi-file AI edit',k:'Ctrl+I',fn:openComposer},
+      {ic:'🐛',n:'Bug Finder — Review changes for bugs',fn:runBugFinder},
+      {ic:'🌐',n:'Web Search',fn:openWebSearch},
+      {ic:'📦',n:'Stage Hunks (per-hunk staging)',fn:showHunkStaging},
+      {ic:'🔧',n:'Refactor Menu',fn:showRefactorMenu},
+      {ic:'📓',n:'Notepads — Reusable prompts',fn:openNotepads},
+      {ic:'🔌',n:'MCP Server Manager',fn:openMcpManager},
+      {ic:'⚠',n:'Workspace Problems — Scan TODO/FIXME/debugger',fn:showWorkspaceProblems},
+      {ic:'🔍',n:'Semantic Search (Codebase)',fn:()=>{const q2=prompt('Search codebase:','');if(q2)api('POST','/api/codebase/search',{dir:curDir,query:q2}).then(r=>swalAlert('<div style="min-width:360px">'+(r.results||[]).map(x=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="color:var(--ac);font-size:12px;font-family:\'JetBrains Mono\',monospace">${esc(x.file)}</div><div style="font-size:11px;color:var(--tx3)">${esc(x.preview)}</div></div>`).join('')+'</div>','Codebase Search: '+q2));}},
+      {ic:'📑',n:'Index Codebase',fn:()=>{if(!curDir)return;api('POST','/api/codebase/index',{dir:curDir}).then(r=>notif('Indexed '+r.files+' files','ok'));}},
+      {ic:'↕',n:'Export Settings (sync)',fn:exportSettingsSync},
+      {ic:'↕',n:'Import Settings (sync)',fn:importSettingsSync},
+      {ic:'👤',n:'Switch Profile: Python Dev',fn:()=>switchProfile('Python Dev')},
+      {ic:'👤',n:'Switch Profile: Web Dev',fn:()=>switchProfile('Web Dev')},
+      {ic:'👤',n:'Switch Profile: Data Science',fn:()=>switchProfile('Data Science')},
+      {ic:'👤',n:'Switch Profile: DevOps',fn:()=>switchProfile('DevOps')},
+    ];
+    const _prev=buildPalCmds;
+    buildPalCmds=function(){_prev();palCmds.push(...extra);};
+  }catch(e){console.warn('addCursorParity:',e);}
+})();
+</script>
 
 </body>
 </html>
