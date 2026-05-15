@@ -1298,6 +1298,81 @@ const server=http.createServer(async(req,res)=>{
     return sendJson(res,{results:results.slice(0,120)});
   }
 
+  // Global search — case / whole-word / regex / glob include & exclude
+  if((route==='/api/search/global'||route==='/api/search/replace')&&(req.method==='GET'||req.method==='POST')){
+    const isReplace = route==='/api/search/replace';
+    const src = req.method==='POST' ? data : q;
+    const dir = safe(src.dir||os.homedir()); if(!dir) return sendJson(res,{error:'Not allowed'},403);
+    const query = src.query||'';
+    if(!query) return sendJson(res,{error:'query required'},400);
+    const caseSensitive = src.caseSensitive==='true' || src.caseSensitive===true;
+    const wholeWord     = src.wholeWord==='true'     || src.wholeWord===true;
+    const useRegex      = src.regex==='true'         || src.regex===true;
+    const include = (src.filePattern||src.include||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const exclude = (src.exclude||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const replaceWith = isReplace ? (src.replace||'') : null;
+    // Build regex
+    let rx;
+    try{
+      let pat = useRegex ? query : query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      if(wholeWord) pat = '\\b'+pat+'\\b';
+      rx = new RegExp(pat, caseSensitive?'g':'gi');
+    }catch(e){return sendJson(res,{error:'Invalid regex: '+e.message},400);}
+    const minimatch = (name, patterns)=>{
+      if(!patterns.length) return false;
+      return patterns.some(p=>{
+        const re = new RegExp('^'+p.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.')+'$');
+        return re.test(name);
+      });
+    };
+    const results = []; let filesChanged = 0, replaceCount = 0; let truncated = false;
+    const MAX = isReplace ? 500 : 500;
+    (function walk(d,depth){
+      if(depth>10||results.length>=MAX) return;
+      let entries; try{entries=fs.readdirSync(d,{withFileTypes:true});}catch(e){return;}
+      for(const e of entries){
+        if(SKIP.includes(e.name)) continue;
+        if(!isReplace && e.name.startsWith('.') && !include.length) continue;
+        const fp=path.join(d,e.name);
+        if(e.isDirectory()){walk(fp,depth+1);if(results.length>=MAX){truncated=true;return;}continue;}
+        if(include.length && !minimatch(e.name, include)) continue;
+        if(exclude.length && minimatch(e.name, exclude)) continue;
+        let txt; try{
+          const st=fs.statSync(fp); if(st.size>2*1024*1024) continue;
+          txt = fs.readFileSync(fp,'utf8');
+        }catch(e){continue;}
+        // Skip likely binary files
+        if(txt.indexOf('\0')!==-1) continue;
+        if(isReplace){
+          rx.lastIndex = 0;
+          if(!rx.test(txt)) continue;
+          rx.lastIndex = 0;
+          const newTxt = txt.replace(rx, ()=>{ replaceCount++; return replaceWith; });
+          if(newTxt!==txt){
+            try{fs.writeFileSync(fp,newTxt);filesChanged++;auditLog('search_replace',{path:fp,query,replace:replaceWith},req);}catch(e){}
+          }
+          continue;
+        }
+        const lines = txt.split('\n');
+        for(let i=0;i<lines.length;i++){
+          rx.lastIndex = 0;
+          const m = rx.exec(lines[i]);
+          if(!m) continue;
+          results.push({
+            file: fp,
+            line: i+1,
+            column: m.index+1,
+            context: lines[i].slice(Math.max(0,m.index-40), m.index+m[0].length+80),
+            match: m[0]
+          });
+          if(results.length>=MAX){truncated=true;return;}
+        }
+      }
+    })(dir,0);
+    if(isReplace) return sendJson(res,{ok:true,filesChanged,replaceCount});
+    return sendJson(res,{results,truncated});
+  }
+
   // Git
   if(route==='/api/git/status'&&req.method==='GET')return sendJson(res,await git(q.dir||os.homedir(),'status','--short','--branch'));
   if(route==='/api/git/log'&&req.method==='GET')return sendJson(res,await git(q.dir||os.homedir(),'log','--oneline','--decorate','-30'));

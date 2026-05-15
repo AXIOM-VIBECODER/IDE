@@ -3384,13 +3384,28 @@ body[data-t="dark"]{
 
       <!-- SEARCH -->
       <div class="panel-section" id="ps-search">
-        <div class="panel-hdr"><span class="panel-title">Search</span></div>
+        <div class="panel-hdr">
+          <span class="panel-title">Search</span>
+          <div class="panel-acts">
+            <button class="pact" onclick="toggleReplaceUI()" id="s-replace-toggle" title="Toggle replace">⇄</button>
+          </div>
+        </div>
         <div class="s-wrap">
           <input type="text" class="sinp" id="sinp" placeholder="Search in files…" onkeydown="if(event.key==='Enter')doSearch()"/>
+          <input type="text" class="sinp" id="srinp" placeholder="Replace with…" style="display:none;margin-top:4px" onkeydown="if(event.key==='Enter')doReplaceAll()"/>
+          <div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tx3)"><input type="checkbox" id="s-case" style="accent-color:var(--ac)" onchange="if(document.getElementById('sinp').value)doSearch()"/> Case</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tx3)"><input type="checkbox" id="s-regex" onchange="if(document.getElementById('sinp').value)doSearch()"/> Regex</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tx3)"><input type="checkbox" id="s-whole" onchange="if(document.getElementById('sinp').value)doSearch()"/> Word</label>
+          </div>
           <div style="display:flex;gap:4px;margin-top:5px">
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tx3)"><input type="checkbox" id="s-case" style="accent-color:var(--ac)"/> Case</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tx3)"><input type="checkbox" id="s-regex"/> Regex</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--tx3)"><input type="checkbox" id="s-whole"/> Word</label>
+            <input type="text" id="s-include" placeholder="files to include (e.g. *.js,*.ts)" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--tx);font-size:11px;padding:3px 6px"/>
+          </div>
+          <div style="display:flex;gap:4px;margin-top:4px">
+            <input type="text" id="s-exclude" placeholder="files to exclude" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--tx);font-size:11px;padding:3px 6px"/>
+          </div>
+          <div id="s-replace-row" style="display:none;margin-top:6px;gap:4px">
+            <button onclick="doReplaceAll()" style="flex:1;background:var(--ac);border:none;border-radius:3px;color:#fff;font-size:11px;padding:5px 8px;cursor:pointer">Replace All</button>
           </div>
         </div>
         <div class="sres" id="sres"><div style="padding:12px;font-size:11px;color:var(--tx3)">Type to search across files</div></div>
@@ -8743,7 +8758,70 @@ async function gitInit(){if(!curDir)return;const r=await api('POST','/api/git/in
 // ═══════════════════════════════════════════════════════
 // SEARCH
 // ═══════════════════════════════════════════════════════
-async function doSearch(){const q=document.getElementById('sinp').value.trim();if(!q){document.getElementById('sres').innerHTML='<div style="padding:12px;font-size:11px;color:var(--tx3)">Type to search</div>';return;}if(!curDir){notif('Open a folder first','warn');return;}document.getElementById('sres').innerHTML='<div style="padding:8px;font-size:11px;color:var(--tx3)">Searching…</div>';const r=await api('POST','/api/search',{dir:curDir,query:q});const grouped={};(r.results||[]).forEach(x=>{if(!grouped[x.file])grouped[x.file]=[];grouped[x.file].push(x);});const keys=Object.keys(grouped);if(!keys.length){document.getElementById('sres').innerHTML='<div style="padding:12px;font-size:11px;color:var(--tx3)">No results</div>';return;}let html='';keys.forEach(file=>{const rel=file.replace(curDir+'/','');html+=`<div class="sgrp-file">${esc(rel)}</div>`;grouped[file].forEach(h=>html+=`<div class="sgrp-line" onclick="openFile('${esc(h.file)}','${esc(h.file.split('/').pop())}')"><span style="color:var(--tx3);min-width:24px;flex-shrink:0">${h.line}</span><span style="color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.text)}</span></div>`);});document.getElementById('sres').innerHTML=html;}
+function _searchOpts(){
+  return {
+    caseSensitive: document.getElementById('s-case')?.checked||false,
+    regex:         document.getElementById('s-regex')?.checked||false,
+    wholeWord:     document.getElementById('s-whole')?.checked||false,
+    include:       document.getElementById('s-include')?.value.trim()||'',
+    exclude:       document.getElementById('s-exclude')?.value.trim()||''
+  };
+}
+function toggleReplaceUI(){
+  const ri=document.getElementById('srinp'), rr=document.getElementById('s-replace-row'), btn=document.getElementById('s-replace-toggle');
+  const open = ri.style.display==='none';
+  ri.style.display = open?'block':'none';
+  rr.style.display = open?'flex':'none';
+  if(btn) btn.classList.toggle('on', open);
+  if(open) ri.focus();
+}
+async function doSearch(){
+  const q=document.getElementById('sinp').value.trim();
+  const sres=document.getElementById('sres');
+  if(!q){sres.innerHTML='<div style="padding:12px;font-size:11px;color:var(--tx3)">Type to search</div>';return;}
+  if(!curDir){notif('Open a folder first','warn');return;}
+  sres.innerHTML='<div style="padding:8px;font-size:11px;color:var(--tx3)">Searching…</div>';
+  const opts=_searchOpts();
+  const params=new URLSearchParams({dir:curDir,query:q,caseSensitive:opts.caseSensitive,regex:opts.regex,wholeWord:opts.wholeWord});
+  if(opts.include) params.append('filePattern',opts.include);
+  if(opts.exclude) params.append('exclude',opts.exclude);
+  const r=await api('GET','/api/search/global?'+params.toString());
+  if(r.error){sres.innerHTML='<div style="padding:12px;font-size:11px;color:var(--red,#e06c75)">'+esc(r.error)+'</div>';return;}
+  const results=r.results||[];
+  const grouped={};
+  results.forEach(x=>{(grouped[x.file]=grouped[x.file]||[]).push(x);});
+  const keys=Object.keys(grouped);
+  if(!keys.length){sres.innerHTML='<div style="padding:12px;font-size:11px;color:var(--tx3)">No results</div>';return;}
+  let html=`<div style="padding:6px 12px;font-size:11px;color:var(--tx3)">${results.length} match${results.length===1?'':'es'} in ${keys.length} file${keys.length===1?'':'s'}${r.truncated?' (truncated)':''}</div>`;
+  keys.forEach(file=>{
+    const rel=file.replace(curDir+'/','');
+    html+=`<div class="sgrp-file">${esc(rel)} <span style="color:var(--tx3);font-weight:normal">(${grouped[file].length})</span></div>`;
+    grouped[file].forEach(h=>{
+      html+=`<div class="sgrp-line" onclick="openFileAt('${esc(h.file)}','${esc(h.file.split('/').pop())}',${h.line})"><span style="color:var(--tx3);min-width:32px;flex-shrink:0">${h.line}</span><span style="color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.context||h.text||'')}</span></div>`;
+    });
+  });
+  sres.innerHTML=html;
+}
+async function openFileAt(fp,name,line){
+  await openFile(fp,name);
+  setTimeout(()=>{const ed=document.getElementById('editor');if(!ed)return;const lines=(ed.value||'').split('\n');let pos=0;for(let i=0;i<line-1&&i<lines.length;i++)pos+=lines[i].length+1;ed.focus();ed.setSelectionRange(pos,pos+(lines[line-1]?.length||0));},80);
+}
+async function doReplaceAll(){
+  const q=document.getElementById('sinp').value.trim();
+  const replace=document.getElementById('srinp').value;
+  if(!q){notif('Search query required','warn');return;}
+  if(!curDir){notif('Open a folder first','warn');return;}
+  const opts=_searchOpts();
+  const ok=await swalConfirm(`Replace all "${q}" → "${replace}" in matching files? This will modify files on disk.`,'Replace All',{danger:true,confirmText:'Replace'});
+  if(!ok)return;
+  const r=await api('POST','/api/search/replace',{dir:curDir,query:q,replace,...opts});
+  if(r.error){notif('Replace failed: '+r.error,'err');return;}
+  notif(`Replaced ${r.replaceCount} match${r.replaceCount===1?'':'es'} in ${r.filesChanged} file${r.filesChanged===1?'':'s'}`,'ok');
+  // Re-load any open tabs whose files were touched
+  for(const t of tabs){if(t.path)try{const fr=await api('GET','/api/file?path='+encodeURIComponent(t.path));if(fr.content!==undefined&&!t.dirty){t.content=fr.content;}}catch(e){}}
+  if(atab){const t=tabs.find(x=>x.id===atab);const ed=document.getElementById('editor');if(t&&ed)ed.value=t.content;}
+  doSearch();
+}
 document.getElementById('sinp').addEventListener('input',()=>{clearTimeout(window._st);window._st=setTimeout(doSearch,400);});
 
 // ═══════════════════════════════════════════════════════
