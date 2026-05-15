@@ -9303,10 +9303,78 @@ makeHResizer('res-proj','proj-panel');makeHResizer('res-ai','ai-panel');
 (()=>{const r=document.getElementById('res-split');if(!r)return;let drag=false,sx=0,w1=0;r.addEventListener('mousedown',e=>{drag=true;sx=e.clientX;w1=document.getElementById('ed-pane-1')?.offsetWidth||500;r.classList.add('drag');e.preventDefault();});document.addEventListener('mousemove',e=>{if(!drag)return;const p1=document.getElementById('ed-pane-1');if(p1){p1.style.flex='none';p1.style.width=Math.max(200,w1+(e.clientX-sx))+'px';}});document.addEventListener('mouseup',()=>{drag=false;r.classList.remove('drag');});})();
 
 // ═══════════════════════════════════════════════════════
+// RECENT WORKSPACES + QUICK SWITCHER (Ctrl/Cmd+R)
+// ═══════════════════════════════════════════════════════
+const RECENT_WS_KEY='ax_recent_workspaces';
+function getRecentWorkspaces(){try{return JSON.parse(localStorage.getItem(RECENT_WS_KEY)||'[]');}catch(e){return [];}}
+function recordRecentWorkspace(path){
+  if(!path)return;
+  let list=getRecentWorkspaces().filter(w=>w.path!==path);
+  list.unshift({path,name:path.split('/').pop()||path,ts:Date.now()});
+  list=list.slice(0,15);
+  try{localStorage.setItem(RECENT_WS_KEY,JSON.stringify(list));}catch(e){}
+}
+function removeRecentWorkspace(path){
+  const list=getRecentWorkspaces().filter(w=>w.path!==path);
+  try{localStorage.setItem(RECENT_WS_KEY,JSON.stringify(list));}catch(e){}
+  if(document.getElementById('recent-ws-modal'))openRecentWorkspaces();
+}
+function _fuzzyMatch(q,s){q=q.toLowerCase();s=s.toLowerCase();let i=0;for(const c of s){if(c===q[i])i++;if(i===q.length)return true;}return i===q.length;}
+function openRecentWorkspaces(){
+  let modal=document.getElementById('recent-ws-modal');
+  if(!modal){
+    modal=document.createElement('div');modal.id='recent-ws-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9500;display:flex;align-items:flex-start;justify-content:center;padding-top:80px';
+    modal.innerHTML=`<div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;width:560px;max-width:90vw;max-height:70vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.5)">
+      <input id="rws-q" placeholder="Switch workspace… (fuzzy)" style="border:none;border-bottom:1px solid var(--border);background:var(--surface);color:var(--tx);font-size:14px;padding:12px 14px;outline:none;font-family:inherit"/>
+      <div id="rws-list" style="overflow:auto;flex:1"></div>
+      <div style="padding:6px 12px;border-top:1px solid var(--border);font-size:10px;color:var(--tx3);display:flex;justify-content:space-between"><span>↑↓ navigate · Enter open · Esc close</span><button id="rws-browse" style="background:none;border:1px solid var(--border);color:var(--tx2);font-size:10px;padding:2px 8px;border-radius:3px;cursor:pointer">Open other folder…</button></div>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click',ev=>{if(ev.target===modal)modal.remove();});
+    document.getElementById('rws-browse').onclick=()=>{modal.remove();if(typeof openFolder==='function')openFolder();};
+  }
+  let sel=0,filtered=getRecentWorkspaces();
+  const render=()=>{
+    const q=document.getElementById('rws-q').value.trim();
+    filtered = q ? getRecentWorkspaces().filter(w=>_fuzzyMatch(q,w.name)||_fuzzyMatch(q,w.path)) : getRecentWorkspaces();
+    if(sel>=filtered.length)sel=Math.max(0,filtered.length-1);
+    const list=document.getElementById('rws-list');
+    if(!filtered.length){list.innerHTML='<div style="padding:20px;text-align:center;color:var(--tx3);font-size:12px">No recent workspaces</div>';return;}
+    list.innerHTML=filtered.map((w,i)=>{
+      const age=Math.floor((Date.now()-w.ts)/86400000);
+      const ago = age===0?'today':age===1?'1d ago':age+'d ago';
+      return `<div class="rws-item" data-i="${i}" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);${i===sel?'background:var(--ac3)':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:500;color:var(--tx);font-size:13px">${esc(w.name)}</div>
+          <div style="font-size:10px;color:var(--tx3)">${ago}</div>
+        </div>
+        <div style="font-family:JetBrains Mono,monospace;font-size:10px;color:var(--tx3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(w.path)}</div>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.rws-item').forEach(el=>{
+      el.onclick=()=>{const w=filtered[+el.dataset.i];modal.remove();loadDir(w.path);};
+      el.oncontextmenu=ev=>{ev.preventDefault();const w=filtered[+el.dataset.i];if(confirm('Remove '+w.path+' from recent?'))removeRecentWorkspace(w.path);};
+    });
+  };
+  render();
+  const inp=document.getElementById('rws-q');
+  inp.focus();
+  inp.oninput=render;
+  inp.onkeydown=e=>{
+    if(e.key==='Escape'){modal.remove();return;}
+    if(e.key==='ArrowDown'){e.preventDefault();sel=Math.min(filtered.length-1,sel+1);render();}
+    if(e.key==='ArrowUp'){e.preventDefault();sel=Math.max(0,sel-1);render();}
+    if(e.key==='Enter'){const w=filtered[sel];if(w){modal.remove();loadDir(w.path);}}
+  };
+}
+
+// ═══════════════════════════════════════════════════════
 // GLOBAL SHORTCUTS
 // ═══════════════════════════════════════════════════════
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key==='p'&&document.activeElement.id!=='pal-q'){e.preventDefault();openPalette();}
+  if((e.ctrlKey||e.metaKey)&&e.key==='r'&&!e.shiftKey){e.preventDefault();openRecentWorkspaces();}
   if((e.ctrlKey||e.metaKey)&&e.key==='`'){e.preventDefault();showBottom();setBpTab('terminal');if(!activeTerm)newTermTab();}
   if((e.ctrlKey||e.metaKey)&&e.key==='b'){e.preventDefault();document.getElementById('proj-panel').classList.toggle('collapsed');}
   if(e.key==='Escape'&&document.getElementById('pal').classList.contains('on'))closePal();
