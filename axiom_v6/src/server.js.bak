@@ -330,7 +330,7 @@ const server=http.createServer(async(req,res)=>{
     const question=data.question||'';if(!question)return sendJson(res,{error:'No question'},400);
     const local=DB.nlQuery(question);const apiKey=getKey();if(!apiKey)return sendJson(res,{...local,ai_enhanced:false});
     const a=DB.getAnalytics();
-    const sys=`You are AXIOM Admin AI for Zawadi. Live data: ${a.overview.total_users} users, ${a.overview.paying_users} paying, $${a.revenue.total.toFixed(2)} revenue, $${a.revenue.mrr}/mo MRR. Local query: ${local.answer}. Answer concisely with insights.`;
+    const sys=`You are AXIOM Admin AI. Live data: ${a.overview.total_users} users, ${a.overview.paying_users} paying, $${a.revenue.total.toFixed(2)} revenue, $${a.revenue.mrr}/mo MRR. Local query: ${local.answer}. Answer concisely with insights.`;
     try{const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,system:sys,messages:[{role:'user',content:question}]});const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});return sendJson(res,{...local,ai_answer:result.content?.[0]?.text||local.answer,ai_enhanced:true});}
     catch(e){return sendJson(res,{...local,ai_enhanced:false});}
   }

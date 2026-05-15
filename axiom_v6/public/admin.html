@@ -10,28 +10,32 @@
 /* Matches AXIOM IDE Zed-inspired dark theme       */
 
 :root {
-  --bg:       #1e2024;
-  --panel:    #24262a;
-  --surface:  #2a2c30;
-  --elevated: #313338;
-  --border:   rgba(255,255,255,.06);
-  --border2:  rgba(255,255,255,.10);
-  --tx:       #e0e0e4;
-  --tx2:      #6e7681;
-  --tx3:      #484d56;
-  --ac:       #d4a574;
-  --ac2:      #b8895c;
-  --ac3:      rgba(212,165,116,.12);
-  --ac4:      rgba(212,165,116,.06);
-  --green:    #8dbe6e;
-  --red:      #d9616a;
-  --yellow:   #d4a574;
-  --blue:     #5ea4e6;
-  --purple:   #b381d1;
-  --cyan:     #4db8c4;
-  --orange:   #c48a56;
-  --radius:   8px;
-  --radius-lg:12px;
+  --bg:        #07091a;
+  --panel:     rgba(16, 20, 42, .55);
+  --surface:   rgba(28, 33, 64, .55);
+  --elevated:  rgba(42, 48, 86, .65);
+  --border:    rgba(180,195,255,.10);
+  --border2:   rgba(180,195,255,.20);
+  --tx:        #eef1ff;
+  --tx2:       #aab2d8;
+  --tx3:       #6f78a8;
+  --ac:        #22d3ee;
+  --ac2:       #a78bfa;
+  --ac3:       rgba(34,211,238,.18);
+  --ac4:       rgba(34,211,238,.08);
+  --neon-pink: #f472b6;
+  --green:     #4ade80;
+  --red:       #ff6b81;
+  --yellow:    #fde047;
+  --blue:      #60a5fa;
+  --purple:    #c084fc;
+  --cyan:      #22d3ee;
+  --orange:    #fb923c;
+  --radius:    10px;
+  --radius-lg: 16px;
+  --glass:        rgba(16,20,42,.55);
+  --glass-strong: rgba(16,20,42,.72);
+  --glass-border: rgba(180,195,255,.14);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -454,6 +458,152 @@ tr:hover td { background: rgba(255,255,255,.015); }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .charts-grid, .two-col { grid-template-columns: 1fr; }
   .info-grid { grid-template-columns: 1fr; }
+}
+
+/* ═══════════ AURORA GLASS OVERLAY ═══════════ */
+body{
+  background:
+    radial-gradient(1100px 700px at 8% -10%,  rgba(34,211,238,.22), transparent 60%),
+    radial-gradient(1000px 700px at 102% 8%,  rgba(167,139,250,.22), transparent 60%),
+    radial-gradient(900px 700px at 50% 110%,  rgba(244,114,182,.16), transparent 60%),
+    linear-gradient(180deg, #05081a 0%, #07091a 50%, #060818 100%) !important;
+  background-attachment: fixed !important;
+  position: relative;
+}
+body::before{
+  content:""; position:fixed; inset:-20%; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(40% 30% at 20% 30%, rgba(34,211,238,.10), transparent 70%),
+    radial-gradient(40% 30% at 80% 70%, rgba(167,139,250,.10), transparent 70%);
+  filter: blur(30px);
+  animation: auroraDrift 24s ease-in-out infinite alternate;
+}
+body::after{
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image: radial-gradient(rgba(255,255,255,.025) 1px, transparent 1px);
+  background-size: 3px 3px; mix-blend-mode: overlay; opacity:.4;
+}
+@keyframes auroraDrift{
+  0%   { transform: translate3d(-2%, -1%, 0) scale(1.00); }
+  50%  { transform: translate3d( 2%,  2%, 0) scale(1.05); }
+  100% { transform: translate3d(-1%,  1%, 0) scale(1.02); }
+}
+#login-screen, #app { position: relative; z-index: 1; }
+
+/* Glass surfaces */
+.sidebar, .main-header, .card, .kpi-card, .chart-card, .login-card{
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid var(--glass-border) !important;
+}
+.sidebar{ background: var(--glass) !important; box-shadow: inset -1px 0 0 rgba(255,255,255,.04); }
+.main-header{ background: var(--glass) !important; }
+.card, .kpi-card, .chart-card{
+  background: var(--glass) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.25);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.kpi-card:hover, .chart-card:hover, .card:hover{
+  border-color: rgba(34,211,238,.30) !important;
+  box-shadow: 0 14px 40px rgba(0,0,0,.35), 0 0 30px rgba(34,211,238,.10);
+}
+
+/* Branding marks neonized */
+.login-mark, .sb-mark{
+  background: linear-gradient(135deg, var(--ac), var(--ac2)) !important;
+  color: #06081a !important;
+  box-shadow: 0 6px 20px rgba(34,211,238,.35);
+  border-radius: 10px;
+}
+.login-name, .sb-title{
+  background: linear-gradient(90deg, var(--ac), var(--ac2), var(--neon-pink));
+  -webkit-background-clip: text; background-clip: text; color: transparent !important;
+}
+
+/* Sidebar nav */
+.sb-item{ border-radius: 8px; transition: background .15s ease, color .15s ease; }
+.sb-item:hover{ background: linear-gradient(90deg, rgba(34,211,238,.10), rgba(167,139,250,.05)) !important; color: var(--tx) !important; }
+.sb-item.active{
+  background: linear-gradient(90deg, rgba(34,211,238,.20), rgba(167,139,250,.10)) !important;
+  color: var(--tx) !important;
+  box-shadow: inset 2px 0 0 var(--ac);
+}
+
+/* Buttons */
+.login-btn, .header-btn, .card-btn, .act-btn, .sb-footer-btn{
+  border-radius: 10px !important;
+  transition: transform .12s ease, box-shadow .15s ease, filter .15s ease, background .15s ease, border-color .15s ease;
+}
+.login-btn{
+  background: linear-gradient(135deg, var(--ac), var(--ac2)) !important;
+  color: #06081a !important; font-weight: 600;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  box-shadow: 0 8px 24px rgba(34,211,238,.30), inset 0 1px 0 rgba(255,255,255,.30);
+}
+.login-btn:hover{ filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 12px 32px rgba(34,211,238,.45); }
+.header-btn, .card-btn, .act-btn, .sb-footer-btn{
+  background: rgba(255,255,255,.04) !important;
+  border: 1px solid var(--glass-border) !important;
+  color: var(--tx) !important;
+}
+.header-btn:hover, .card-btn:hover, .act-btn:hover, .sb-footer-btn:hover{
+  background: rgba(255,255,255,.08) !important;
+  border-color: rgba(34,211,238,.35) !important;
+}
+
+/* Inputs */
+.login-input, .f-input, .f-select, input, textarea, select{
+  background: rgba(255,255,255,.04) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 10px !important;
+  color: var(--tx) !important;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.login-input:focus, .f-input:focus, .f-select:focus, input:focus, textarea:focus, select:focus{
+  border-color: rgba(34,211,238,.55) !important;
+  box-shadow: 0 0 0 3px rgba(34,211,238,.18), 0 0 24px rgba(34,211,238,.18) !important;
+  background: rgba(255,255,255,.06) !important;
+  outline: none !important;
+}
+
+/* KPI value gets a subtle gradient text */
+.kpi-value{
+  background: linear-gradient(135deg, var(--tx), var(--ac));
+  -webkit-background-clip: text; background-clip: text; color: transparent !important;
+}
+
+/* Live dot — keep neon pulse */
+.live-dot{ box-shadow: 0 0 10px var(--green); }
+
+/* Scrollbars */
+::-webkit-scrollbar-thumb { background: rgba(180,195,255,.14) !important; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,.35) !important; }
+
+/* Login screen aurora */
+#login-screen{
+  background:
+    radial-gradient(1200px 800px at 15% 0%,  rgba(34,211,238,.30), transparent 55%),
+    radial-gradient(1100px 800px at 100% 20%, rgba(167,139,250,.30), transparent 55%),
+    radial-gradient(1000px 800px at 50% 100%, rgba(244,114,182,.22), transparent 55%),
+    linear-gradient(180deg, #05081a, #07091a 60%, #060818) !important;
+}
+.login-card{
+  position: relative;
+  background: var(--glass) !important;
+  border-radius: 20px !important;
+  box-shadow:
+    0 40px 100px rgba(0,0,0,.55),
+    0 0 0 1px rgba(255,255,255,.04) inset,
+    0 0 80px rgba(34,211,238,.15);
+}
+.login-card::before{
+  content:""; position:absolute; inset:-1px; border-radius: 20px; padding:1px;
+  background: linear-gradient(135deg, rgba(34,211,238,.55), rgba(167,139,250,.45) 40%, rgba(244,114,182,.40) 80%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
 }
 </style>
 </head>

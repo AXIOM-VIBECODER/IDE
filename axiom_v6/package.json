@@ -10,12 +10,22 @@
     "migrate": "node scripts/migrate.js",
     "lint": "node -c src/server.js && node scripts/lint-check.js"
   },
-  "keywords": ["ide", "web-ide", "editor", "terminal", "lsp", "dap", "ai", "east-africa"],
+  "keywords": [
+    "ide",
+    "web-ide",
+    "editor",
+    "terminal",
+    "lsp",
+    "dap",
+    "ai",
+    "east-africa"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "express": "^5.2.1",
     "mysql2": "^3.22.1",
     "node-pty": "^1.1.0",
     "xterm": "^5.3.0",
