@@ -4016,6 +4016,7 @@ body[data-t="dark"]{
               <div class="hl-layer" id="hl-1"></div>
               <div id="ghost-text"></div>
               <textarea id="editor" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+              <div id="blame-gutter" style="display:none;position:absolute;top:0;right:0;width:240px;pointer-events:none;z-index:5"></div>
             </div>
             <div class="minimap-wrap" id="minimap-1"><canvas class="minimap-canvas" id="mm-canvas-1"></canvas><div class="minimap-vp" id="mm-vp-1"></div></div>
           </div>
@@ -8742,7 +8743,86 @@ function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
 // GIT
 // ═══════════════════════════════════════════════════════
 async function loadGit(){if(!curDir)return;const[st,lg,br]=await Promise.all([api('GET',`/api/git/status?dir=${encodeURIComponent(curDir)}`),api('GET',`/api/git/log?dir=${encodeURIComponent(curDir)}`),api('GET',`/api/git/branches?dir=${encodeURIComponent(curDir)}`)]);const lines=(st.out||'').split('\n').filter(Boolean);const branch=lines.find(l=>l.startsWith('##'))?.replace('##','').split('...')[0].trim()||'—';document.getElementById('gbranch').textContent='⎇ '+branch;document.getElementById('sbi-branch').textContent='⎇ '+branch;const bsel=document.getElementById('git-branch-sel');bsel.innerHTML=(br.out||'').split('\n').filter(Boolean).map(b=>{const n=b.replace(/^\*\s*/,'').trim();return`<option value="${esc(n)}" ${b.startsWith('*')?'selected':''}>${esc(n)}</option>`;}).join('');gitMod=new Set();const files=lines.filter(l=>!l.startsWith('##'));document.getElementById('git-cnt').textContent=files.length;document.getElementById('git-badge')&&(document.getElementById('git-badge').style.display=files.length?'block':'none');document.getElementById('git-changes').innerHTML=files.length?files.map(f=>{const xy=f.slice(0,2),name=f.slice(3).trim(),x=xy[0],cls=x==='M'||xy[1]==='M'?'gm':x==='A'?'ga':'gd';if(curDir)gitMod.add(curDir+'/'+name);return`<div class="gfile ${cls}" onclick="showFileDiff('${esc(name)}')"><span style="font-size:10px;width:12px;opacity:.7">${x}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(name)}</span><button onclick="event.stopPropagation();stageFile('${esc(name)}')" style="background:none;border:1px solid var(--border);border-radius:2px;color:var(--tx3);font-size:9px;padding:1px 4px;cursor:pointer">+</button></div>`;}).join(''):'<div style="padding:6px 12px;font-size:12px;color:var(--tx3)">Clean working tree</div>';document.getElementById('git-log').innerHTML=(lg.out||'').split('\n').filter(Boolean).slice(0,20).map(c=>{const[hash,...rest]=c.split(' ');return`<div class="gcommit"><b>${esc(hash)}</b>${esc(rest.join(' '))}</div>`;}).join('')||'<div style="padding:6px 12px;font-size:11px;color:var(--tx3)">No commits</div>';}
-async function showFileDiff(file){if(!curDir)return;const r=await api('GET',`/api/git/diff?dir=${encodeURIComponent(curDir)}`);const p=document.getElementById('gdiff-panel');document.getElementById('gdiff-title').textContent=file;p.style.display='block';const lines=(r.out||'No changes').split('\n');document.getElementById('gdiff-content').innerHTML=lines.map(l=>{if(l.startsWith('+')&&!l.startsWith('+++'))return`<span style="color:var(--green);display:block">${esc(l)}</span>`;if(l.startsWith('-')&&!l.startsWith('---'))return`<span style="color:var(--red);display:block">${esc(l)}</span>`;if(l.startsWith('@@'))return`<span style="color:var(--blue);display:block">${esc(l)}</span>`;return`<span style="color:var(--tx3);display:block">${esc(l)}</span>`;}).join('');}
+// LCS-based line diff for side-by-side rendering
+function _lineDiff(aLines,bLines){
+  const n=aLines.length, m=bLines.length;
+  // Cap for very large files
+  if(n*m > 4_000_000){
+    // Fallback: align by line number
+    const rows=[]; const len=Math.max(n,m);
+    for(let i=0;i<len;i++){
+      const a=i<n?aLines[i]:null, b=i<m?bLines[i]:null;
+      const same=a!==null&&b!==null&&a===b;
+      rows.push({a,b,type:same?'same':(a===null?'add':(b===null?'del':'mod'))});
+    }
+    return rows;
+  }
+  const dp=Array(n+1).fill(0).map(()=>new Uint32Array(m+1));
+  for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--){
+    dp[i][j]=aLines[i]===bLines[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  }
+  const rows=[]; let i=0,j=0;
+  while(i<n&&j<m){
+    if(aLines[i]===bLines[j]){rows.push({a:aLines[i],b:bLines[j],type:'same'});i++;j++;}
+    else if(dp[i+1][j]>=dp[i][j+1]){rows.push({a:aLines[i],b:null,type:'del'});i++;}
+    else{rows.push({a:null,b:bLines[j],type:'add'});j++;}
+  }
+  while(i<n){rows.push({a:aLines[i++],b:null,type:'del'});}
+  while(j<m){rows.push({a:null,b:bLines[j++],type:'add'});}
+  return rows;
+}
+async function showFileDiff(file){
+  if(!curDir)return;
+  const fileAbs = file.startsWith('/') ? file : curDir+'/'+file;
+  const r=await api('GET',`/api/git/diff/file?dir=${encodeURIComponent(curDir)}&file=${encodeURIComponent(fileAbs)}`);
+  if(r.error){notif('Diff failed: '+r.error,'err');return;}
+  const aLines=(r.head||'').split('\n');
+  const bLines=(r.working||'').split('\n');
+  const rows=_lineDiff(aLines,bLines);
+  // Build modal
+  let modal=document.getElementById('sxs-diff-modal');
+  if(!modal){
+    modal=document.createElement('div');modal.id='sxs-diff-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:30px';
+    modal.innerHTML=`<div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;width:100%;max-width:1400px;height:100%;display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);gap:12px">
+        <div id="sxs-title" style="flex:1;font-family:JetBrains Mono,monospace;font-size:12px;color:var(--tx)"></div>
+        <div id="sxs-stats" style="font-size:11px;color:var(--tx3)"></div>
+        <button onclick="document.getElementById('sxs-diff-modal').remove()" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:18px">✕</button>
+      </div>
+      <div style="display:flex;flex:1;overflow:auto;font-family:JetBrains Mono,monospace;font-size:12px;line-height:1.5">
+        <div id="sxs-left"  style="flex:1;min-width:0;overflow:auto;border-right:1px solid var(--border)"></div>
+        <div id="sxs-right" style="flex:1;min-width:0;overflow:auto"></div>
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click',ev=>{if(ev.target===modal)modal.remove();});
+  }
+  document.getElementById('sxs-title').textContent='Diff: '+(r.file||file)+' (HEAD ↔ working)';
+  let adds=0,dels=0,mods=0;
+  const leftHtml=[],rightHtml=[];
+  let lna=0,lnb=0;
+  for(const row of rows){
+    const isA=row.a!==null,isB=row.b!==null;
+    if(isA)lna++; if(isB)lnb++;
+    let lc='',rc='';
+    if(row.type==='same'){lc=rc='';}
+    else if(row.type==='add'){adds++;rc='bg:add';}
+    else if(row.type==='del'){dels++;lc='bg:del';}
+    else{mods++;lc='bg:del';rc='bg:add';}
+    const colorL = row.type==='del'?'background:rgba(255,80,80,.18)':(row.type==='mod'?'background:rgba(255,80,80,.18)':'');
+    const colorR = row.type==='add'?'background:rgba(80,255,120,.15)':(row.type==='mod'?'background:rgba(80,255,120,.15)':'');
+    leftHtml.push(`<div style="display:flex;${colorL}"><span style="width:42px;color:var(--tx3);text-align:right;padding:0 6px;user-select:none">${isA?lna:''}</span><span style="flex:1;white-space:pre;padding:0 6px;color:var(--tx2)">${esc(row.a??'')}</span></div>`);
+    rightHtml.push(`<div style="display:flex;${colorR}"><span style="width:42px;color:var(--tx3);text-align:right;padding:0 6px;user-select:none">${isB?lnb:''}</span><span style="flex:1;white-space:pre;padding:0 6px;color:var(--tx2)">${esc(row.b??'')}</span></div>`);
+  }
+  document.getElementById('sxs-stats').innerHTML=`<span style="color:var(--green)">+${adds}</span> · <span style="color:var(--red,#e06c75)">-${dels}</span>${mods?` · <span style="color:var(--yellow,#e5c07b)">~${mods}</span>`:''}`;
+  const L=document.getElementById('sxs-left'), R=document.getElementById('sxs-right');
+  L.innerHTML=leftHtml.join(''); R.innerHTML=rightHtml.join('');
+  // Sync scrolling
+  let syncing=false;
+  const sync=(src,dst)=>()=>{if(syncing)return;syncing=true;dst.scrollTop=src.scrollTop;dst.scrollLeft=src.scrollLeft;syncing=false;};
+  L.onscroll=sync(L,R); R.onscroll=sync(R,L);
+}
 async function stageFile(f){if(!curDir)return;await api('POST','/api/git/stage',{dir:curDir,file:f});loadGit();}
 async function gitStage(){if(!curDir)return;const r=await api('POST','/api/git/stage',{dir:curDir,file:'.'});notif(r.ok?'Staged all':'Stage failed',r.ok?'ok':'err');loadGit();}
 async function gitCommit(){if(!curDir)return;const msg=document.getElementById('git-msg').value.trim()||'AXIOM commit';const r=await api('POST','/api/git/commit',{dir:curDir,msg});if(r.ok){notif('Committed: '+msg,'ok');document.getElementById('git-msg').value='';loadGit();}else notif('Commit failed — stage first','err');}
@@ -11907,17 +11987,23 @@ function ikReject() {
 // ═══════════════════════════════════════════════════════
 let blameVisible = false, blameData = [], gitLineChanges = [];
 
+function _activeFilePath(){const t=tabs.find(t=>t.id===atab);return t?.path||null;}
 async function toggleGitBlame() {
   blameVisible = !blameVisible;
   const gutter = document.getElementById('blame-gutter');
+  if (!gutter) return;
   if (!blameVisible) { gutter.innerHTML = ''; gutter.style.display = 'none'; notif('Blame hidden', 'ok'); return; }
-  if (!curDir || !activeFile) { notif('Open a file in a git repo first', 'warn'); blameVisible = false; return; }
+  const file = _activeFilePath();
+  if (!curDir || !file) { notif('Open a file in a git repo first', 'warn'); blameVisible = false; return; }
   gutter.style.display = 'block';
-  gutter.innerHTML = '<div style="padding:4px;text-align:center">Loading blame...</div>';
-  const r = await api('POST', '/api/git/blame', { dir: curDir, file: activeFile });
-  if (r.error || !r.lines?.length) { gutter.innerHTML = '<div style="padding:4px;text-align:center;font-size:10px">No blame data</div>'; return; }
+  gutter.innerHTML = '<div style="padding:4px;text-align:center;font-size:10px;color:var(--tx3)">Loading blame…</div>';
+  const r = await api('POST', '/api/git/blame', { dir: curDir, file });
+  if (r.error || !r.lines?.length) { gutter.innerHTML = '<div style="padding:4px;text-align:center;font-size:10px;color:var(--tx3)">No blame data</div>'; return; }
   blameData = r.lines;
   renderBlame();
+  // Sync blame scroll with editor scroll
+  const ed=document.getElementById('editor');
+  if(ed && !ed._blameSync){ed._blameSync=true;ed.addEventListener('scroll',()=>{if(blameVisible)gutter.style.top=(-ed.scrollTop)+'px';});}
   notif('Blame loaded', 'ok');
 }
 
@@ -11935,8 +12021,9 @@ function renderBlame() {
 }
 
 async function loadGitLineStatus() {
-  if (!curDir || !activeFile) return;
-  const r = await api('POST', '/api/git/line-status', { dir: curDir, file: activeFile });
+  const file = _activeFilePath();
+  if (!curDir || !file) return;
+  const r = await api('POST', '/api/git/line-status', { dir: curDir, file });
   gitLineChanges = r.changes || [];
 }
 

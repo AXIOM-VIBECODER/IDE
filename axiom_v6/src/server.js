@@ -2016,6 +2016,20 @@ const server=http.createServer(async(req,res)=>{
     return sendJson(res,{related});
   }
 
+  // Git: per-file side-by-side diff (HEAD vs working copy)
+  if(route==='/api/git/diff/file'&&req.method==='GET'){
+    const dir=safe(q.dir); const fileAbs=safe(q.file);
+    if(!dir||!fileAbs)return sendJson(res,{error:'Not allowed'},403);
+    const rel=fileAbs.startsWith(dir+'/')?fileAbs.slice(dir.length+1):fileAbs;
+    return new Promise(resolve=>{
+      exec(`git -C "${dir}" show "HEAD:${sanitizeGitArg(rel)}" 2>/dev/null`,{maxBuffer:8*1024*1024},(err,headOut)=>{
+        let working='';
+        try{working=fs.readFileSync(fileAbs,'utf8');}catch(e){}
+        resolve(sendJson(res,{head:headOut||'',working,file:rel,inHead:!err}));
+      });
+    });
+  }
+
   // Git blame
   if(route==='/api/git/blame'&&req.method==='POST'){
     const dir=safe(data.dir);const file=safe(data.file);
