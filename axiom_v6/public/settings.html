@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AXIOM — Settings</title>
+<style>
+:root{
+  --bg:#0d0f12; --panel:#15181d; --surface:#1a1e24; --elevated:#21262d;
+  --border:#262b33; --border2:#343a44;
+  --tx:#e6e8eb; --tx2:#a6acb6; --tx3:#6b727c;
+  --ac:#7aa2f7; --ac2:#5a7ac7; --ac3:rgba(122,162,247,.18);
+  --green:#9ece6a; --red:#f7768e; --yellow:#e0af68;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Inter',system-ui,sans-serif;background:var(--bg);color:var(--tx);font-size:14px;line-height:1.5}
+body{min-height:100vh}
+header{position:sticky;top:0;background:rgba(13,15,18,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;gap:14px;z-index:10}
+header h1{margin:0;font-size:18px;font-weight:600}
+header .sub{color:var(--tx3);font-size:12px;margin-left:auto;display:flex;align-items:center;gap:10px}
+header .status{padding:3px 8px;border-radius:10px;font-size:11px;background:var(--surface);color:var(--tx3)}
+header .status.saved{background:rgba(158,206,106,.18);color:var(--green)}
+header .status.saving{background:rgba(224,175,104,.18);color:var(--yellow)}
+header .status.err{background:rgba(247,118,142,.18);color:var(--red)}
+main{max-width:880px;margin:0 auto;padding:24px}
+.toc{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px}
+.toc a{padding:6px 12px;border-radius:6px;background:var(--surface);color:var(--tx2);text-decoration:none;font-size:12px;border:1px solid var(--border)}
+.toc a:hover{color:var(--tx);border-color:var(--border2)}
+section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:18px 22px;margin-bottom:18px}
+section h2{margin:0 0 4px 0;font-size:15px;font-weight:600}
+section .desc{color:var(--tx3);font-size:12px;margin-bottom:14px}
+.row{display:grid;grid-template-columns:1fr 220px;gap:14px;align-items:center;padding:10px 0;border-top:1px solid var(--border)}
+.row:first-of-type{border-top:none}
+.row .label{font-size:13px;color:var(--tx)}
+.row .hint{font-size:11px;color:var(--tx3);margin-top:2px}
+.row .ctrl{display:flex;justify-content:flex-end}
+select,input[type=text],input[type=number]{background:var(--surface);border:1px solid var(--border2);border-radius:5px;color:var(--tx);padding:6px 10px;font-size:13px;width:100%;font-family:inherit;outline:none}
+select:focus,input:focus{border-color:var(--ac)}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac);cursor:pointer}
+.switch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--tx2);cursor:pointer}
+.btn{background:var(--ac);color:#fff;border:none;padding:7px 14px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:500;font-family:inherit}
+.btn:hover{background:var(--ac2)}
+.btn.secondary{background:var(--surface);color:var(--tx);border:1px solid var(--border2)}
+.btn.danger{background:transparent;color:var(--red);border:1px solid rgba(247,118,142,.4)}
+.btn.danger:hover{background:rgba(247,118,142,.1)}
+.actions{display:flex;gap:8px;justify-content:flex-end;padding-top:14px;border-top:1px solid var(--border);margin-top:6px}
+.kbd-grid{display:grid;grid-template-columns:1fr 220px;gap:6px 14px;align-items:center;font-size:12px;padding:4px 0}
+.kbd-grid > div:nth-child(odd){color:var(--tx2)}
+.kbd-grid > div:nth-child(even) input{font-family:'JetBrains Mono',monospace;font-size:11px}
+kbd{font-family:'JetBrains Mono',monospace;background:var(--elevated);border:1px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:11px;color:var(--tx)}
+@media (max-width:640px){
+  .row{grid-template-columns:1fr;align-items:flex-start}
+  .row .ctrl{justify-content:flex-start;width:100%}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span style="font-size:22px">⚙</span>
+    <h1>AXIOM Settings</h1>
+  </div>
+  <div class="sub">
+    <span id="scope">Global</span>
+    <span id="status" class="status">Idle</span>
+    <button class="btn secondary" onclick="resetAll()">Reset to defaults</button>
+  </div>
+</header>
+
+<main>
+
+<div class="toc">
+  <a href="#editor">Editor</a>
+  <a href="#appearance">Appearance</a>
+  <a href="#features">Features</a>
+  <a href="#ai">AI</a>
+  <a href="#advanced">Advanced</a>
+</div>
+
+<section id="editor">
+  <h2>Editor</h2>
+  <div class="desc">Font, indentation, and visual aids in the code editor.</div>
+
+  <div class="row"><div><div class="label">Font size</div><div class="hint">Editor text size in pixels (8–24).</div></div>
+    <div class="ctrl"><select data-k="fontSize" data-int="1">
+      <option value="11">11px</option><option value="12">12px</option><option value="13" selected>13px</option><option value="14">14px</option><option value="15">15px</option><option value="16">16px</option><option value="18">18px</option><option value="20">20px</option>
+    </select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Font family</div><div class="hint">Monospace font for the editor and terminal.</div></div>
+    <div class="ctrl"><select data-k="fontFamily">
+      <option value="JetBrains Mono" selected>JetBrains Mono</option>
+      <option value="Fira Code">Fira Code</option>
+      <option value="Cascadia Code">Cascadia Code</option>
+      <option value="SF Mono">SF Mono</option>
+      <option value="Menlo">Menlo</option>
+      <option value="Consolas">Consolas</option>
+      <option value="monospace">System monospace</option>
+    </select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Tab size</div><div class="hint">Number of spaces per tab.</div></div>
+    <div class="ctrl"><select data-k="tabSize" data-int="1">
+      <option value="2" selected>2 spaces</option><option value="3">3</option><option value="4">4</option><option value="8">8</option>
+    </select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Line height</div></div>
+    <div class="ctrl"><select data-k="lineHeight">
+      <option value="1.4">1.4</option><option value="1.5">1.5</option><option value="1.6" selected>1.6</option><option value="1.75">1.75</option><option value="2">2</option>
+    </select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Word wrap</div></div>
+    <div class="ctrl"><select data-k="wordWrap"><option value="off" selected>Off</option><option value="on">On</option></select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Show minimap</div></div>
+    <div class="ctrl"><select data-k="minimap"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Line numbers</div></div>
+    <div class="ctrl"><select data-k="lineNumbers"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Indent guides</div></div>
+    <div class="ctrl"><select data-k="indentGuides"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Bracket pair matching</div></div>
+    <div class="ctrl"><select data-k="bracketMatch"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Render whitespace</div></div>
+    <div class="ctrl"><select data-k="renderWhitespace"><option value="off" selected>None</option><option value="boundary">Boundary</option><option value="all">All</option></select></div>
+  </div>
+
+  <div class="row"><div><div class="label">Sticky scroll</div><div class="hint">Keep enclosing scope at the top while scrolling.</div></div>
+    <div class="ctrl"><select data-k="stickyScroll"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+  </div>
+</section>
+
+<section id="appearance">
+  <h2>Appearance</h2>
+  <div class="desc">Theme used by the IDE chrome and syntax highlighting.</div>
+  <div class="row"><div><div class="label">Color theme</div></div>
+    <div class="ctrl"><select data-k="theme">
+      <option value="dark" selected>AXIOM Dark</option>
+      <option value="vscode-dark">VS Code Dark+</option>
+      <option value="zed-light">Zed Light</option>
+      <option value="windsurf">Windsurf Blue</option>
+      <option value="monokai">Monokai</option>
+      <option value="github">GitHub Dark</option>
+      <option value="dracula">Dracula</option>
+      <option value="savanna">Savanna Sunset</option>
+      <option value="kilimanjaro">Kilimanjaro</option>
+      <option value="maasai">Maasai Red</option>
+      <option value="ocean">Indian Ocean</option>
+    </select></div>
+  </div>
+</section>
+
+<section id="features">
+  <h2>Features</h2>
+  <div class="desc">Optional behaviors and editor modes.</div>
+  <div class="row"><div><div class="label">Vim keybindings</div></div>
+    <div class="ctrl"><select data-k="vimMode"><option value="off" selected>Off</option><option value="on">On</option></select></div>
+  </div>
+  <div class="row"><div><div class="label">Zen mode</div><div class="hint">Hide all panels except the editor.</div></div>
+    <div class="ctrl"><select data-k="zenMode"><option value="off" selected>Off</option><option value="on">On</option></select></div>
+  </div>
+  <div class="row"><div><div class="label">Auto-save</div></div>
+    <div class="ctrl"><select data-k="autosave"><option value="off" selected>Off</option><option value="on">On</option></select></div>
+  </div>
+  <div class="row"><div><div class="label">Auto-save delay</div><div class="hint">Milliseconds idle before saving (when auto-save is on).</div></div>
+    <div class="ctrl"><input type="number" min="200" max="10000" step="100" data-k="autosaveDelay" data-int="1" value="800"/></div>
+  </div>
+  <div class="row"><div><div class="label">Lint on type</div></div>
+    <div class="ctrl"><select data-k="lintOnType"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+  </div>
+  <div class="row"><div><div class="label">Code folding</div></div>
+    <div class="ctrl"><select data-k="codeFolding"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+  </div>
+</section>
+
+<section id="ai">
+  <h2>AI</h2>
+  <div class="desc">AXIOM AI behavior. The API key is configured in the main IDE (Settings panel → API key).</div>
+  <div class="row"><div><div class="label">Ghost completion (inline suggestions)</div></div>
+    <div class="ctrl"><select data-k="ghostCompletion"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+  </div>
+  <div class="row"><div><div class="label">Suggestion delay</div><div class="hint">Idle time (ms) before suggesting a completion.</div></div>
+    <div class="ctrl"><input type="number" min="100" max="3000" step="50" data-k="ghostDelay" data-int="1" value="400"/></div>
+  </div>
+  <div class="row"><div><div class="label">Model</div></div>
+    <div class="ctrl"><select data-k="aiModel">
+      <option value="claude-sonnet-4-20250514" selected>Claude Sonnet 4</option>
+      <option value="claude-opus-4-20250514">Claude Opus 4</option>
+      <option value="claude-haiku-4-20250514">Claude Haiku 4</option>
+    </select></div>
+  </div>
+  <div class="row"><div><div class="label">Max tokens per response</div></div>
+    <div class="ctrl"><input type="number" min="256" max="16000" step="256" data-k="aiMaxTokens" data-int="1" value="4000"/></div>
+  </div>
+  <div class="row"><div><div class="label">Extra system prompt</div><div class="hint">Appended to the system prompt; use for project conventions.</div></div>
+    <div class="ctrl"><input type="text" data-k="aiSystemExtra" placeholder="e.g. Always use TypeScript strict mode" style="min-width:0"/></div>
+  </div>
+</section>
+
+<section id="advanced">
+  <h2>Advanced</h2>
+  <div class="desc">Telemetry and data management.</div>
+  <div class="row"><div><div class="label">Anonymous usage telemetry</div></div>
+    <div class="ctrl"><select data-k="telemetry"><option value="on">On</option><option value="off" selected>Off</option></select></div>
+  </div>
+  <div class="actions">
+    <button class="btn secondary" onclick="exportSettings()">Export JSON</button>
+    <button class="btn secondary" onclick="importSettings()">Import JSON</button>
+    <button class="btn danger" onclick="resetAll()">Reset all settings</button>
+  </div>
+</section>
+
+</main>
+
+<script>
+const TOK_KEY='ax_token';
+const USER_TOK_KEY='ax_user_token';
+const SETTINGS_KEY='ax_settings_v1';
+const CH_NAME='ax_settings_channel';
+
+function getTok(){return localStorage.getItem(TOK_KEY)||localStorage.getItem('AX_TOKEN')||'';}
+function getUserTok(){return localStorage.getItem(USER_TOK_KEY)||'';}
+
+function statusFlash(text,cls=''){
+  const el=document.getElementById('status');
+  el.textContent=text; el.className='status '+cls;
+}
+
+async function loadSettings(){
+  // Merge: server (authoritative if logged in) ← localStorage ← defaults
+  let server={};
+  try{
+    const r=await fetch('/api/settings',{headers:{'X-Axiom-Token':getTok(),'X-User-Token':getUserTok()}});
+    const j=await r.json(); server=j.settings||{}; if(j.userId&&j.userId!=='_global'){document.getElementById('scope').textContent='Per-user';}
+  }catch(e){}
+  let local={};
+  try{local=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}');}catch(e){}
+  const settings={...local,...server};
+  applyToForm(settings);
+  statusFlash('Loaded','saved');
+  setTimeout(()=>statusFlash('Idle',''),1500);
+}
+
+function applyToForm(s){
+  document.querySelectorAll('[data-k]').forEach(el=>{
+    const k=el.dataset.k;
+    if(s[k]===undefined||s[k]===null)return;
+    if(el.type==='checkbox')el.checked=!!s[k];
+    else el.value=String(s[k]);
+  });
+}
+
+function collectFromForm(){
+  const out={};
+  document.querySelectorAll('[data-k]').forEach(el=>{
+    const k=el.dataset.k;
+    let v;
+    if(el.type==='checkbox')v=el.checked;
+    else v=el.value;
+    if(el.dataset.int)v=v===''?undefined:parseInt(v,10);
+    if(v===undefined||(typeof v==='number'&&isNaN(v)))return;
+    out[k]=v;
+  });
+  return out;
+}
+
+let _saveTimer=null;
+function scheduleSave(){
+  statusFlash('Saving…','saving');
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(saveSettings,250);
+}
+
+async function saveSettings(){
+  const s=collectFromForm();
+  // Persist locally first (fast path for IDE listeners)
+  localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));
+  // Push to server
+  let ok=false;
+  try{
+    const r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Axiom-Token':getTok(),'X-User-Token':getUserTok()},body:JSON.stringify(s)});
+    const j=await r.json(); ok=!!j.ok;
+  }catch(e){}
+  // Broadcast to any open IDE tabs
+  try{
+    const ch=new BroadcastChannel(CH_NAME);
+    ch.postMessage({type:'settings',settings:s,ts:Date.now()});
+    ch.close();
+  }catch(e){}
+  statusFlash(ok?'Saved ✓':'Saved locally (offline)',ok?'saved':'err');
+  setTimeout(()=>statusFlash('Idle',''),1500);
+}
+
+document.addEventListener('change',ev=>{
+  if(ev.target.matches('[data-k]'))scheduleSave();
+});
+document.addEventListener('input',ev=>{
+  if(ev.target.matches('input[type=text][data-k],input[type=number][data-k]'))scheduleSave();
+});
+
+async function resetAll(){
+  if(!confirm('Reset all settings to defaults? This cannot be undone.'))return;
+  localStorage.removeItem(SETTINGS_KEY);
+  try{await fetch('/api/settings',{method:'DELETE',headers:{'X-Axiom-Token':getTok(),'X-User-Token':getUserTok()}});}catch(e){}
+  try{const ch=new BroadcastChannel(CH_NAME);ch.postMessage({type:'settings',settings:{},reset:true,ts:Date.now()});ch.close();}catch(e){}
+  location.reload();
+}
+
+function exportSettings(){
+  const s=collectFromForm();
+  const blob=new Blob([JSON.stringify(s,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='axiom-settings.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+function importSettings(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='application/json';
+  inp.onchange=()=>{
+    const f=inp.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=()=>{
+      try{const s=JSON.parse(r.result);applyToForm(s);scheduleSave();statusFlash('Imported','saved');}
+      catch(e){statusFlash('Invalid JSON','err');}
+    };
+    r.readAsText(f);
+  };
+  inp.click();
+}
+
+loadSettings();
+</script>
+</body>
+</html>

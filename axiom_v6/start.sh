@@ -4,7 +4,7 @@ echo "  ╔═══════════════════════
 echo "  ║              A X I O M  v6 — East Africa Edition            ║"
 echo "  ║   The AI Software Engineer — Proudly Built in East Africa    ║"
 echo "  ║   IDE + Admin Dashboard + M-Pesa + Swahili AI Brain         ║"
-echo "  ║   Built for Zawadi · Powered by Claude Sonnet               ║"
+echo "  ║   Built for East Africa· Powered by Claude Sonnet               ║"
 echo "  ╚══════════════════════════════════════════════════════════════╝"
 echo ""
 

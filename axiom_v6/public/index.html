@@ -13,6 +13,8 @@
 <script src="/xterm/xterm-addon-web-links.js"></script>
 <!-- SweetAlert2 — beautiful popups for all notifications, confirms, prompts -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<!-- Paystack inline popup SDK -->
+<script src="https://js.paystack.co/v1/inline.js" defer></script>
 <style>
 
 
@@ -2879,10 +2881,741 @@ body[data-t="dark"]{
 }
 .bp-empty{ color: var(--tx3); padding: 18px; text-align: center; font-size: 12px; }
 
-/* Force-hide ps-billing under all themes */
-#ps-billing{ display: none !important; }
+/* Paystack sidebar billing section — show when configured */
+#ps-billing{ }
+
+/* ═══════════════════════════════════════════════════════════
+   AXIOM VISUAL REFRESH — Premium IDE polish
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── AMBIENT BACKGROUND GLOW ── */
+#app::before {
+  content: '';
+  position: fixed;
+  top: -40%;
+  left: -20%;
+  width: 70%;
+  height: 70%;
+  background: radial-gradient(ellipse, rgba(34,211,238,.05) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+#app::after {
+  content: '';
+  position: fixed;
+  bottom: -30%;
+  right: -10%;
+  width: 60%;
+  height: 60%;
+  background: radial-gradient(ellipse, rgba(167,139,250,.04) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── TITLE BAR — premium chrome ── */
+.titlebar {
+  background: linear-gradient(180deg, rgba(16,20,42,.92) 0%, rgba(11,14,33,.96) 100%);
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: 0 1px 0 rgba(34,211,238,.08);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+/* Logo mark in title bar */
+.tb-logo-mark {
+  width: 22px; height: 22px; border-radius: 5px;
+  background: linear-gradient(135deg, var(--ac), var(--ac2));
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 700;
+  color: #000; letter-spacing: -.02em; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(34,211,238,.35);
+}
+
+.tb-item {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 450;
+  letter-spacing: .01em;
+}
+.tb-item:hover {
+  color: var(--tx);
+  background: rgba(255,255,255,.06);
+}
+
+.tb-btn {
+  width: 30px; height: 30px;
+  border-radius: 7px;
+  transition: all .15s cubic-bezier(.4,0,.2,1);
+}
+.tb-btn:hover {
+  color: var(--tx);
+  background: rgba(255,255,255,.07);
+}
+.tb-btn.ai {
+  padding: 0 12px;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(34,211,238,.12), rgba(167,139,250,.08));
+  border: 1px solid rgba(34,211,238,.2);
+  color: var(--ac);
+  font-weight: 500;
+}
+.tb-btn.ai:hover {
+  background: linear-gradient(135deg, rgba(34,211,238,.2), rgba(167,139,250,.14));
+  border-color: rgba(34,211,238,.4);
+  box-shadow: 0 0 12px rgba(34,211,238,.2);
+}
+.tb-btn.run {
+  background: rgba(74,222,128,.08);
+  border: 1px solid rgba(74,222,128,.15);
+  color: var(--green);
+}
+.tb-btn.run:hover {
+  background: rgba(74,222,128,.15);
+  border-color: rgba(74,222,128,.35);
+  box-shadow: 0 0 10px rgba(74,222,128,.2);
+}
+
+/* ── ACTIVITY BAR — pill active indicator ── */
+.activitybar {
+  background: linear-gradient(180deg, rgba(11,14,33,.95) 0%, rgba(9,11,28,.98) 100%);
+  border-right: 1px solid var(--glass-border);
+  width: 44px;
+  padding: 8px 0;
+  gap: 3px;
+}
+.ab-btn {
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  font-size: 17px;
+  transition: all .15s cubic-bezier(.4,0,.2,1);
+  color: rgba(170,178,216,.45);
+}
+.ab-btn:hover {
+  color: var(--tx2);
+  background: rgba(255,255,255,.06);
+}
+.ab-btn.on {
+  color: var(--ac);
+  background: rgba(34,211,238,.1);
+}
+.ab-btn.on::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 8px; bottom: 8px;
+  width: 3px;
+  background: linear-gradient(180deg, var(--ac), var(--ac2));
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(34,211,238,.5);
+}
+
+/* ── PROJECT PANEL ── */
+.project-panel {
+  background: linear-gradient(180deg, rgba(14,18,40,.92) 0%, rgba(11,14,34,.95) 100%);
+  border-right: 1px solid var(--glass-border);
+}
+.panel-hdr {
+  background: rgba(11,14,33,.6);
+  border-bottom: 1px solid var(--glass-border);
+  padding: 0 14px;
+  height: 44px;
+}
+.panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(170,178,216,.6);
+  letter-spacing: .12em;
+}
+
+/* File tree hover + active refinement */
+.fi:hover { background: rgba(255,255,255,.05); color: var(--tx); border-radius: 4px; }
+.fi.act { background: rgba(34,211,238,.1); color: var(--tx); }
+.fi.act::before {
+  content: '';
+  position: absolute;
+  left: -4px; top: 3px; bottom: 3px;
+  width: 2px;
+  background: var(--ac);
+  border-radius: 2px;
+}
+.fi-nm { font-size: 12.5px; }
+
+/* ── TABS BAR — refined ── */
+.tabs-bar {
+  background: rgba(9,11,28,.97);
+  border-bottom: 1px solid var(--glass-border);
+  min-height: 34px;
+}
+.tab {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 12px;
+  color: rgba(170,178,216,.45);
+  background: transparent;
+  border-right: 1px solid transparent;
+  transition: all .15s ease;
+  position: relative;
+}
+.tab:hover {
+  color: rgba(238,241,255,.7);
+  background: rgba(255,255,255,.03);
+}
+.tab.on {
+  background: var(--ed-bg);
+  color: var(--tx);
+  border-right-color: var(--glass-border);
+  border-left: 1px solid var(--glass-border);
+}
+.tab.on::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--ac), var(--ac2));
+  box-shadow: 0 0 8px rgba(34,211,238,.4);
+}
+.tab-dot { background: var(--orange); box-shadow: 0 0 4px var(--orange); }
+
+/* ── EDITOR AREA ── */
+.ed-host {
+  background: var(--ed-bg);
+}
+
+/* ── BREADCRUMBS ── */
+.breadcrumbs {
+  height: 26px;
+  background: rgba(8,10,24,.9);
+  border-bottom: 1px solid var(--glass-border);
+  font-size: 11.5px;
+  letter-spacing: .01em;
+}
+.bc-part:last-child { color: var(--tx); font-weight: 500; }
+
+/* ── STATUS BAR — rich segments ── */
+.statusbar {
+  height: 26px;
+  background: linear-gradient(90deg, rgba(5,7,22,.97) 0%, rgba(7,9,26,.97) 100%);
+  border-top: 1px solid rgba(34,211,238,.08);
+  padding: 0 8px;
+}
+.sbi {
+  font-size: 10.5px;
+  padding: 0 8px;
+  height: 26px;
+  letter-spacing: .01em;
+  border-radius: 3px;
+  gap: 5px;
+}
+.sbi:first-child {
+  background: linear-gradient(90deg, rgba(34,211,238,.15), rgba(167,139,250,.1));
+  border: 1px solid rgba(34,211,238,.2);
+  color: var(--ac);
+  font-weight: 600;
+}
+.sbi:first-child:hover {
+  background: linear-gradient(90deg, rgba(34,211,238,.22), rgba(167,139,250,.15));
+  box-shadow: 0 0 10px rgba(34,211,238,.2);
+}
+.sbi.err { background: rgba(255,107,129,.08); border: 1px solid rgba(255,107,129,.2); }
+.sbi.ok  { color: var(--green); }
+
+/* ── BOTTOM PANEL — refined ── */
+.bp {
+  background: rgba(9,11,28,.97);
+  border-top: 1px solid var(--glass-border);
+}
+.bptabs {
+  background: rgba(7,9,22,.96);
+  border-bottom: 1px solid var(--glass-border);
+  height: 32px;
+}
+.bptab {
+  font-size: 11.5px;
+  padding: 0 14px;
+  height: 32px;
+  display: flex; align-items: center;
+  border-bottom: 2px solid transparent;
+  transition: all .15s;
+}
+.bptab.on {
+  color: var(--ac);
+  border-bottom-color: var(--ac);
+  background: rgba(34,211,238,.05);
+}
+
+/* Terminal tab refined */
+.ttab.on {
+  color: var(--tx);
+  background: rgba(34,211,238,.06);
+  border-bottom: 2px solid var(--ac);
+}
+.ttab-status.connected { box-shadow: 0 0 6px var(--green); }
+
+/* ── AI PANEL — modern chat ── */
+.ai-panel {
+  background: linear-gradient(180deg, rgba(12,16,36,.97) 0%, rgba(10,13,30,.99) 100%);
+  border-left: 1px solid var(--glass-border);
+  width: 340px;
+}
+.ai-hdr {
+  height: 44px;
+  padding: 0 14px;
+  background: rgba(9,12,28,.85);
+  border-bottom: 1px solid var(--glass-border);
+  background: linear-gradient(90deg, rgba(34,211,238,.08), rgba(167,139,250,.05), transparent);
+  border-bottom: 1px solid var(--glass-border);
+}
+.ai-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ac);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.ai-model {
+  font-size: 10px;
+  color: rgba(167,139,250,.6);
+  background: rgba(167,139,250,.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(167,139,250,.15);
+}
+
+/* ── CHAT MESSAGES — modern bubbles ── */
+.msgs {
+  padding: 12px 10px;
+  gap: 8px;
+  background: transparent;
+}
+
+.msg {
+  gap: 8px;
+  animation: msgIn .2s cubic-bezier(.4,0,.2,1);
+}
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(6px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* User messages — right-aligned pill */
+.msg.u {
+  align-items: flex-end;
+  padding-left: 24px;
+}
+.msg.u .bbl {
+  background: linear-gradient(135deg, rgba(34,211,238,.18), rgba(167,139,250,.14));
+  border: 1px solid rgba(34,211,238,.2);
+  border-left: none;
+  border-radius: 14px 14px 4px 14px;
+  padding: 9px 13px;
+  color: var(--tx);
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  box-shadow: 0 2px 12px rgba(34,211,238,.12);
+  backdrop-filter: blur(4px);
+}
+
+/* AI messages — left with subtle glow */
+.msg.ai {
+  align-items: flex-start;
+  padding-right: 8px;
+}
+.msg.ai .bbl {
+  background: rgba(28,33,64,.6);
+  border: 1px solid rgba(180,195,255,.08);
+  border-radius: 4px 14px 14px 14px;
+  padding: 9px 13px;
+  color: var(--tx);
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  backdrop-filter: blur(8px);
+}
+.msg.ai .bbl code:not(pre code) {
+  background: rgba(34,211,238,.1);
+  color: var(--ac);
+  border: 1px solid rgba(34,211,238,.15);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.msg.ai .bbl pre {
+  background: rgba(6,8,26,.8) !important;
+  border: 1px solid rgba(180,195,255,.1);
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+/* Thinking dots */
+.tdots { padding: 6px 0; }
+.dot {
+  width: 5px; height: 5px;
+  background: var(--ac);
+  box-shadow: 0 0 6px var(--ac);
+}
+
+/* ── AI INPUT BOX ── */
+.ai-inp {
+  padding: 10px;
+  background: transparent;
+  border-top: 1px solid var(--glass-border);
+}
+.ai-inp-box {
+  background: rgba(16,20,42,.7);
+  border: 1px solid rgba(180,195,255,.12);
+  border-radius: 10px;
+  padding: 8px 10px;
+  transition: all .2s ease;
+  backdrop-filter: blur(8px);
+}
+.ai-inp-box:focus-within {
+  border-color: rgba(34,211,238,.35);
+  box-shadow: 0 0 0 3px rgba(34,211,238,.07), 0 4px 16px rgba(0,0,0,.3);
+  background: rgba(20,25,52,.8);
+}
+#cinput {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tx);
+}
+#cinput::placeholder { color: rgba(111,120,168,.6); }
+
+.ai-hint {
+  font-size: 10px;
+  color: rgba(111,120,168,.5);
+  font-family: 'Geist', system-ui, sans-serif;
+  margin-top: 5px;
+  text-align: center;
+}
+
+/* ── COMMAND PALETTE — glass pane ── */
+.pal {
+  background: rgba(14,18,44,.94);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(180,195,255,.15);
+  border-radius: 12px;
+  box-shadow: 0 32px 80px rgba(0,0,0,.7), 0 0 0 1px rgba(34,211,238,.06);
+}
+.pal-inp {
+  font-size: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(180,195,255,.1);
+  letter-spacing: -.01em;
+}
+.pi:hover, .pi.on {
+  background: rgba(34,211,238,.1);
+  border-radius: 8px;
+}
+.pi-name { font-size: 13px; font-weight: 450; }
+
+/* ── CONTEXT MENU ── */
+.ctx {
+  background: rgba(18,22,50,.95);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(180,195,255,.14);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.6), 0 0 0 1px rgba(34,211,238,.05);
+}
+.ci { font-size: 13px; border-radius: 6px; padding: 7px 13px; }
+.ci:hover { background: rgba(34,211,238,.1); color: var(--tx); }
+
+/* ── MODALS — glass ── */
+.modal {
+  background: rgba(14,18,40,.96);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(180,195,255,.15);
+  border-radius: 14px;
+  box-shadow: 0 40px 100px rgba(0,0,0,.7), 0 0 0 1px rgba(34,211,238,.06);
+}
+.modal-hdr {
+  border-bottom: 1px solid rgba(180,195,255,.1);
+  padding: 16px 20px;
+}
+.modal-title { font-size: 15px; font-weight: 600; }
+
+/* ── NOTIFICATION TOASTS ── */
+.notif {
+  background: rgba(14,18,40,.96);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid rgba(180,195,255,.14);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.03);
+  padding: 12px 18px;
+}
+.notif.ok  { border-left: 3px solid var(--green); background: rgba(74,222,128,.07); }
+.notif.err { border-left: 3px solid var(--red);   background: rgba(255,107,129,.07); }
+.notif.info{ border-left: 3px solid var(--ac);    background: rgba(34,211,238,.07); }
+.notif.warn{ border-left: 3px solid var(--yellow);background: rgba(253,224,71,.07); }
+
+/* ── RESIZERS — accent glow ── */
+.resizer:hover, .resizer.drag { background: rgba(34,211,238,.5); }
+.v-resizer:hover, .v-resizer.drag { background: rgba(34,211,238,.5); }
+
+/* ── SCROLLBARS — refined ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(180,195,255,.1);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(180,195,255,.22); }
+* { scrollbar-width: thin; scrollbar-color: rgba(180,195,255,.1) transparent; }
+
+/* ── DASHBOARD HERO ── */
+.dash {
+  background: transparent;
+  padding: 36px 44px;
+}
+.dash-hdr {
+  margin-bottom: 12px;
+}
+.dash-logo {
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--ac), var(--ac2));
+  box-shadow: 0 8px 24px rgba(34,211,238,.35), 0 0 0 1px rgba(34,211,238,.2) inset;
+  font-size: 18px;
+}
+.dash-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  background: linear-gradient(135deg, var(--tx) 40%, var(--ac2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.dash-sub {
+  font-size: 12px;
+  color: rgba(111,120,168,.7);
+}
+.dash-card {
+  background: rgba(28,33,64,.4);
+  border: 1px solid rgba(180,195,255,.08);
+  border-radius: 14px;
+  transition: all .2s cubic-bezier(.4,0,.2,1);
+  backdrop-filter: blur(8px);
+}
+.dash-card:hover {
+  border-color: rgba(34,211,238,.25);
+  background: rgba(34,211,238,.06);
+  box-shadow: 0 8px 32px rgba(34,211,238,.1);
+  transform: translateY(-2px);
+}
+.dash-card-v { color: var(--ac); font-size: 30px; font-weight: 700; }
+.dash-action {
+  background: rgba(16,20,42,.5);
+  border: 1px solid rgba(180,195,255,.08);
+  border-radius: 12px;
+  transition: all .2s cubic-bezier(.4,0,.2,1);
+  backdrop-filter: blur(8px);
+}
+.dash-action:hover {
+  border-color: rgba(34,211,238,.3);
+  background: rgba(34,211,238,.07);
+  box-shadow: 0 4px 20px rgba(34,211,238,.1);
+  transform: translateY(-2px);
+}
+.dash-proverb {
+  border-left: 3px solid var(--ac);
+  background: rgba(34,211,238,.05);
+  border-radius: 0 10px 10px 0;
+  box-shadow: 0 2px 12px rgba(0,0,0,.2);
+}
+.dash-recent-item {
+  border-radius: 8px;
+  background: rgba(16,20,42,.35);
+  border: 1px solid rgba(180,195,255,.05);
+}
+.dash-recent-item:hover {
+  background: rgba(34,211,238,.06);
+  border-color: rgba(34,211,238,.15);
+  color: var(--tx);
+}
+
+/* ── PANEL ACTIONS BUTTON ── */
+.pact:hover { background: rgba(255,255,255,.08); color: var(--tx); }
+.gbtn.p {
+  background: linear-gradient(135deg, var(--ac), var(--ac2));
+  border-color: transparent;
+  color: #000;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(34,211,238,.3);
+}
+.gbtn.p:hover { filter: brightness(1.1); box-shadow: 0 4px 14px rgba(34,211,238,.4); }
+
+/* ── BUTTONS — premium ── */
+.btn-primary {
+  background: linear-gradient(135deg, var(--ac), var(--ac2));
+  box-shadow: 0 2px 12px rgba(34,211,238,.3);
+}
+.btn-primary:hover {
+  box-shadow: 0 6px 20px rgba(34,211,238,.4);
+  filter: brightness(1.05);
+}
+.ss-btn {
+  background: linear-gradient(135deg, var(--ac), var(--ac2));
+  color: #000;
+  box-shadow: 0 2px 8px rgba(34,211,238,.25);
+}
+.ss-btn:hover { filter: brightness(1.08); box-shadow: 0 4px 14px rgba(34,211,238,.35); }
+
+/* ── AUTH SCREEN — refined ── */
+#auth-screen {
+  background: radial-gradient(ellipse 70% 50% at 50% 0%, rgba(34,211,238,.05), transparent 60%),
+              radial-gradient(ellipse 50% 60% at 85% 80%, rgba(167,139,250,.04), transparent 60%),
+              var(--bg);
+}
+.auth-btn {
+  background: linear-gradient(135deg, var(--ac), var(--ac2));
+  box-shadow: 0 4px 16px rgba(34,211,238,.3);
+}
+.auth-btn:hover {
+  box-shadow: 0 8px 24px rgba(34,211,238,.45);
+  filter: brightness(1.06);
+}
+
+/* ── WELCOME EDITOR PLACEHOLDER ── */
+.ed-ph {
+  background: radial-gradient(ellipse 80% 40% at 50% 0%, rgba(34,211,238,.025), transparent 50%),
+              var(--ed-bg);
+}
+.ed-ph-logo {
+  font-size: 12px;
+  opacity: .35;
+  letter-spacing: .2em;
+  margin-top: 60px;
+}
+
+/* ── USER MENU ── */
+.user-menu {
+  background: rgba(14,18,40,.97);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(180,195,255,.14);
+  box-shadow: 0 16px 48px rgba(0,0,0,.55);
+}
+.um-item:hover { background: rgba(34,211,238,.07); color: var(--tx); }
+.um-plan.pro { background: rgba(34,211,238,.1); color: var(--ac); border: 1px solid rgba(34,211,238,.2); }
+
+/* ── FILE MENU ── */
+.file-menu {
+  background: rgba(14,18,40,.97);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(180,195,255,.14);
+  box-shadow: 0 16px 48px rgba(0,0,0,.55);
+}
+.fm-item:hover { background: rgba(34,211,238,.07); color: var(--tx); }
+
+/* ── PROFILE CARD ── */
+.profile-avatar {
+  background: linear-gradient(135deg, rgba(34,211,238,.2), rgba(167,139,250,.15));
+  border: 2px solid rgba(34,211,238,.2);
+  box-shadow: 0 4px 16px rgba(34,211,238,.15);
+}
+
+/* ── INPUT FOCUS RINGS ── */
+.sinp:focus, .git-ta:focus, .madd:focus, .si:focus, .ai-inp-box:focus-within {
+  box-shadow: 0 0 0 2px rgba(34,211,238,.12);
+}
+
+/* ── BADGE + CHIP refinements ── */
+.badge { border: 1px solid rgba(34,211,238,.2); }
+.snip-lang { border: 1px solid rgba(34,211,238,.15); }
+.hist-badge { border: 1px solid rgba(34,211,238,.15); }
+
+/* ── CODE BLOCK HEADER ── */
+.cbh {
+  background: rgba(6,8,26,.6);
+  border-bottom: 1px solid rgba(180,195,255,.08);
+  border-radius: 8px 8px 0 0;
+  padding: 5px 12px;
+}
+.cb-apply {
+  background: rgba(34,211,238,.1);
+  border-color: rgba(34,211,238,.3);
+  color: var(--ac);
+}
+.cb-apply:hover { background: var(--ac); color: #000; box-shadow: 0 2px 8px rgba(34,211,238,.3); }
+
+/* ── HOVER DOC POPUP ── */
+.hover-popup {
+  background: rgba(14,18,40,.97);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid rgba(180,195,255,.15);
+  box-shadow: 0 12px 40px rgba(0,0,0,.6);
+}
+
+/* ── FUZZY FILE PICKER ── */
+.fuzzy-box {
+  background: rgba(14,18,44,.95);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(180,195,255,.15);
+  box-shadow: 0 32px 80px rgba(0,0,0,.7);
+}
+.fuzzy-item:hover, .fuzzy-item.on {
+  background: rgba(34,211,238,.1);
+}
+
+/* ── ZEN MODE INDICATOR ── */
+#zen-indicator {
+  background: rgba(14,18,40,.9);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(180,195,255,.15);
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+
+/* ── KEYBIND ROWS ── */
+.keybind-key:hover { border-color: var(--ac); color: var(--ac); box-shadow: 0 0 6px rgba(34,211,238,.2); }
+
+/* ── GIT ITEMS ── */
+.gfile.gm { color: var(--yellow); }
+.gfile.ga { color: var(--green); }
+.gfile.gd { color: var(--red); }
+.gcommit b { color: var(--ac); text-shadow: 0 0 6px rgba(34,211,238,.3); }
+
+/* ── SPLIT TABS ── */
+.split-tabs {
+  background: rgba(9,11,28,.97);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+/* ── PANEL SECTION SCROLL ── */
+.panel-section, .ftree {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(180,195,255,.08) transparent;
+}
+
+/* ── LOCK SCREEN ── */
+.lock-mark {
+  background: linear-gradient(135deg, rgba(34,211,238,.2), rgba(167,139,250,.15));
+  border: 1px solid rgba(34,211,238,.3);
+  box-shadow: 0 4px 16px rgba(34,211,238,.2);
+}
 
 </style>
+<!-- Monaco Editor — Professional Code Editor Engine -->
+<script>
+  var _monacoBaseUrl = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs';
+  window._monacoLoaded = false;
+</script>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js" onload="
+  require.config({ paths: { vs: _monacoBaseUrl } });
+  require(['vs/editor/editor.main'], function() {
+    window._monacoLoaded = true;
+    window._monacoInstances = {};
+    window._monacoProxies = {};
+    if (typeof initMonacoEditors === 'function') initMonacoEditors();
+  });
+"></script>
 <body data-t="dark">
 
 <!-- ═══════════════════════════════════════════════════════
@@ -3363,10 +4096,6 @@ body[data-t="dark"]{
           <div class="crumb-path" id="crumb-path"></div>
         </div>
         <div class="no-folder" id="no-folder">No folder open<br>Click ⊞ or drop a folder</div>
-        <div id="recent-files-section" style="display:none">
-          <div style="font-size:10px;color:var(--tx3);padding:6px 12px 2px;text-transform:uppercase;letter-spacing:.08em">Recent Files</div>
-          <div id="recent-files-list"></div>
-        </div>
         <div class="ftree" id="ftree"></div>
         <div class="fpath" id="fpath"></div>
       </div>
@@ -3933,6 +4662,7 @@ body[data-t="dark"]{
       <div class="tabs-bar" id="tabs-bar">
         <button class="tab-add" onclick="newTab()">+</button>
         <button class="tab-split" onclick="toggleSplit()" title="Split (Ctrl+\)">⊟</button>
+        <button onclick="openHTMLPreview()" title="Open HTML Preview (for .html files)" style="background:none;border:none;color:var(--tx3);cursor:pointer;padding:0 6px;font-size:13px;line-height:30px" id="btn-preview">⊞</button>
       </div>
       <div class="findbar" id="findbar">
         <input type="text" class="fi2" id="find-q" placeholder="Find" oninput="doFind()"/>
@@ -4044,6 +4774,7 @@ body[data-t="dark"]{
           <div class="bptab" id="bpt-terminal" onclick="setBpTab('terminal');focusActiveTerm()">Terminal</div>
           <div class="bptab" id="bpt-debug" onclick="setBpTab('debug')">Debug</div>
           <div class="bptab" id="bpt-repl" onclick="setBpTab('repl')">REPL</div>
+          <div class="bptab" id="bpt-ports" onclick="setBpTab('ports');scanPorts()">Ports</div>
           <div class="bp-right">
             <button class="bpa" onclick="toggleBottom()" title="Close Panel">✕</button>
           </div>
@@ -4154,6 +4885,13 @@ body[data-t="dark"]{
               <input type="text" id="repl-inp" class="repl-inp" placeholder="Enter expression or statement…" onkeydown="replKey(event)" autocomplete="off" spellcheck="false"/>
               <button class="repl-run-btn" onclick="replEval()" title="Run">▶</button>
             </div>
+          </div>
+          <div class="bpsec" id="bp-ports" style="padding:8px;overflow-y:auto">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <span style="font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em">Active Ports</span>
+              <button style="font-size:10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--tx2);padding:2px 8px;cursor:pointer" onclick="scanPorts()">↺ Refresh</button>
+            </div>
+            <div id="ports-list"><div style="font-size:11px;color:var(--tx3);padding:8px 0">Click Refresh to scan active ports…</div></div>
           </div>
         </div>
       </div>
@@ -4966,38 +5704,77 @@ let autoSaveTimer=null;
 async function boot() {
   if (BOOTED) return;
   BOOTED = true;
+
+  // Phase 1 — core setup (synchronous)
   setupEditor();
   setupDragDrop();
   setupBottomResize();
   initTasks();
-  const[kR,mR]=await Promise.all([api('GET','/api/key'),api('GET','/api/memory')]);
-  await api('POST','/api/session/start');
-  if(kR.hasKey) document.getElementById('kst').textContent='✓ Active: '+kR.masked;
-  else notif('Add Anthropic API key in Settings to enable AI','warn');
-  loadSettingsFromMem(mR);updateMemCount(mR);
-  loadSavedPrefs();buildPalCmds();renderExts();loadSnippets();
-  addSystemNotif('Welcome back!', `Signed in as ${USER?.email||'user'}. AXIOM v6 ready.`, '✦');
-  // Restore previous workspace state (tabs, folder, panels, AI chat)
-  const wsRestored = await restoreWorkspace();
-  if(!wsRestored){
-    // Fresh start — show welcome, open terminal
-    showWelcome(mR);
-    showBottom();setBpTab('terminal');newTermTab();setBpTab('problems');
+
+  // Phase 2 — load server data in parallel
+  const [kR, mR] = await Promise.all([
+    api('GET', '/api/key').catch(() => ({})),
+    api('GET', '/api/memory').catch(() => ({}))
+  ]);
+  api('POST', '/api/session/start').catch(() => {});
+
+  // API key status
+  const kstEl = document.getElementById('kst');
+  if (kR.hasKey) {
+    if (kstEl) kstEl.textContent = '✓ Active: ' + (kR.masked || '');
   } else {
-    // Always open a fresh terminal even on restore
+    if (kstEl) kstEl.textContent = '⚠ No API key — add in Settings';
+    // Non-blocking warning (don't block boot)
+    setTimeout(() => notif('Add your Anthropic API key in Settings → API Key to enable AI', 'warn'), 2000);
+  }
+
+  // Apply saved settings & memory
+  loadSettingsFromMem(mR);
+  updateMemCount(mR);
+  loadSavedPrefs();
+
+  // UI components
+  buildPalCmds();
+  renderExts();
+  loadSnippets();
+
+  // Phase 3 — workspace restore
+  const wsRestored = await restoreWorkspace().catch(() => false);
+  if (!wsRestored) {
+    showWelcome(mR);
+    showBottom();
+    setBpTab('terminal');
+    newTermTab();
+    setTimeout(() => setBpTab('problems'), 500);
+  } else {
     newTermTab();
   }
-  // Extended features
-  setupMultiCursor();setupHoverDocs();setupColumnSelect();
-  loadRecentFiles();renderRecentFiles();
-  renderKeybindEditor();loadWSSettings();
-  // Initialize project context toggle
-  const pctBtn=document.getElementById('proj-ctx-toggle');if(pctBtn)pctBtn.classList.toggle('on',projectCtxEnabled);
-  updateProjCtxIndicator();
-  buildFuzzyList();
+
+  // Phase 4 — extended features (after main UI is up)
+  setupMultiCursor();
+  setupHoverDocs();
+  setupColumnSelect();
   setupTermHResizer();
+  renderKeybindEditor();
+  loadWSSettings();
+
+  // Recent files in dashboard
+  loadRecentFiles();
+  renderRecentFiles();
+
+  // Project context toggle
+  const pctBtn = document.getElementById('proj-ctx-toggle');
+  if (pctBtn) pctBtn.classList.toggle('on', projectCtxEnabled);
+  updateProjCtxIndicator();
+
+  // Fuzzy file list
+  buildFuzzyList();
+
+  // Sort button
   const nameBtn = document.getElementById('ftc-sort-name');
   if (nameBtn) nameBtn.classList.add('on');
+
+  // Editor scroll + key events
   const ed = document.getElementById('editor');
   if (ed) {
     ed.addEventListener('scroll', () => { clearTimeout(stickyTimer); stickyTimer = setTimeout(updateStickyScroll, 80); });
@@ -5007,6 +5784,32 @@ async function boot() {
       showLightbulb(ed);
     });
   }
+
+  // Phase 5 — background auto-init (non-blocking, deferred 1 second)
+  setTimeout(async () => {
+    // Git branch (only if a folder is open)
+    try { if (curDir && typeof loadGit === 'function') await loadGit(); } catch {}
+    // Memory stats
+    try { const m2 = await api('GET', '/api/memory'); updateMemCount(m2); } catch {}
+    // Check Paystack callback in URL
+    checkPaystackReturn();
+    // Load billing plans in background (so billing page is fast when opened)
+    try { await renderBillingPlans(); } catch {}
+    // Dashboard stats refresh
+    try {
+      const m = await api('GET', '/api/memory').catch(() => ({}));
+      const dsSessions = document.getElementById('ds-sessions'); if (dsSessions) dsSessions.textContent = m.sessions || 0;
+      const dsChats    = document.getElementById('ds-chats');    if (dsChats)    dsChats.textContent    = m.chats    || 0;
+      const dsLangs    = document.getElementById('ds-langs');    if (dsLangs)    dsLangs.textContent    = (m.langs?.length) || 0;
+      const dsFiles    = document.getElementById('ds-files');    if (dsFiles)    dsFiles.textContent    = (m.facts?.length) || 0;
+    } catch {}
+    // Show welcome notification after everything is ready
+    addSystemNotif(
+      'AXIOM Ready ✦',
+      `Signed in as ${USER?.name || USER?.email || 'user'}. Everything is ready.`,
+      '✦'
+    );
+  }, 1000);
 }
 
 function loadSettingsFromMem(m){if(!m)return;document.getElementById('s-name')&&(document.getElementById('s-name').value=m.identity?.name||'');}
@@ -5043,21 +5846,8 @@ async function showWelcome(m){
     }
   }catch(e){}
 
-  // Load recent files for dashboard
-  try{
-    const recent=JSON.parse(localStorage.getItem('ax_recent_files')||'[]');
-    if(recent.length){
-      const section=document.getElementById('dash-files-section');if(section)section.style.display='block';
-      const el=document.getElementById('dash-recent-files');
-      if(el)el.innerHTML=recent.slice(0,8).map(f=>
-        `<div class="dash-recent-item" onclick="openFile('${esc(f.path)}','${esc(f.name)}')">
-          <span style="color:var(--ac)">📄</span>
-          <span class="dash-recent-name">${esc(f.name)}</span>
-          <span class="dash-recent-time">${f.time?new Date(f.time).toLocaleDateString():''}</span>
-        </div>`
-      ).join('');
-    }
-  }catch(e){}
+  // Load recent files for dashboard (uses unified renderRecentFiles)
+  renderRecentFiles();
 
   // Welcome message in AI chat
   let msg;
@@ -8998,25 +9788,40 @@ async function uninstallExtension(extensionId){
   }
 }
 
+const _legacyToggleExt = toggleExt; // save reference before override
 async function toggleExtension(extensionId){
   const ext=installedExtensionsNew[extensionId];
   if(ext){
-    const action=ext.enabled?'disable':'enable';
+    // Extension is installed — uninstall it
     try{
-      const r=await api('POST','/api/extensions/'+action,{id:extensionId});
+      const r=await api('POST','/api/extensions/uninstall',{id:extensionId});
       if(r.ok){
-        notif('Extension '+action+'d','ok');
+        notif('Extension uninstalled','ok');
         await loadInstalledExtensions();
         await loadExtensionMarketplace();
       }else{
-        notif('Failed to '+action+': '+r.error,'err');
+        notif('Uninstall failed: '+r.error,'err');
       }
     }catch(e){
-      notif('Failed to '+action+': '+e.message,'err');
+      notif('Uninstall failed: '+e.message,'err');
     }
   } else {
-    // Fall back to old system for compatibility
-    toggleExt(extensionId);
+    // Extension is not installed — install it
+    const mktExt=marketplaceExtensions.find(m=>m.id===extensionId)||(EXTS.find(x=>x.id===extensionId)||{});
+    try{
+      const r=await api('POST','/api/extensions/install',{id:extensionId,name:mktExt.name||extensionId,publisher:mktExt.publisher||mktExt.pub||''});
+      if(r.ok){
+        notif('Extension installed: '+(r.name||extensionId),'ok');
+        await loadInstalledExtensions();
+        await loadExtensionMarketplace();
+      }else if(!r.error){
+        _legacyToggleExt(extensionId);
+      }else{
+        notif('Install failed: '+r.error,'err');
+      }
+    }catch(e){
+      notif('Install failed: '+e.message,'err');
+    }
   }
 }
 
@@ -9056,14 +9861,60 @@ function loadSavedPrefs(){
   const theme=localStorage.getItem('ax_theme')||'dark';const ts=document.getElementById('s-theme');if(ts)ts.value=theme;document.body.setAttribute('data-t',theme);document.getElementById('hltheme').href=HLJS_THEMES[theme]||HLJS_THEMES.dark;
   const saved=localStorage.getItem('ax_ext_installed');if(saved){try{extInst=new Set(JSON.parse(saved));}catch(e){}}
   try{const p=JSON.parse(localStorage.getItem('ax_prefs')||'{}');if(p.fs){document.getElementById('s-fs').value=p.fs;edFS=p.fs;}if(p.ts){document.getElementById('s-ts').value=p.ts;edTS=p.ts;}if(p.wrap)document.getElementById('s-wrap').value=p.wrap;if(p.minimap)document.getElementById('s-minimap').value=p.minimap;if(p.indent)document.getElementById('s-indent').value=p.indent;if(p.bracket)document.getElementById('s-bracket').value=p.bracket;if(p.lint)document.getElementById('s-lint').value=p.lint;applyPrefs();}catch(e){}
+  // Pull settings from the standalone Settings page and apply them.
+  applyExternalSettings(JSON.parse(localStorage.getItem('ax_settings_v1')||'{}'));
+  fetch('/api/settings',{headers:{'X-Axiom-Token':window.AX_TOKEN||localStorage.getItem('ax_token')||'','X-User-Token':localStorage.getItem('ax_user_token')||''}}).then(r=>r.json()).then(j=>{if(j&&j.settings)applyExternalSettings(j.settings);}).catch(()=>{});
 }
+
+// ═══════════════════════════════════════════════════════
+// SETTINGS PAGE — live sync from /settings.html
+// ═══════════════════════════════════════════════════════
+function _setEl(id,val){const el=document.getElementById(id);if(el)el.value=val;}
+function applyExternalSettings(s){
+  if(!s||typeof s!=='object')return;
+  if(s.fontSize!=null){_setEl('s-fs',s.fontSize);edFS=+s.fontSize;}
+  if(s.tabSize!=null){_setEl('s-ts',s.tabSize);edTS=+s.tabSize;}
+  if(s.wordWrap)_setEl('s-wrap',s.wordWrap);
+  if(s.minimap)_setEl('s-minimap',s.minimap);
+  if(s.indentGuides)_setEl('s-indent',s.indentGuides);
+  if(s.bracketMatch)_setEl('s-bracket',s.bracketMatch);
+  if(s.lintOnType)_setEl('s-lint',s.lintOnType);
+  if(s.stickyScroll)_setEl('s-sticky',s.stickyScroll);
+  if(s.vimMode!=null)_setEl('s-vim',s.vimMode);
+  if(s.zenMode!=null)_setEl('s-zen',s.zenMode);
+  if(s.theme){_setEl('s-theme',s.theme);try{applyTheme();}catch(e){}}
+  if(s.fontFamily){[1,2].forEach(p=>{const ed=getEd(p);if(ed)ed.style.fontFamily="'"+s.fontFamily+"', monospace";});}
+  if(s.lineHeight){[1,2].forEach(p=>{const ed=getEd(p);if(ed)ed.style.lineHeight=s.lineHeight;});}
+  if(s.renderWhitespace){[1,2].forEach(p=>{const ed=getEd(p);if(ed)ed.classList.toggle('show-ws',s.renderWhitespace!=='off');});}
+  if(s.lineNumbers){[1,2].forEach(p=>{const n=document.getElementById('lnums-'+p);if(n)n.style.display=(s.lineNumbers==='off')?'none':'';});}
+  if(s.ghostCompletion!=null)window.GHOST_ENABLED=(s.ghostCompletion==='on'||s.ghostCompletion===true);
+  if(s.ghostDelay!=null&&!isNaN(+s.ghostDelay))window.GHOST_DELAY=+s.ghostDelay;
+  if(s.aiModel)window.AI_MODEL=s.aiModel;
+  if(s.aiMaxTokens!=null&&!isNaN(+s.aiMaxTokens))window.AI_MAX_TOKENS=+s.aiMaxTokens;
+  if(s.aiSystemExtra!=null)window.AI_SYS_EXTRA=s.aiSystemExtra;
+  if(s.autosave!=null)window.AUTOSAVE_ON=(s.autosave==='on'||s.autosave===true);
+  if(s.autosaveDelay!=null&&!isNaN(+s.autosaveDelay))window.AUTOSAVE_DELAY=+s.autosaveDelay;
+  try{applyPrefs();}catch(e){}
+}
+function openSettingsPage(){
+  const w=window.open('/settings.html','axiom-settings','width=960,height=760,menubar=no,toolbar=no,location=no');
+  if(!w){notif('Pop-up blocked — opening in current tab','warn');location.href='/settings.html';}
+}
+// Listen for live changes from the standalone Settings page
+try{
+  const _axCh=new BroadcastChannel('ax_settings_channel');
+  _axCh.onmessage=(ev)=>{if(ev.data&&ev.data.type==='settings')applyExternalSettings(ev.data.settings||{});};
+}catch(e){}
+window.addEventListener('storage',ev=>{
+  if(ev.key==='ax_settings_v1'){try{applyExternalSettings(JSON.parse(ev.newValue||'{}'));}catch(e){}}
+});
 
 // ═══════════════════════════════════════════════════════
 // RUN
 // ═══════════════════════════════════════════════════════
 function showBottom(){document.getElementById('bp').classList.add('on');if(typeof saveWorkspace==='function')saveWorkspace();}
 function toggleBottom(){document.getElementById('bp').classList.toggle('on');if(activeTerm&&terms[activeTerm])setTimeout(()=>{try{terms[activeTerm].fitAddon.fit();}catch(e){}},50);if(typeof saveWorkspace==='function')saveWorkspace();}
-function setBpTab(t){['problems','output','terminal','debug','repl'].forEach(p=>{document.getElementById('bp-'+p)?.classList.toggle('on',p===t);document.getElementById('bpt-'+p)?.classList.toggle('on',p===t);});const term=document.getElementById('bp-terminal');if(term)term.classList.toggle('on',t==='terminal');const out=document.getElementById('bp-output');if(out)out.classList.toggle('on',t==='output');if(t==='terminal')focusActiveTerm();if(t==='repl')setTimeout(()=>{document.getElementById('repl-inp')?.focus();},50);}
+function setBpTab(t){['problems','output','terminal','debug','repl','ports'].forEach(p=>{document.getElementById('bp-'+p)?.classList.toggle('on',p===t);document.getElementById('bpt-'+p)?.classList.toggle('on',p===t);});const term=document.getElementById('bp-terminal');if(term)term.classList.toggle('on',t==='terminal');const out=document.getElementById('bp-output');if(out)out.classList.toggle('on',t==='output');if(t==='terminal')focusActiveTerm();if(t==='repl')setTimeout(()=>{document.getElementById('repl-inp')?.focus();},50);}
 async function runCur(){const tab=tabs.find(t=>t.id===atab);const code=getEd(1).value;if(!code.trim())return notif('Nothing to run','warn');const lang=tab?getLangKey(tab.name):'python';setBpTab('output');showBottom();const out=document.getElementById('bp-output');out.textContent='Running '+( tab?.name||'code')+'…';out.style.color='var(--tx3)';const r=await api('POST','/api/run',{code,lang});out.textContent=r.output||r.error||'No output';out.style.color=r.error?'var(--red)':'var(--green)';}
 
 // ═══════════════════════════════════════════════════════
@@ -9582,8 +10433,8 @@ function clearMultiCursors(){extraCursors=[];multiCursorActive=false;document.qu
 // FUZZY FILE PICKER — Ctrl+Shift+O
 // ═══════════════════════════════════════════════════════════════
 let fuzzyFiles=[],fuzzyFiltered=[],fuzzyIdx=0,recentFiles=[];
-function loadRecentFiles(){try{recentFiles=JSON.parse(localStorage.getItem('ax_recent')||'[]');}catch(e){recentFiles=[];}}
-function saveRecentFile(path,name){loadRecentFiles();recentFiles=recentFiles.filter(f=>f.path!==path);recentFiles.unshift({path,name,ts:Date.now()});recentFiles=recentFiles.slice(0,20);localStorage.setItem('ax_recent',JSON.stringify(recentFiles));}
+function loadRecentFiles(){try{recentFiles=JSON.parse(localStorage.getItem('ax_recent')||localStorage.getItem('ax_recent_files')||'[]');}catch(e){recentFiles=[];}}
+function saveRecentFile(path,name){loadRecentFiles();recentFiles=recentFiles.filter(f=>f.path!==path);recentFiles.unshift({path,name,ts:Date.now()});recentFiles=recentFiles.slice(0,30);localStorage.setItem('ax_recent',JSON.stringify(recentFiles));localStorage.setItem('ax_recent_files',JSON.stringify(recentFiles));}
 function openFuzzy(){document.getElementById('fuzzy-ov').classList.add('on');document.getElementById('fuzzy-inp').value='';document.getElementById('fuzzy-inp').focus();buildFuzzyList();filterFuzzy();}
 function closeFuzzy(){document.getElementById('fuzzy-ov')?.classList.remove('on');}
 async function buildFuzzyList(){if(!curDir){fuzzyFiles=recentFiles;return;}const r=await api('GET',`/api/files?path=${encodeURIComponent(curDir)}`);fuzzyFiles=(r.entries||[]).filter(e=>e.type==='file').map(e=>({path:e.path,name:e.name}));}
@@ -9597,7 +10448,23 @@ function filterFuzzy(){
 }
 function fuzzyKey(e){if(e.key==='ArrowDown'){fuzzyIdx=Math.min(fuzzyIdx+1,fuzzyFiltered.length-1);filterFuzzy();}else if(e.key==='ArrowUp'){fuzzyIdx=Math.max(fuzzyIdx-1,0);filterFuzzy();}else if(e.key==='Enter'){const f=fuzzyFiltered[fuzzyIdx];if(f)openFuzzyFile(f.path,f.name);}else if(e.key==='Escape')closeFuzzy();}
 async function openFuzzyFile(path,name){closeFuzzy();if(path){await openFile(path,name);saveRecentFile(path,name);}}
-function renderRecentFiles(){loadRecentFiles();const sect=document.getElementById('recent-files-section');const list=document.getElementById('recent-files-list');if(!recentFiles.length){if(sect)sect.style.display='none';return;}if(sect)sect.style.display='block';if(!list)return;const timeAgo=ts=>{const s=Math.floor((Date.now()-ts)/1000);return s<60?'now':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':Math.floor(s/86400)+'d';};list.innerHTML=recentFiles.slice(0,8).map(f=>`<div class="recent-item" onclick="openFuzzyFile('${esc(f.path)}','${esc(f.name)}')"><span style="font-size:13px">${getIcon(f.name)}</span><div style="flex:1;min-width:0"><div class="recent-file-name">${esc(f.name)}</div><div class="recent-file-path">${esc((f.path||'').replace((curDir||'')+'/','')||f.path||'')}</div></div><span class="recent-file-time">${timeAgo(f.ts)}</span></div>`).join('');}
+function renderRecentFiles(){
+  loadRecentFiles();
+  // Recent files ONLY appear in the welcome dashboard — never in the sidebar
+  const dashEl = document.getElementById('dash-recent-files');
+  const dashSection = document.getElementById('dash-files-section');
+  if (!recentFiles.length) { if(dashSection) dashSection.style.display='none'; return; }
+  if (dashSection) dashSection.style.display = 'block';
+  if (!dashEl) return;
+  const timeAgo = ts => { const s=Math.floor((Date.now()-ts)/1000); return s<60?'now':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h':Math.floor(s/86400)+'d'; };
+  dashEl.innerHTML = recentFiles.slice(0,8).map(f =>
+    `<div class="dash-recent-item" onclick="openFuzzyFile('${esc(f.path)}','${esc(f.name)}')">
+      <span style="color:var(--ac);font-size:13px">${getIcon(f.name)}</span>
+      <span class="dash-recent-name">${esc(f.name)}</span>
+      <span class="dash-recent-time">${timeAgo(f.ts||f.time||Date.now())}</span>
+    </div>`
+  ).join('');
+}
 
 // ═══════════════════════════════════════════════════════════════
 // HOVER DOCS
@@ -13608,12 +14475,11 @@ function toggleFormatOnSave(){
   notif('Format on save: '+(formatOnSave?'ON':'OFF'),'ok');
 }
 
-// Hook into save
-const _origSaveFile=saveFile;
-saveFile=async function(){
+// saveFile = saveCur wrapper with optional format-on-save
+async function saveFile(){
   if(formatOnSave&&activeFile){await lspFormat();}
-  return _origSaveFile();
-};
+  return saveCur();
+}
 
 // ═══════════════════════════════════════════════════════
 // MULTI-LINE GHOST TEXT
@@ -15135,6 +16001,1096 @@ function switchProfile(name){
     buildPalCmds=function(){_prev();palCmds.push(...extra);};
   }catch(e){console.warn('addCursorParity:',e);}
 })();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════
+     AXIOM ELECTRON BRIDGE + PAYSTACK INLINE SDK
+     Wires native desktop features and Paystack inline checkout.
+     ═══════════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+// ─── Electron Detection & Bridge ──────────────────────────
+(function initElectronBridge() {
+  if (typeof window.axiomElectron === 'undefined') return;
+  const AE = window.axiomElectron;
+  console.log('[AXIOM] Running in Electron desktop mode');
+
+  // Override openFolder() to use native dialog
+  window._electronOpenFolder = function(folderPath) {
+    if (folderPath && typeof openFolderPath === 'function') openFolderPath(folderPath);
+    else if (folderPath && typeof loadFolder === 'function')  loadFolder(folderPath);
+  };
+  window.openFolder = async function() {
+    const p = await AE.openFolder();
+    if (p) window._electronOpenFolder(p);
+  };
+
+  // Override openFile links to use native dialog
+  window._electronOpenFiles = async function(paths) {
+    if (!Array.isArray(paths)) return;
+    for (const p of paths) {
+      if (typeof openFilePath === 'function') openFilePath(p);
+    }
+  };
+
+  // Menu bar keyboard shortcuts forwarded from Electron native menu
+  AE.on('menu:new-file',       () => { if(typeof newTab==='function') newTab(); });
+  AE.on('menu:save',           () => { if(typeof saveFile==='function') saveFile(); });
+  AE.on('menu:save-as',        () => { if(typeof saveAs==='function') saveAs(); });
+  AE.on('menu:save-all',       () => { if(typeof saveAll==='function') saveAll(); });
+  AE.on('menu:close-tab',      () => { if(typeof closeTab==='function') closeTab(); });
+  AE.on('menu:find',           () => { if(typeof toggleFind==='function') toggleFind(); });
+  AE.on('menu:replace',        () => { if(typeof openFindReplace==='function') openFindReplace(); });
+  AE.on('menu:find-in-files',  () => { if(typeof abClick==='function') abClick('search'); });
+  AE.on('menu:comment',        () => { if(typeof toggleComment==='function') toggleComment(); });
+  AE.on('menu:format',         () => { if(typeof formatDoc==='function') formatDoc(); });
+  AE.on('menu:palette',        () => { if(typeof openPalette==='function') openPalette(); });
+  AE.on('menu:quick-open',     () => { if(typeof openFuzzy==='function') openFuzzy(); });
+  AE.on('menu:panel-files',    () => { if(typeof abClick==='function') abClick('files'); });
+  AE.on('menu:panel-search',   () => { if(typeof abClick==='function') abClick('search'); });
+  AE.on('menu:panel-git',      () => { if(typeof setPanel==='function') setPanel('git'); });
+  AE.on('menu:terminal',       () => { if(typeof newTermTab==='function') newTermTab(); });
+  AE.on('menu:ai-panel',       () => { const p=document.getElementById('ai-panel'); if(p) p.classList.toggle('closed'); });
+  AE.on('menu:sidebar',        () => { if(typeof togglePanel==='function') togglePanel(); });
+  AE.on('menu:zen',            () => { if(typeof toggleZen==='function') toggleZen(); });
+  AE.on('menu:split',          () => { if(typeof toggleSplit==='function') toggleSplit(); });
+  AE.on('menu:run',            () => { if(typeof runCur==='function') runCur(); });
+  AE.on('menu:debug',          () => { if(typeof startDebug==='function') startDebug(); });
+  AE.on('menu:debug-stop',     () => { if(typeof stopDebug==='function') stopDebug(); });
+  AE.on('menu:debug-step',     () => { if(typeof dbgStep==='function') dbgStep('next'); });
+  AE.on('menu:debug-into',     () => { if(typeof dbgStep==='function') dbgStep('in'); });
+  AE.on('menu:breakpoint',     () => { if(typeof toggleBreakpoint==='function') toggleBreakpoint(); });
+  AE.on('menu:new-term',       () => { if(typeof newTermTab==='function') newTermTab(); });
+  AE.on('menu:welcome',        () => { if(typeof showWelcome==='function') showWelcome(); });
+  AE.on('menu:keybindings',    () => { if(typeof openSettings==='function') openSettings('keyboard'); });
+  AE.on('menu:check-updates',  () => notif('Checking for updates…', 'info'));
+
+  // File opened from OS (drag & drop onto icon, etc.)
+  AE.on('app:open-file', (p) => { if(typeof openFilePath==='function') openFilePath(p); });
+
+  // Deep link: axiom://open?path=/some/path
+  AE.on('app:deep-link', (url) => {
+    try {
+      const u = new URL(url);
+      const p = u.searchParams.get('path');
+      if (p && typeof openFilePath === 'function') openFilePath(p);
+    } catch {}
+  });
+
+  // Add Electron indicator to the title bar
+  const tb = document.querySelector('.tb-project');
+  if (tb) tb.title = 'AXIOM Desktop — ' + (AE.isElectron ? 'Native' : 'Web');
+
+  // Apply dark theme to native elements
+  document.addEventListener('axiom:theme-changed', e => AE.setTheme(e.detail));
+})();
+
+// ─── Paystack Inline Popup (replaces redirect) ──────────────
+// Override the existing initPaystackPay to use inline iframe popup.
+// Falls back to redirect if PaystackPop SDK not loaded yet.
+window.initPaystackPay = async function() {
+  if (!window.selectedPlan) return (typeof notif==='function' ? notif('Select a plan first','warn') : alert('Select a plan first'));
+  const statusEl = document.getElementById('paystack-status');
+  if (statusEl) { statusEl.textContent = 'Initializing…'; statusEl.style.color = 'var(--ac)'; }
+
+  try {
+    // Get public key from server config
+    const cfg = await (typeof api==='function' ? api('GET','/api/billing/paystack/config') : fetch('/api/billing/paystack/config').then(r=>r.json()));
+    const pubKey = cfg?.public_key || '';
+    if (!pubKey || pubKey.length < 10) {
+      if (statusEl) { statusEl.textContent = 'Configure Paystack keys first'; statusEl.style.color = 'var(--yellow)'; }
+      return (typeof showPaystackConfig==='function' ? showPaystackConfig() : alert('Add your Paystack public key first (Paystack keys button)'));
+    }
+
+    // Initialize payment on server (gets reference + amount)
+    const r = await (typeof api==='function'
+      ? api('POST','/api/billing/paystack/initialize', { plan: window.selectedPlan, callback_url: window.location.origin + '/?paystack_verify=1' })
+      : fetch('/api/billing/paystack/initialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:window.selectedPlan})}).then(x=>x.json())
+    );
+    if (!r.ok || !r.reference) {
+      if (statusEl) { statusEl.textContent = r.error || 'Init failed'; statusEl.style.color = 'var(--red)'; }
+      return;
+    }
+
+    // Use inline popup if PaystackPop is available
+    if (typeof PaystackPop !== 'undefined') {
+      const handler = PaystackPop.setup({
+        key:      pubKey,
+        email:    window.USER?.email || prompt('Enter your email for receipt:',''),
+        amount:   r.amount_kobo || (r.amount * 100),
+        currency: r.currency || 'KES',
+        ref:      r.reference,
+        label:    'AXIOM IDE — ' + (window.selectedPlan || ''),
+        metadata: { plan: window.selectedPlan, user_id: window.USER?.id },
+        callback: async function(response) {
+          if (statusEl) { statusEl.textContent = 'Verifying…'; statusEl.style.color = 'var(--ac)'; }
+          const vr = await (typeof api==='function'
+            ? api('GET','/api/billing/paystack/verify?reference='+encodeURIComponent(response.reference))
+            : fetch('/api/billing/paystack/verify?reference='+encodeURIComponent(response.reference)).then(x=>x.json())
+          );
+          if (vr.ok && vr.plan) {
+            if (window.USER) window.USER.plan = vr.plan;
+            if (statusEl) { statusEl.textContent = '✓ Payment successful!'; statusEl.style.color = 'var(--green)'; }
+            if (typeof notif==='function') notif('Upgraded to ' + vr.plan.charAt(0).toUpperCase()+vr.plan.slice(1) + ' plan! 🎉','ok');
+            if (typeof loadMpesaTxns==='function') loadMpesaTxns();
+            if (typeof renderUserAvatar==='function') renderUserAvatar();
+            const b = document.getElementById('trial-banner'); if(b) b.remove();
+          } else {
+            if (statusEl) { statusEl.textContent = vr.error || 'Verification failed'; statusEl.style.color = 'var(--red)'; }
+          }
+        },
+        onClose: function() {
+          if (statusEl && statusEl.textContent === 'Initializing…') {
+            statusEl.textContent = 'Payment cancelled'; statusEl.style.color = 'var(--tx3)';
+          }
+        }
+      });
+      handler.openIframe();
+    } else {
+      // Fallback: open Paystack in new tab / Electron window
+      if (statusEl) { statusEl.textContent = 'Opening Paystack…'; statusEl.style.color = 'var(--green)'; }
+      if (window.axiomElectron) {
+        window.axiomElectron.openExternal(r.authorization_url);
+      } else {
+        window.open(r.authorization_url, '_blank');
+      }
+      if (typeof notif==='function') notif('Complete payment then return here','info');
+      if (r.reference && typeof pollPaystackVerify==='function') pollPaystackVerify(r.reference);
+    }
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.color = 'var(--red)'; }
+    console.error('[Paystack]', e);
+  }
+};
+
+// ─── Paystack Config Setup Guide ──────────────────────────
+// Overwrites the basic modal with a more helpful version
+window.showPaystackConfig = function() {
+  const html = `
+<div id="paystack-config-modal" style="
+  position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;
+  display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(8px)
+" onclick="if(event.target===this)this.remove()">
+  <div style="
+    background:rgba(14,18,40,.98);border:1px solid rgba(34,211,238,.2);
+    border-radius:16px;padding:28px;width:440px;max-width:92vw;
+    box-shadow:0 24px 64px rgba(0,0,0,.7)
+  ">
+    <div style="font-size:16px;font-weight:700;color:#eef1ff;margin-bottom:4px">
+      🔑 Paystack API Keys
+    </div>
+    <div style="font-size:12px;color:rgba(170,178,216,.6);margin-bottom:18px;line-height:1.6">
+      Get your keys from
+      <a href="https://dashboard.paystack.com/#/settings/developers" target="_blank"
+         style="color:#22d3ee">dashboard.paystack.com → Settings → API Keys</a>.<br>
+      Use <strong style="color:#fde047">test keys</strong> (pk_test_… / sk_test_…) for development.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <div style="font-size:11px;color:rgba(170,178,216,.5);margin-bottom:4px;letter-spacing:.06em;text-transform:uppercase">Public Key</div>
+        <input type="text" id="ps-pubkey"
+          style="width:100%;padding:10px 14px;background:rgba(255,255,255,.05);border:1px solid rgba(180,195,255,.14);
+                 border-radius:8px;color:#eef1ff;font-size:13px;outline:none;font-family:'JetBrains Mono',monospace"
+          placeholder="pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"/>
+      </div>
+      <div>
+        <div style="font-size:11px;color:rgba(170,178,216,.5);margin-bottom:4px;letter-spacing:.06em;text-transform:uppercase">Secret Key</div>
+        <input type="password" id="ps-seckey"
+          style="width:100%;padding:10px 14px;background:rgba(255,255,255,.05);border:1px solid rgba(180,195,255,.14);
+                 border-radius:8px;color:#eef1ff;font-size:13px;outline:none;font-family:'JetBrains Mono',monospace"
+          placeholder="sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"/>
+      </div>
+      <div style="background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.15);border-radius:8px;padding:10px 14px;font-size:11px;color:rgba(170,178,216,.7);line-height:1.6">
+        ⚠ Your secret key is encrypted at rest and never exposed to the browser.
+        The public key is used for the inline checkout popup.
+      </div>
+      <button onclick="window._savePaystackConfig()"
+        style="padding:12px;background:linear-gradient(135deg,#22d3ee,#a78bfa);border:none;
+               border-radius:8px;color:#000;font-weight:700;font-size:13px;cursor:pointer;
+               box-shadow:0 4px 16px rgba(34,211,238,.3)">
+        Save Configuration
+      </button>
+    </div>
+  </div>
+</div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  // Pre-fill
+  (typeof api==='function' ? api('GET','/api/billing/paystack/config') : Promise.resolve({}))
+    .then(r => { if (r?.public_key) { const el=document.getElementById('ps-pubkey'); if(el) el.value=r.public_key; }});
+};
+
+window._savePaystackConfig = async function() {
+  const pub = document.getElementById('ps-pubkey')?.value?.trim();
+  const sec = document.getElementById('ps-seckey')?.value?.trim();
+  if (!pub) return;
+  const r = await (typeof api==='function'
+    ? api('POST','/api/billing/paystack/config',{public_key:pub,secret_key:sec||''})
+    : fetch('/api/billing/paystack/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({public_key:pub,secret_key:sec||''})}).then(x=>x.json())
+  );
+  if (r.ok) {
+    if(typeof notif==='function') notif('Paystack configured ✓','ok');
+    document.getElementById('paystack-config-modal')?.remove();
+  } else {
+    if(typeof notif==='function') notif(r.error||'Save failed','err');
+  }
+};
+
+// ─── Window title follows active file ─────────────────────
+document.addEventListener('axiom:tab-changed', e => {
+  if (window.axiomElectron) {
+    const name = e.detail?.name || 'AXIOM IDE';
+    window.axiomElectron.setTitle(name + ' — AXIOM IDE');
+  }
+});
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// MONACO EDITOR — Real Code Editor Integration
+// ═══════════════════════════════════════════════════════════════
+
+const MONACO_LANG_MAP = {
+  js:'javascript',jsx:'javascript',javascript:'javascript',
+  ts:'typescript',tsx:'typescript',typescript:'typescript',
+  py:'python',python:'python',python3:'python',
+  html:'html',htm:'html',css:'css',scss:'scss',less:'less',
+  json:'json',jsonc:'json',
+  md:'markdown',markdown:'markdown',
+  sh:'shell',bash:'shell',zsh:'shell',
+  go:'go',rs:'rust',rust:'rust',
+  sql:'sql',yaml:'yaml',yml:'yaml',
+  java:'java',kt:'kotlin',kotlin:'kotlin',
+  php:'php',rb:'ruby',ruby:'ruby',
+  c:'c',h:'c',cpp:'cpp','c++':'cpp',cc:'cpp',
+  swift:'swift',dart:'dart',
+  xml:'xml',svg:'xml',
+  dockerfile:'dockerfile',Dockerfile:'dockerfile',
+  toml:'ini',ini:'ini',env:'ini',
+  graphql:'graphql',gql:'graphql',
+  vue:'html',svelte:'html',
+};
+
+function getMonacoLang(filename) {
+  if (!filename) return 'plaintext';
+  const base = filename.split('/').pop();
+  if (base === 'Dockerfile' || base.startsWith('Dockerfile')) return 'dockerfile';
+  const ext = base.split('.').pop().toLowerCase();
+  const byExt = MONACO_LANG_MAP[ext];
+  if (byExt) return byExt;
+  const byLang = typeof getLangKey === 'function' ? getLangKey(filename) : '';
+  return MONACO_LANG_MAP[byLang] || 'plaintext';
+}
+
+function createMonacoProxy(pane, editor) {
+  return new Proxy({}, {
+    get(_, prop) {
+      const model = editor.getModel();
+      if (prop === 'value') return model ? model.getValue() : '';
+      if (prop === 'selectionStart') {
+        const sel = editor.getSelection();
+        return model ? model.getOffsetAt(sel.getStartPosition()) : 0;
+      }
+      if (prop === 'selectionEnd') {
+        const sel = editor.getSelection();
+        return model ? model.getOffsetAt(sel.getEndPosition()) : 0;
+      }
+      if (prop === 'scrollTop') return editor.getScrollTop();
+      if (prop === 'scrollLeft') return editor.getScrollLeft();
+      if (prop === 'scrollHeight') return editor.getScrollHeight();
+      if (prop === 'scrollWidth') return editor.getScrollWidth();
+      if (prop === 'clientHeight') return editor.getLayoutInfo().height;
+      if (prop === 'clientWidth') return editor.getLayoutInfo().width;
+      if (prop === 'style') return { cssText: '', set cssText(_) {} };
+      if (prop === 'focus') return () => editor.focus();
+      if (prop === 'blur') return () => editor.getContainerDomNode()?.blur();
+      if (prop === 'setSelectionRange') return (start, end) => {
+        if (!model) return;
+        const s = model.getPositionAt(start);
+        const e = model.getPositionAt(end);
+        editor.setSelection(new monaco.Range(s.lineNumber, s.column, e.lineNumber, e.column));
+        editor.revealRangeInCenterIfOutsideViewport(
+          new monaco.Range(s.lineNumber, s.column, e.lineNumber, e.column)
+        );
+      };
+      if (prop === 'addEventListener' || prop === 'removeEventListener') return () => {};
+      if (prop === '_monaco') return editor;
+      if (prop === '_pane') return pane;
+      if (prop === 'tagName') return 'TEXTAREA';
+      return undefined;
+    },
+    set(_, prop, value) {
+      const model = editor.getModel();
+      if (prop === 'value') {
+        if (model) model.pushEditOperations([], [{ range: model.getFullModelRange(), text: value }], () => null);
+      } else if (prop === 'selectionStart') {
+        if (model) {
+          const endOff = model.getOffsetAt(editor.getSelection().getEndPosition());
+          const s = model.getPositionAt(value);
+          const e = model.getPositionAt(endOff);
+          editor.setSelection(new monaco.Range(s.lineNumber, s.column, e.lineNumber, e.column));
+        }
+      } else if (prop === 'selectionEnd') {
+        if (model) {
+          const startOff = model.getOffsetAt(editor.getSelection().getStartPosition());
+          const s = model.getPositionAt(startOff);
+          const e = model.getPositionAt(value);
+          editor.setSelection(new monaco.Range(s.lineNumber, s.column, e.lineNumber, e.column));
+        }
+      } else if (prop === 'scrollTop') {
+        editor.setScrollTop(value);
+      }
+      return true;
+    }
+  });
+}
+
+function waitForMonaco(timeout = 15000) {
+  return new Promise(resolve => {
+    if (window._monacoLoaded && typeof monaco !== 'undefined') { resolve(true); return; }
+    const start = Date.now();
+    const iv = setInterval(() => {
+      if ((window._monacoLoaded && typeof monaco !== 'undefined') || Date.now() - start > timeout) {
+        clearInterval(iv);
+        resolve(!!(window._monacoLoaded));
+      }
+    }, 100);
+  });
+}
+
+function defineMonacoTheme() {
+  monaco.editor.defineTheme('axiom-dark', {
+    base: 'vs-dark', inherit: true,
+    rules: [
+      { token: 'comment', foreground: '4a5578', fontStyle: 'italic' },
+      { token: 'keyword', foreground: 'a78bfa', fontStyle: 'bold' },
+      { token: 'keyword.control', foreground: 'c4b5fd' },
+      { token: 'string', foreground: 'fb923c' },
+      { token: 'string.escape', foreground: 'fbbf24' },
+      { token: 'number', foreground: '4ade80' },
+      { token: 'type', foreground: '22d3ee' },
+      { token: 'class', foreground: 'fbbf24' },
+      { token: 'function', foreground: '60a5fa' },
+      { token: 'variable', foreground: 'e2e8f0' },
+      { token: 'operator', foreground: '94a3b8' },
+      { token: 'delimiter', foreground: '64748b' },
+      { token: 'tag', foreground: 'f87171' },
+      { token: 'attribute.name', foreground: 'a78bfa' },
+      { token: 'attribute.value', foreground: 'fb923c' },
+    ],
+    colors: {
+      'editor.background': '#0b0e21',
+      'editor.foreground': '#c9d1d9',
+      'editor.lineHighlightBackground': '#ffffff08',
+      'editor.lineHighlightBorder': '#ffffff00',
+      'editor.selectionBackground': '#22d3ee25',
+      'editor.selectionHighlightBackground': '#22d3ee14',
+      'editor.inactiveSelectionBackground': '#22d3ee14',
+      'editorCursor.foreground': '#22d3ee',
+      'editorLineNumber.foreground': '#2a3556',
+      'editorLineNumber.activeForeground': '#5b6f99',
+      'editorGutter.background': '#0d1024',
+      'editorIndentGuide.background': '#1e254215',
+      'editorIndentGuide.activeBackground': '#22d3ee35',
+      'editorBracketMatch.background': '#22d3ee20',
+      'editorBracketMatch.border': '#22d3ee70',
+      'editor.findMatchBackground': '#fb923c40',
+      'editor.findMatchHighlightBackground': '#fb923c20',
+      'editorWidget.background': '#0f1326',
+      'editorWidget.border': '#1e2542',
+      'editorSuggestWidget.background': '#0f1326',
+      'editorSuggestWidget.border': '#1e2542',
+      'editorSuggestWidget.foreground': '#c9d1d9',
+      'editorSuggestWidget.selectedBackground': '#22d3ee18',
+      'editorSuggestWidget.selectedForeground': '#ffffff',
+      'editorSuggestWidget.highlightForeground': '#22d3ee',
+      'editorHoverWidget.background': '#0f1326',
+      'editorHoverWidget.border': '#1e2542',
+      'editorHoverWidget.foreground': '#c9d1d9',
+      'input.background': '#131728',
+      'input.foreground': '#c9d1d9',
+      'input.border': '#1e2542',
+      'input.placeholderForeground': '#4a5578',
+      'scrollbarSlider.background': '#ffffff10',
+      'scrollbarSlider.hoverBackground': '#22d3ee20',
+      'scrollbarSlider.activeBackground': '#22d3ee40',
+      'minimap.background': '#0d1024',
+      'minimapSlider.background': '#22d3ee15',
+      'minimapSlider.hoverBackground': '#22d3ee25',
+      'editorError.foreground': '#f87171',
+      'editorWarning.foreground': '#fbbf24',
+      'editorInfo.foreground': '#60a5fa',
+      'editorHint.foreground': '#4ade80',
+      'editorGlyphMargin.background': '#0d1024',
+      'debugIcon.breakpointForeground': '#f87171',
+    }
+  });
+}
+
+function getMonacoOptions(pane) {
+  const fontSize = (typeof edFS !== 'undefined' ? edFS : 14);
+  const tabSize = (typeof edTS !== 'undefined' ? edTS : 2);
+  const wrap = localStorage.getItem('s-wrap') || 'off';
+  const minimapOn = pane === 1 && localStorage.getItem('s-minimap') !== 'off';
+  return {
+    value: '',
+    language: 'plaintext',
+    theme: 'axiom-dark',
+    fontSize,
+    fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace",
+    fontLigatures: true,
+    lineHeight: Math.round(fontSize * 1.6),
+    minimap: { enabled: minimapOn, renderCharacters: false, scale: 2 },
+    lineNumbers: 'on',
+    wordWrap: wrap === 'on' ? 'on' : 'off',
+    automaticLayout: true,
+    scrollBeyondLastLine: false,
+    tabSize,
+    insertSpaces: true,
+    detectIndentation: true,
+    folding: true,
+    foldingHighlight: true,
+    bracketPairColorization: { enabled: true },
+    renderLineHighlight: 'gutter',
+    cursorBlinking: 'smooth',
+    cursorSmoothCaretAnimation: 'on',
+    smoothScrolling: true,
+    contextmenu: true,
+    quickSuggestions: { other: true, comments: false, strings: false },
+    suggestOnTriggerCharacters: true,
+    acceptSuggestionOnEnter: 'on',
+    snippetSuggestions: 'inline',
+    formatOnPaste: false,
+    formatOnType: false,
+    padding: { top: 14, bottom: 80 },
+    scrollbar: { useShadows: false, verticalScrollbarSize: 5, horizontalScrollbarSize: 5 },
+    renderWhitespace: 'selection',
+    occurrencesHighlight: true,
+    selectionHighlight: true,
+    codeLens: false,
+    glyphMargin: true,
+    parameterHints: { enabled: true },
+    inlineSuggest: { enabled: false },
+    fixedOverflowWidgets: true,
+  };
+}
+
+async function initMonacoEditors() {
+  if (!window._monacoLoaded || typeof monaco === 'undefined') return;
+  defineMonacoTheme();
+  monaco.editor.setTheme('axiom-dark');
+
+  function mountMonaco(pane, scrollContainerId, hideIds) {
+    hideIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    const container = document.getElementById(scrollContainerId);
+    if (!container) return null;
+    let mc = document.getElementById('monaco-' + pane);
+    if (!mc) {
+      mc = document.createElement('div');
+      mc.id = 'monaco-' + pane;
+      mc.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:10;';
+      container.appendChild(mc);
+    }
+    const opts = getMonacoOptions(pane);
+    if (pane === 2) opts.minimap = { enabled: false };
+    const ed = monaco.editor.create(mc, opts);
+    window._monacoInstances[pane] = ed;
+    window._monacoProxies[pane] = createMonacoProxy(pane, ed);
+    return ed;
+  }
+
+  const ed1 = mountMonaco(1, 'ed-scroll-1',
+    ['editor','hl-1','lnums-1','minimap-1','indent-canvas-1','ghost-text','blame-gutter']);
+  const ed2 = mountMonaco(2, 'ed-scroll-2',
+    ['editor-2','hl-2','lnums-2','minimap-2','indent-canvas-2']);
+
+  if (ed1) {
+    ed1.onDidChangeModelContent(() => { try { onEdit(1); } catch(e) {} });
+    ed1.onDidChangeCursorPosition(() => { try { updPos(1); } catch(e) {} });
+    ed1.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => { try { saveCur(); } catch(e) {} });
+    ed1.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => { try { openPalette(); } catch(e) {} });
+    ed1.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Backslash, () => { try { toggleSplit(); } catch(e) {} });
+    // Format on Alt+Shift+F
+    ed1.addCommand(monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
+      try { lspFormat(); } catch(e) {}
+    });
+  }
+  if (ed2) {
+    ed2.onDidChangeModelContent(() => { try { onEdit(2); } catch(e) {} });
+    ed2.onDidChangeCursorPosition(() => { try { updPos(2); } catch(e) {} });
+    ed2.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => { try { saveCur(); } catch(e) {} });
+  }
+
+  // Override getEd to return Monaco proxies
+  const _origGetEd = window.getEd;
+  window.getEd = function(pane) {
+    if (window._monacoProxies && window._monacoProxies[pane]) return window._monacoProxies[pane];
+    return _origGetEd ? _origGetEd(pane) : null;
+  };
+
+  // When no file is open, hide Monaco so welcome screen shows
+  const _mc1El = document.getElementById('monaco-1');
+  const _mc2El = document.getElementById('monaco-2');
+  const _origClearEd = window.clearEd;
+  window.clearEd = function(...args) {
+    if (typeof _origClearEd === 'function') _origClearEd(...args);
+    if (_mc1El) _mc1El.style.visibility = 'hidden';
+  };
+  const _origSwTab = window.swTab;
+  if (typeof _origSwTab === 'function') {
+    const __inner = window.swTab;
+    window.swTab = function(id, ...args) {
+      if (_mc1El) _mc1El.style.visibility = 'visible';
+      return __inner.call(this, id, ...args);
+    };
+  }
+  // Check initial state
+  if (typeof tabs === 'undefined' || !tabs?.length) {
+    if (_mc1El) _mc1El.style.visibility = 'hidden';
+  }
+
+  // Disable textarea-era visual functions
+  ['updateHL','updateLnums','drawMinimap','syncScroll','applyEditorStyles',
+   'virtualHighlight','virtualGutter','hlBrackets','clearBracketHighlights',
+   'drawIndentGuides','updateGutter','_updateMinimap','updateMinimap'].forEach(fn => {
+    window[fn] = function() {};
+  });
+
+  // Register LSP providers
+  registerLSPCompletionProvider();
+  registerLSPHoverProvider();
+  registerLSPSignatureProvider();
+
+  // Restore active tab content into Monaco
+  try {
+    if (typeof atab !== 'undefined' && typeof tabs !== 'undefined') {
+      const activeTab = tabs.find(t => t.id === atab);
+      if (activeTab && ed1) {
+        const lang = getMonacoLang(activeTab.name || activeTab.path || '');
+        ed1.setModel(monaco.editor.createModel(activeTab.content || '', lang));
+      }
+    }
+  } catch(e) {}
+
+  window._monacoReady = true;
+  console.log('[AXIOM] ✓ Monaco editor ready');
+  if (typeof notif === 'function') notif('Monaco editor active — full syntax highlighting, LSP & IntelliSense enabled', 'ok');
+}
+
+// ── swTab hook: set Monaco language + model when switching tabs ──
+(function patchSwTab() {
+  const _orig = window.swTab;
+  if (typeof _orig !== 'function') return;
+  window.swTab = function(id, ...args) {
+    const result = _orig.call(this, id, ...args);
+    if (!window._monacoReady) return result;
+    try {
+      const tab = (typeof tabs !== 'undefined') ? tabs.find(t => t.id === id) : null;
+      if (!tab || !window._monacoInstances?.[1]) return result;
+      const ed = window._monacoInstances[1];
+      const lang = getMonacoLang(tab.name || tab.path || '');
+      // Replace model so undo history is per-file
+      const existing = ed.getModel();
+      if (existing) {
+        monaco.editor.setModelLanguage(existing, lang);
+      }
+      // Trigger diagnostics
+      if (tab.path) {
+        clearTimeout(window._diagTimer);
+        window._diagTimer = setTimeout(() => {
+          const model = ed.getModel();
+          updateMonacoDiagnostics(tab.path, model?.getValue() || '', lang);
+        }, 1500);
+      }
+    } catch(e) {}
+    return result;
+  };
+})();
+
+// ── Diagnostics debounce on edit ──
+let _diagDebounce = null;
+const _origOnEdit = window.onEdit;
+window.onEdit = function(pane, ...args) {
+  if (typeof _origOnEdit === 'function') _origOnEdit(pane, ...args);
+  if (pane === 1 && window._monacoReady) {
+    clearTimeout(_diagDebounce);
+    _diagDebounce = setTimeout(() => {
+      try {
+        const tab = (typeof tabs !== 'undefined' && typeof atab !== 'undefined')
+          ? tabs.find(t => t.id === atab) : null;
+        if (tab?.path) {
+          const model = window._monacoInstances[1]?.getModel();
+          const lang = getMonacoLang(tab.name || tab.path || '');
+          updateMonacoDiagnostics(tab.path, model?.getValue() || '', lang);
+        }
+      } catch(e) {}
+    }, 2000);
+  }
+};
+
+// ── LSP Completion Provider ──
+function registerLSPCompletionProvider() {
+  const TRIGGERS = ['.', ':', '(', '<', '"', "'", '/', '@', '#'];
+  const ALL_LANGS = ['javascript','typescript','python','go','rust','css','html','json',
+    'java','kotlin','php','ruby','cpp','c','swift','dart','shell'];
+  ALL_LANGS.forEach(langId => {
+    monaco.languages.registerCompletionItemProvider(langId, {
+      triggerCharacters: TRIGGERS,
+      async provideCompletionItems(model, position) {
+        try {
+          const tab = (typeof tabs !== 'undefined' && typeof atab !== 'undefined')
+            ? tabs.find(t => t.id === atab) : null;
+          const filePath = tab?.path || '';
+          const langKey = MONACO_LANG_MAP[langId] || langId;
+          if (!curDir) return { suggestions: [] };
+          const r = await api('POST', '/api/lsp/completion', {
+            lang: langKey, dir: curDir, file: filePath,
+            content: model.getValue(),
+            line: position.lineNumber - 1, character: position.column - 1,
+          });
+          if (!r?.items?.length) return { suggestions: [] };
+          const word = model.getWordUntilPosition(position);
+          const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber,
+            startColumn: word.startColumn, endColumn: word.endColumn };
+          const CIK = monaco.languages.CompletionItemKind;
+          const kindMap = {
+            1: CIK.Text, 2: CIK.Method, 3: CIK.Function, 4: CIK.Constructor,
+            5: CIK.Field, 6: CIK.Variable, 7: CIK.Class, 8: CIK.Interface,
+            9: CIK.Module, 10: CIK.Property, 11: CIK.Unit, 12: CIK.Value,
+            13: CIK.Enum, 14: CIK.Keyword, 15: CIK.Snippet, 16: CIK.Color,
+            17: CIK.File, 18: CIK.Reference, 19: CIK.Folder, 20: CIK.EnumMember,
+            21: CIK.Constant, 22: CIK.Struct, 23: CIK.Event, 24: CIK.Operator, 25: CIK.TypeParameter,
+          };
+          return {
+            suggestions: r.items.map(item => {
+              const label = typeof item.label === 'string' ? item.label : (item.label?.label || '');
+              return {
+                label, kind: kindMap[item.kind] ?? CIK.Text,
+                insertText: item.insertText || label,
+                insertTextRules: item.insertTextFormat === 2
+                  ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : 0,
+                detail: item.detail || '', documentation: item.documentation
+                  ? (typeof item.documentation === 'object' ? item.documentation.value : item.documentation) : '',
+                sortText: item.sortText, filterText: item.filterText || label, range,
+              };
+            }),
+            incomplete: !!r.isIncomplete,
+          };
+        } catch(e) { return { suggestions: [] }; }
+      }
+    });
+  });
+}
+
+// ── LSP Hover Provider ──
+function registerLSPHoverProvider() {
+  const LANGS = ['javascript','typescript','python','go','rust','css','html','json'];
+  LANGS.forEach(langId => {
+    monaco.languages.registerHoverProvider(langId, {
+      async provideHover(model, position) {
+        try {
+          const tab = (typeof tabs !== 'undefined' && typeof atab !== 'undefined')
+            ? tabs.find(t => t.id === atab) : null;
+          if (!curDir) return null;
+          const r = await api('POST', '/api/lsp/hover', {
+            lang: langId, dir: curDir, file: tab?.path || '',
+            content: model.getValue(),
+            line: position.lineNumber - 1, character: position.column - 1,
+          });
+          if (!r?.contents) return null;
+          const contents = Array.isArray(r.contents) ? r.contents : [r.contents];
+          const value = contents.map(c => typeof c === 'string' ? c : (c.value || '')).join('\n\n').trim();
+          if (!value) return null;
+          return { contents: [{ value: '```\n' + value + '\n```' }] };
+        } catch(e) { return null; }
+      }
+    });
+  });
+}
+
+// ── LSP Signature Help Provider ──
+function registerLSPSignatureProvider() {
+  const LANGS = ['javascript','typescript','python'];
+  LANGS.forEach(langId => {
+    monaco.languages.registerSignatureHelpProvider(langId, {
+      signatureHelpTriggerCharacters: ['(', ','],
+      async provideSignatureHelp(model, position) {
+        try {
+          const tab = (typeof tabs !== 'undefined' && typeof atab !== 'undefined')
+            ? tabs.find(t => t.id === atab) : null;
+          if (!curDir) return null;
+          const r = await api('POST', '/api/lsp/signature', {
+            lang: langId, dir: curDir, file: tab?.path || '',
+            content: model.getValue(),
+            line: position.lineNumber - 1, character: position.column - 1,
+          });
+          if (!r?.signatures?.length) return null;
+          return {
+            value: {
+              signatures: r.signatures.map(sig => ({
+                label: sig.label,
+                documentation: sig.documentation,
+                parameters: (sig.parameters || []).map(p => ({
+                  label: typeof p.label === 'string' ? p.label : [p.label[0], p.label[1]],
+                  documentation: p.documentation,
+                })),
+              })),
+              activeSignature: r.activeSignature || 0,
+              activeParameter: r.activeParameter || 0,
+            },
+            dispose() {},
+          };
+        } catch(e) { return null; }
+      }
+    });
+  });
+}
+
+// ── LSP Diagnostics → Monaco Error Markers ──
+let _diagPending = {};
+async function updateMonacoDiagnostics(filePath, content, langKey) {
+  if (!window._monacoInstances?.[1] || !curDir || !filePath) return;
+  const key = filePath + '::' + langKey;
+  if (_diagPending[key]) return;
+  _diagPending[key] = true;
+  try {
+    const [diagR, lintR] = await Promise.allSettled([
+      api('POST', '/api/lsp/diagnostics', { lang: langKey, dir: curDir, file: filePath, content }),
+      api('POST', '/api/lint', { code: content, lang: langKey }),
+    ]);
+    const ed = window._monacoInstances[1];
+    const model = ed?.getModel();
+    if (!model) return;
+    const S = monaco.MarkerSeverity;
+    const sevMap = { 1: S.Error, 2: S.Warning, 3: S.Information, 4: S.Hint };
+    const markers = [
+      ...((diagR.status === 'fulfilled' ? diagR.value?.diagnostics : null) || []).map(d => ({
+        severity: sevMap[d.severity] || S.Information,
+        startLineNumber: (d.range?.start?.line ?? 0) + 1,
+        startColumn: (d.range?.start?.character ?? 0) + 1,
+        endLineNumber: (d.range?.end?.line ?? 0) + 1,
+        endColumn: Math.max((d.range?.end?.character ?? 0) + 2, (d.range?.start?.character ?? 0) + 2),
+        message: d.message || '', source: d.source || 'lsp',
+      })),
+      ...((lintR.status === 'fulfilled' ? lintR.value?.problems : null) || []).map(p => ({
+        severity: p.sev === 'error' ? S.Error : p.sev === 'warning' ? S.Warning : S.Information,
+        startLineNumber: p.ln, startColumn: p.col || 1,
+        endLineNumber: p.ln, endColumn: (p.col || 1) + 25,
+        message: p.msg, source: 'axiom',
+      })),
+    ];
+    monaco.editor.setModelMarkers(model, 'axiom-lsp', markers);
+    _updateProblemsPanel(markers, filePath);
+  } finally {
+    delete _diagPending[key];
+  }
+}
+
+function _updateProblemsPanel(markers, filePath) {
+  const probList = document.getElementById('prob-list');
+  const probCount = document.getElementById('prob-count');
+  if (!probList) return;
+  const errors = markers.filter(m => m.severity === monaco.MarkerSeverity.Error).length;
+  const warns = markers.filter(m => m.severity === monaco.MarkerSeverity.Warning).length;
+  const total = errors + warns;
+  if (probCount) {
+    probCount.style.display = total > 0 ? '' : 'none';
+    probCount.textContent = total;
+    probCount.style.background = errors > 0 ? 'var(--red)' : 'var(--yellow)';
+  }
+  if (!markers.length) {
+    probList.innerHTML = '<div style="padding:8px 0;font-size:12px;color:var(--tx3);font-family:\'JetBrains Mono\',monospace">No problems detected.</div>';
+    return;
+  }
+  const fname = filePath ? filePath.split('/').pop() : 'file';
+  const S = monaco.MarkerSeverity;
+  probList.innerHTML = markers.slice(0, 60).map(m => {
+    const [ic, cl] = m.severity === S.Error ? ['✗','var(--red)'] :
+                     m.severity === S.Warning ? ['⚠','var(--yellow)'] : ['ℹ','var(--blue)'];
+    const msg = m.message.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<div onclick="jumpToMarker(${m.startLineNumber},${m.startColumn})" style="cursor:pointer;padding:3px 8px;font-size:11px;font-family:'JetBrains Mono',monospace;display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--border);hover:background:var(--surface)">
+      <span style="color:${cl};flex-shrink:0;width:12px">${ic}</span>
+      <span style="color:var(--tx2);flex-shrink:0;white-space:nowrap">${fname}:${m.startLineNumber}</span>
+      <span style="color:var(--tx)">${msg}</span>
+      <span style="color:var(--tx3);flex-shrink:0;font-size:10px;margin-left:auto">${m.source||''}</span>
+    </div>`;
+  }).join('');
+}
+
+function jumpToMarker(line, col) {
+  const ed = window._monacoInstances?.[1];
+  if (!ed) return;
+  ed.revealLineInCenter(line);
+  ed.setPosition({ lineNumber: line, column: col || 1 });
+  ed.focus();
+  showBottom(); setBpTab('problems');
+}
+
+// ── Apply preferences to Monaco ──
+(function patchApplyPrefs() {
+  const _orig = window.applyPrefs;
+  window.applyPrefs = function(...args) {
+    if (typeof _orig === 'function') _orig(...args);
+    applyMonacoPrefs();
+  };
+})();
+
+function applyMonacoPrefs() {
+  if (!window._monacoInstances) return;
+  const fontSize = typeof edFS !== 'undefined' ? edFS : 14;
+  const tabSize = typeof edTS !== 'undefined' ? edTS : 2;
+  const wrap = localStorage.getItem('s-wrap') || 'off';
+  const minimap = localStorage.getItem('s-minimap') !== 'off';
+  [1, 2].forEach(pane => {
+    const ed = window._monacoInstances[pane];
+    if (ed) ed.updateOptions({
+      fontSize, tabSize, insertSpaces: true,
+      wordWrap: wrap === 'on' ? 'on' : 'off',
+      minimap: { enabled: pane === 1 && minimap },
+    });
+  });
+}
+
+// ── Ports / Port Forwarding Panel ──
+let _portsCache = [];
+async function scanPorts() {
+  const listEl = document.getElementById('ports-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="font-size:11px;color:var(--tx3);padding:4px 0">Scanning…</div>';
+  try {
+    const r = await api('GET', '/api/ports');
+    _portsCache = r.ports || [];
+    renderPortsList();
+  } catch(e) {
+    listEl.innerHTML = '<div style="font-size:11px;color:var(--red)">Failed to scan ports: ' + (e.message||'error') + '</div>';
+  }
+}
+
+function renderPortsList() {
+  const listEl = document.getElementById('ports-list');
+  if (!listEl) return;
+  if (!_portsCache.length) {
+    listEl.innerHTML = '<div style="font-size:11px;color:var(--tx3);padding:8px 0">No local servers detected. Start a dev server to see it here.</div>';
+    return;
+  }
+  listEl.innerHTML = _portsCache.map(p => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--surface);border-radius:6px;margin-bottom:4px;border:1px solid var(--border)">
+      <div style="width:8px;height:8px;border-radius:50%;background:${p.pid ? 'var(--green)' : 'var(--tx3)'};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--tx)">
+          <span style="color:var(--ac)">:${p.port}</span>
+          ${p.name ? '<span style="color:var(--tx3);margin-left:6px">'+escHtml(p.name)+'</span>' : ''}
+        </div>
+        ${p.pid ? '<div style="font-size:10px;color:var(--tx3)">PID ' + p.pid + '</div>' : ''}
+      </div>
+      <div style="display:flex;gap:4px">
+        <button onclick="openPortPreview(${p.port})" title="Open Preview" style="font-size:10px;background:var(--elevated);border:1px solid var(--border);border-radius:3px;color:var(--ac);padding:2px 6px;cursor:pointer">⊞ Preview</button>
+        <button onclick="window.open('http://localhost:${p.port}','_blank')" title="Open in browser" style="font-size:10px;background:var(--elevated);border:1px solid var(--border);border-radius:3px;color:var(--tx2);padding:2px 6px;cursor:pointer">↗</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function openPortPreview(port) {
+  showLivePreview('http://localhost:' + port);
+}
+
+// ── Live HTML/Port Preview Panel ──
+function showLivePreview(url) {
+  let overlay = document.getElementById('preview-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'preview-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#0b0e21;z-index:9000;display:flex;flex-direction:column';
+    overlay.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#0f1326;border-bottom:1px solid #1e2542;flex-shrink:0">
+        <span style="color:#22d3ee;font-size:12px;font-weight:600">⊞ Preview</span>
+        <div style="display:flex;align-items:center;gap:4px;flex:1;background:#131728;border:1px solid #1e2542;border-radius:4px;padding:3px 8px">
+          <span style="font-size:10px;color:#4a5578">🔗</span>
+          <input id="preview-url-input" type="text" value="" style="flex:1;background:transparent;border:none;outline:none;color:#c9d1d9;font-size:11px;font-family:'JetBrains Mono',monospace" onkeydown="if(event.key==='Enter')loadPreview(this.value)"/>
+        </div>
+        <button onclick="loadPreview(document.getElementById('preview-url-input').value)" style="font-size:11px;background:var(--elevated,#1e2542);border:1px solid #2a3556;border-radius:4px;color:#c9d1d9;padding:3px 10px;cursor:pointer">↺</button>
+        <button onclick="document.getElementById('preview-overlay').style.display='none'" style="font-size:13px;background:transparent;border:none;color:#4a5578;cursor:pointer;padding:2px 6px">✕</button>
+      </div>
+      <iframe id="preview-iframe" src="" style="flex:1;border:none;background:#fff"></iframe>
+    `;
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display = 'flex';
+  const inp = document.getElementById('preview-url-input');
+  const iframe = document.getElementById('preview-iframe');
+  if (inp) inp.value = url;
+  if (iframe) iframe.src = url;
+}
+
+function loadPreview(url) {
+  const iframe = document.getElementById('preview-iframe');
+  if (!iframe) return;
+  if (!url.startsWith('http')) url = 'http://' + url;
+  iframe.src = url;
+  const inp = document.getElementById('preview-url-input');
+  if (inp) inp.value = url;
+}
+
+// Open HTML file as live preview
+function openHTMLPreview() {
+  const tab = typeof tabs !== 'undefined' && typeof atab !== 'undefined'
+    ? tabs.find(t => t.id === atab) : null;
+  if (!tab) { notif('No file open','warn'); return; }
+  const isHTML = tab.name?.endsWith('.html') || tab.name?.endsWith('.htm');
+  if (!isHTML) { notif('Open an HTML file first','warn'); return; }
+  // Serve via the file API
+  showLivePreview('http://localhost:' + (window.AXIOM_PORT || 5000) + '/api/file?path=' + encodeURIComponent(tab.path||''));
+}
+
+// ── Extension Marketplace (real backend) ──
+async function loadMarketplaceExtensions() {
+  try {
+    const r = await api('GET', '/api/extensions/marketplace');
+    return r.extensions || [];
+  } catch(e) {
+    return [];
+  }
+}
+
+async function installExtension(id) {
+  try {
+    const r = await api('POST', '/api/extensions/install', { id });
+    if (r.ok) notif('Extension installed: ' + (r.name || id), 'ok');
+    else notif(r.error || 'Install failed', 'error');
+    return r;
+  } catch(e) {
+    notif('Install failed: ' + e.message, 'error');
+    return { error: e.message };
+  }
+}
+
+async function uninstallExtension(id) {
+  try {
+    const r = await api('DELETE', '/api/extensions/' + encodeURIComponent(id));
+    if (r.ok) notif('Extension removed', 'ok');
+    return r;
+  } catch(e) { return { error: e.message }; }
+}
+
+// ── Image/Asset Preview in editor ──
+function openImagePreview(path, name) {
+  const ext = (name || path).split('.').pop().toLowerCase();
+  const imageExts = ['png','jpg','jpeg','gif','svg','webp','ico','bmp'];
+  if (!imageExts.includes(ext)) return false;
+
+  const pane1 = document.getElementById('ed-host-1');
+  if (!pane1) return false;
+
+  // Show image in editor area
+  let imgPrev = document.getElementById('img-preview-layer');
+  if (!imgPrev) {
+    imgPrev = document.createElement('div');
+    imgPrev.id = 'img-preview-layer';
+    imgPrev.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:20;background:var(--panel,#0d1024);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
+    pane1.appendChild(imgPrev);
+  }
+
+  const imgSrc = '/api/static?path=' + encodeURIComponent(path);
+  imgPrev.innerHTML = `
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:4px">${escHtml(name || path)}</div>
+    <img src="${imgSrc}" style="max-width:80%;max-height:70%;object-fit:contain;border-radius:4px;border:1px solid var(--border)"
+         onerror="this.parentElement.innerHTML='<div style=color:var(--tx3)>Cannot preview: '+decodeURIComponent('${encodeURIComponent(escHtml(name||path))}')+'</div>'" />
+    <button onclick="document.getElementById('img-preview-layer').style.display='none'" style="font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--tx2);padding:4px 12px;cursor:pointer">Close</button>
+  `;
+  imgPrev.style.display = 'flex';
+  return true;
+}
+
+// ── Test Runner Visual Tree ──
+async function runVisualTests() {
+  const dir = typeof curDir !== 'undefined' ? curDir : null;
+  if (!dir) { notif('No folder open','warn'); return; }
+
+  const testPanel = document.getElementById('bp-debug'); // reuse debug for now, or check for tests panel
+  showBottom();
+  setBpTab('output');
+  const out = document.getElementById('bp-output');
+  if (out) { out.innerHTML = '<div style="color:var(--tx3);font-size:11px;padding:4px 0">Discovering tests…</div>'; }
+
+  try {
+    const disc = await api('POST', '/api/tests/discover', { dir });
+    const tests = disc.tests || disc.files || [];
+    if (!tests.length) { if(out) out.textContent = 'No tests discovered.'; return; }
+
+    if (out) {
+      out.innerHTML = tests.map(t => `
+        <div id="test-${btoa((t.file||t.name||Math.random()).replace(/[^a-z0-9]/gi,''))}" style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:11px">
+          <span style="color:var(--tx3)">○</span>
+          <span style="color:var(--tx);margin-left:6px">${escHtml(t.name||t.file||'test')}</span>
+          <button onclick="runSingleTest(${JSON.stringify(JSON.stringify(t))})" style="float:right;font-size:10px;background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--ac);padding:1px 6px;cursor:pointer">▶ Run</button>
+        </div>
+      `).join('');
+    }
+
+    // Run all tests
+    for (const t of tests.slice(0, 20)) {
+      try {
+        const cmd = t.cmd || (t.file ? 'node ' + t.file : null);
+        if (!cmd) continue;
+        const res = await api('POST', '/api/tasks/run', { dir, cmd });
+        const id = 'test-' + btoa((t.file||t.name||Math.random()).replace(/[^a-z0-9]/gi,''));
+        const el = document.getElementById(id);
+        if (el) {
+          const passed = res.exitCode === 0;
+          el.querySelector('span:first-child').textContent = passed ? '✓' : '✗';
+          el.querySelector('span:first-child').style.color = passed ? 'var(--green)' : 'var(--red)';
+        }
+      } catch(e) {}
+    }
+  } catch(e) {
+    if (out) out.textContent = 'Test discovery failed: ' + e.message;
+  }
+}
+
+async function runSingleTest(testJson) {
+  const t = JSON.parse(testJson);
+  const dir = typeof curDir !== 'undefined' ? curDir : null;
+  if (!dir) return;
+  showBottom(); setBpTab('output');
+  const out = document.getElementById('bp-output');
+  const cmd = t.cmd || (t.file ? 'node ' + t.file : null);
+  if (!cmd || !out) return;
+  out.innerHTML = '<div style="color:var(--tx3);font-size:11px">Running ' + escHtml(t.name||cmd) + '…</div>';
+  try {
+    const res = await api('POST', '/api/tasks/run', { dir, cmd });
+    const passed = res.exitCode === 0;
+    out.innerHTML = `<div style="color:${passed?'var(--green)':'var(--red)'};font-size:11px;padding:4px 0">${passed?'✓ PASSED':'✗ FAILED'}: ${escHtml(t.name||cmd)}</div>` +
+      `<pre style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--tx);white-space:pre-wrap;margin-top:8px">${escHtml(res.output||'')}</pre>`;
+  } catch(e) {
+    out.innerHTML = '<div style="color:var(--red)">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+// Expose key functions globally
+window.scanPorts = scanPorts;
+window.openPortPreview = openPortPreview;
+window.showLivePreview = showLivePreview;
+window.loadPreview = loadPreview;
+window.openHTMLPreview = openHTMLPreview;
+window.jumpToMarker = jumpToMarker;
+window.updateMonacoDiagnostics = updateMonacoDiagnostics;
+window.applyMonacoPrefs = applyMonacoPrefs;
+window.runVisualTests = runVisualTests;
+window.initMonacoEditors = initMonacoEditors;
+window.openImagePreview = openImagePreview;
+
+// Auto-init Monaco if already loaded (e.g. CDN cached)
+if (window._monacoLoaded && typeof monaco !== 'undefined') {
+  requestAnimationFrame(() => initMonacoEditors());
+}
 </script>
 
 </body>

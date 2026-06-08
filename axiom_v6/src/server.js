@@ -22,7 +22,7 @@ function setSecurityHeaders(res){
   res.setHeader('X-DNS-Prefetch-Control','off');
   if(process.env.NODE_ENV==='production'){
     res.setHeader('Strict-Transport-Security','max-age=63072000; includeSubDomains; preload');
-    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; connect-src 'self' ws: wss: https://api.anthropic.com https://api.paystack.co https://api.github.com https://oauth2.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; frame-src https://checkout.paystack.com; object-src 'none'; base-uri 'self'");
+    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.paystack.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; connect-src 'self' ws: wss: https://api.anthropic.com https://api.paystack.co https://standard.paystack.co https://api.github.com https://oauth2.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; frame-src https://checkout.paystack.com https://standard.paystack.co blob: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'self'");
   }
 }
 
@@ -1256,6 +1256,104 @@ const server=http.createServer(async(req,res)=>{
     return sendJson(res,{ok:true});
   }
 
+  // Extension marketplace — curated list + install/uninstall by ID
+  if(route==='/api/extensions/marketplace'&&req.method==='GET'){
+    const MARKETPLACE=[
+      {id:'prettier',name:'Prettier',description:'Opinionated code formatter',category:'Formatters',icon:'🎨',version:'3.2.5',publisher:'Prettier',downloads:'30M+',rating:4.6},
+      {id:'eslint',name:'ESLint',description:'JavaScript/TypeScript linting. Detects common bugs.',category:'Linters',icon:'🟨',version:'8.57.0',publisher:'Microsoft',downloads:'35M+',rating:4.7},
+      {id:'pylint',name:'Pylint',description:'Python static code analysis',category:'Linters',icon:'🐍',version:'3.1.0',publisher:'PyCQA',downloads:'12M+',rating:4.6},
+      {id:'black',name:'Black',description:'Python code formatter — uncompromising',category:'Formatters',icon:'⬛',version:'24.3.0',publisher:'PSF',downloads:'15M+',rating:4.7},
+      {id:'gofmt',name:'gofmt',description:'Go code formatter (built-in)',category:'Formatters',icon:'🐹',version:'1.22.0',publisher:'Google',downloads:'8M+',rating:4.8},
+      {id:'rustfmt',name:'rustfmt',description:'Rust code formatter',category:'Formatters',icon:'🦀',version:'1.7.0',publisher:'Rust',downloads:'5M+',rating:4.8},
+      {id:'clangformat',name:'clang-format',description:'C/C++ code formatter',category:'Formatters',icon:'⚙️',version:'17.0.0',publisher:'LLVM',downloads:'4M+',rating:4.5},
+      {id:'pyright',name:'Pyright',description:'Python type checker & LSP',category:'Language Servers',icon:'✔️',version:'1.1.355',publisher:'Microsoft',downloads:'20M+',rating:4.8},
+      {id:'tsserver',name:'TypeScript LS',description:'JS/TS IntelliSense & type checking',category:'Language Servers',icon:'🟦',version:'5.4.5',publisher:'Microsoft',downloads:'40M+',rating:4.9},
+      {id:'gopls',name:'gopls',description:'Go language server',category:'Language Servers',icon:'🐹',version:'0.15.3',publisher:'Google',downloads:'10M+',rating:4.8},
+      {id:'rust-analyzer',name:'rust-analyzer',description:'Rust language server',category:'Language Servers',icon:'🦀',version:'2024.3.0',publisher:'Rust',downloads:'8M+',rating:4.9},
+      {id:'html-lsp',name:'HTML Language Server',description:'HTML IntelliSense & validation',category:'Language Servers',icon:'🌐',version:'1.4.13',publisher:'Microsoft',downloads:'25M+',rating:4.7},
+      {id:'css-lsp',name:'CSS Language Server',description:'CSS/SCSS IntelliSense',category:'Language Servers',icon:'🎨',version:'1.4.13',publisher:'Microsoft',downloads:'22M+',rating:4.7},
+      {id:'json-lsp',name:'JSON Language Server',description:'JSON schema validation & IntelliSense',category:'Language Servers',icon:'{}',version:'1.3.4',publisher:'Microsoft',downloads:'30M+',rating:4.8},
+      {id:'gitlens',name:'GitLens',description:'Enhanced Git: blame, history, visualization',category:'SCM',icon:'⎇',version:'15.0.0',publisher:'GitKraken',downloads:'25M+',rating:4.8},
+      {id:'docker',name:'Docker',description:'Dockerfile syntax and container support',category:'Other',icon:'🐳',version:'1.29.0',publisher:'Microsoft',downloads:'20M+',rating:4.7},
+      {id:'indent',name:'Indent Rainbow',description:'Colorful indent guides',category:'Other',icon:'🌈',version:'8.3.1',publisher:'oderwat',downloads:'10M+',rating:4.8},
+      {id:'errorlens',name:'Error Lens',description:'Show errors inline next to the code',category:'Linters',icon:'🔴',version:'3.16.0',publisher:'usernamehw',downloads:'5M+',rating:4.8},
+      {id:'rest',name:'REST Client',description:'Send HTTP requests from .http files',category:'Other',icon:'🔌',version:'0.25.1',publisher:'Huachao Mao',downloads:'7M+',rating:4.8},
+    ];
+    let exts;try{exts=JSON.parse(fs.readFileSync(EXT_FILE,'utf8'));}catch(e){exts={installed:[]};}
+    const installedIds=new Set((exts.installed||[]).map(e=>e.id));
+    const extensions=MARKETPLACE.map(e=>({...e,installed:installedIds.has(e.id)}));
+    return sendJson(res,{extensions});
+  }
+
+  if(route==='/api/extensions/installed'&&req.method==='GET'){
+    let exts;try{exts=JSON.parse(fs.readFileSync(EXT_FILE,'utf8'));}catch(e){exts={installed:[]};}
+    return sendJson(res,{extensions:exts.installed||[]});
+  }
+
+  if(route==='/api/extensions/install'&&req.method==='POST'){
+    const {id,name,version,publisher}=data;
+    if(!id)return sendJson(res,{error:'Missing extension id'},400);
+    let exts;try{exts=JSON.parse(fs.readFileSync(EXT_FILE,'utf8'));}catch(e){exts={installed:[]};}
+    if(!exts.installed)exts.installed=[];
+    if(exts.installed.find(e=>e.id===id))return sendJson(res,{ok:true,name:name||id,already:true,extension:exts.installed.find(e=>e.id===id)});
+    const ext={id,name:name||id,version:version||'latest',publisher:publisher||'',enabled:true,installed:new Date().toISOString()};
+    exts.installed.push(ext);
+    atomicWriteSync(EXT_FILE,JSON.stringify(exts,null,2));
+    return sendJson(res,{ok:true,name:ext.name,extension:ext});
+  }
+
+  if(route==='/api/extensions/uninstall'&&req.method==='POST'){
+    const {id}=data;
+    if(!id)return sendJson(res,{error:'Missing id'},400);
+    let exts;try{exts=JSON.parse(fs.readFileSync(EXT_FILE,'utf8'));}catch(e){return sendJson(res,{error:'No extensions'},404);}
+    exts.installed=(exts.installed||[]).filter(e=>e.id!==id);
+    atomicWriteSync(EXT_FILE,JSON.stringify(exts,null,2));
+    return sendJson(res,{ok:true});
+  }
+
+  // Port scanner — detect processes listening on local TCP ports
+  if(route==='/api/ports'&&req.method==='GET'){
+    const{exec}=require('child_process');
+    const cmd=process.platform==='win32'
+      ?'netstat -ano -p TCP'
+      :'ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null';
+    exec(cmd,{timeout:5000},(err,stdout)=>{
+      if(err&&!stdout)return sendJson(res,{ports:[]});
+      const ports=[];const seen=new Set();
+      const lines=stdout.split('\n');
+      for(const line of lines){
+        // Match port from ss output: Local Address:Port
+        const m=line.match(/:(\d{2,5})\s/);
+        if(!m)continue;
+        const port=parseInt(m[1]);
+        if(port<1024||port>65535||seen.has(port))continue;
+        if([3306,5432,6379,27017,9200].includes(port))continue; // skip db/cache ports from listing
+        seen.add(port);
+        const pidM=line.match(/pid=(\d+)/)||line.match(/(\d+)\//);
+        const pid=pidM?parseInt(pidM[1]):null;
+        // Guess process name from common dev ports
+        const names={3000:'Node/React',3001:'Node',4000:'Node/Ember',4200:'Angular',5000:'Python/Flask',5001:'Node',5173:'Vite',5174:'Vite',8000:'Python',8080:'HTTP',8081:'HTTP',8888:'Jupyter',9000:'PHP/Node',9229:'Node Debugger'};
+        ports.push({port,pid,name:names[port]||null});
+      }
+      return sendJson(res,{ports:ports.slice(0,20)});
+    });
+    return; // async response
+  }
+
+  // Static file server — serve arbitrary files by path (for image preview etc.)
+  if(route==='/api/static'&&req.method==='GET'){
+    const filePath=params.get('path')||params.get('file');
+    if(!filePath)return sendJson(res,{error:'Missing path'},400);
+    const abs=path.resolve(filePath);
+    if(!fs.existsSync(abs)||!fs.statSync(abs).isFile())return sendJson(res,{error:'Not found'},404);
+    const ext2=path.extname(abs).toLowerCase();
+    const mimeMap={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.svg':'image/svg+xml','.webp':'image/webp','.ico':'image/x-icon','.bmp':'image/bmp','.pdf':'application/pdf','.mp4':'video/mp4','.webm':'video/webm'};
+    const ct=mimeMap[ext2]||'application/octet-stream';
+    res.writeHead(200,{'Content-Type':ct,'Cache-Control':'public, max-age=60'});
+    fs.createReadStream(abs).pipe(res);
+    return;
+  }
+
   // Theme management
   const THEMES_FILE=path.join(DATA,'themes.json');
   if(route==='/api/themes'&&req.method==='GET'){
@@ -1281,6 +1379,31 @@ const server=http.createServer(async(req,res)=>{
   if(route==='/api/snippets'&&req.method==='GET')return sendJson(res,Snippets.load());
   if(route==='/api/snippets'&&req.method==='POST'){Snippets.add(data.name||'Untitled',data.code||'',data.lang||'',data.desc||'');return sendJson(res,{ok:true,snippets:Snippets.load()});}
   if(route.match(/^\/api\/snippets\/[^/]+$/)&&req.method==='DELETE'){Snippets.remove(route.split('/')[3]);return sendJson(res,{ok:true});}
+
+  // Settings — persistent IDE preferences (per user when logged in, else global)
+  if(route==='/api/settings'){
+    const u=getReqUser(req);
+    const userId=u?.id||'_global';
+    const settingsFile=path.join(DATA,'settings.'+userId.replace(/[^a-zA-Z0-9_-]/g,'_')+'.json');
+    if(req.method==='GET'){
+      try{const s=JSON.parse(fs.readFileSync(settingsFile,'utf8'));return sendJson(res,{settings:s,userId});}
+      catch(e){return sendJson(res,{settings:{},userId});}
+    }
+    if(req.method==='POST'){
+      if(!data||typeof data!=='object')return sendJson(res,{error:'Invalid body'},400);
+      // Whitelist allowed keys to avoid storing arbitrary data
+      const ALLOWED=['fontSize','fontFamily','tabSize','wordWrap','minimap','lineNumbers','lineHeight','indentGuides','bracketMatch','lintOnType','stickyScroll','renderWhitespace','theme','vimMode','zenMode','autosave','autosaveDelay','codeFolding','ghostCompletion','ghostDelay','aiModel','aiMaxTokens','aiSystemExtra','telemetry','keymapOverrides'];
+      const merged={};
+      for(const k of Object.keys(data)){if(ALLOWED.includes(k))merged[k]=data[k];}
+      try{
+        let existing={};try{existing=JSON.parse(fs.readFileSync(settingsFile,'utf8'));}catch(e){}
+        const out={...existing,...merged,_updated:Date.now()};
+        atomicWriteSync(settingsFile,JSON.stringify(out,null,2),{mode:0o600});
+        return sendJson(res,{ok:true,settings:out});
+      }catch(e){return sendJson(res,{error:e.message},500);}
+    }
+    if(req.method==='DELETE'){try{fs.unlinkSync(settingsFile);}catch(e){}return sendJson(res,{ok:true});}
+  }
 
   // Files
   if(route==='/api/files'&&req.method==='GET'){const d=safe(q.path||os.homedir());if(!d)return sendJson(res,{error:'Not allowed'},403);return sendJson(res,{entries:listDir(d),current:d,home:os.homedir()});}
@@ -1709,6 +1832,34 @@ const server=http.createServer(async(req,res)=>{
     const r=UsersDB.updateProfile(me.id,data);
     return sendJson(res,r);
   }
+  if(route==='/api/auth/password'&&req.method==='PUT'){
+    const tok=req.headers['x-user-token'];
+    const me=tok?UsersDB.getByToken(tok):null;
+    if(!me)return sendJson(res,{error:'Not authenticated'},401);
+    if(!data.currentPassword||!data.newPassword)return sendJson(res,{error:'currentPassword and newPassword required'},400);
+    if(data.newPassword.length<8)return sendJson(res,{error:'New password must be 8+ characters'},400);
+    if(!/[a-zA-Z]/.test(data.newPassword)||!/\d/.test(data.newPassword))return sendJson(res,{error:'New password must contain letters and numbers'},400);
+    const r=UsersDB.updateProfile(me.id,{currentPassword:data.currentPassword,newPassword:data.newPassword});
+    if(r.error)return sendJson(res,r,400);
+    auditLog('password_change',{id:me.id},req);
+    return sendJson(res,{ok:true});
+  }
+  if(route==='/api/auth/account'&&req.method==='DELETE'){
+    const tok=req.headers['x-user-token'];
+    const me=tok?UsersDB.getByToken(tok):null;
+    if(!me)return sendJson(res,{error:'Not authenticated'},401);
+    if(!data.password&&!me.oauth)return sendJson(res,{error:'Password required to delete account'},400);
+    if(data.password&&!me.oauth){
+      const check=UsersDB.login(me.email,data.password);
+      if(check.error)return sendJson(res,{error:'Wrong password'},401);
+    }
+    const d=UsersDB.load();
+    const idx=d.users.findIndex(x=>x.id===me.id);
+    if(idx===-1)return sendJson(res,{error:'Not found'},404);
+    d.users.splice(idx,1);UsersDB.save(d);
+    auditLog('account_delete',{id:me.id,email:me.email},req);
+    return sendJson(res,{ok:true});
+  }
   if(route==='/api/auth/users'&&req.method==='GET'){
     // admin only
     return sendJson(res,{users:UsersDB.load().users.map(({hash,salt,...u})=>u)});
@@ -1858,7 +2009,7 @@ const server=http.createServer(async(req,res)=>{
       });
       if(result.status&&result.data){
         auditLog('paystack_init',{email:u.email,plan,ref:result.data.reference},req);
-        return sendJson(res,{ok:true,authorization_url:result.data.authorization_url,reference:result.data.reference,access_code:result.data.access_code});
+        return sendJson(res,{ok:true,authorization_url:result.data.authorization_url,reference:result.data.reference,access_code:result.data.access_code,amount_kobo:amountKobo,amount:amountKobo/100,currency:'KES'});
       }
       return sendJson(res,{error:result.message||'Paystack initialization failed'},400);
     }catch(e){return sendJson(res,{error:'Paystack error: '+e.message},500);}
@@ -2087,6 +2238,65 @@ const server=http.createServer(async(req,res)=>{
     catch(e){return sendJson(res,{error:e.message},500);}
   }
 
+  // AI: build context from codebase
+  if(route==='/api/ai/context'&&req.method==='POST'){
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'No project dir'},400);
+    const maxFiles=data.maxFiles||20,maxBytes=data.maxBytes||40000;
+    const exts=new Set(['js','ts','jsx','tsx','py','go','rs','java','c','cpp','rb','php','sh','md','json','yaml','yml','toml','env']);
+    const files=[];
+    (function walk(d,depth){
+      if(depth>4||files.length>200)return;
+      try{fs.readdirSync(d,{withFileTypes:true}).forEach(e=>{
+        if(SKIP.includes(e.name)||e.name.startsWith('.'))return;
+        const fp=path.join(d,e.name);
+        if(e.isDirectory()){walk(fp,depth+1);return;}
+        const ext=path.extname(e.name).slice(1);
+        if(!exts.has(ext))return;
+        let st;try{st=fs.statSync(fp);}catch(e){return;}
+        if(st.size>100000)return;
+        files.push({path:fp.replace(dir+'/',''),size:st.size,modified:st.mtimeMs});
+      });}catch(e){}
+    })(dir,0);
+    files.sort((a,b)=>b.modified-a.modified);
+    const context=[];let totalBytes=0;
+    for(const f of files.slice(0,maxFiles)){
+      if(totalBytes>maxBytes)break;
+      try{const content=fs.readFileSync(path.join(dir,f.path),'utf8');context.push({file:f.path,content:content.slice(0,2000)});totalBytes+=content.length;}catch(e){}
+    }
+    return sendJson(res,{context,totalFiles:files.length,includedFiles:context.length});
+  }
+
+  // AI: refactor via Claude
+  if(route==='/api/ai/refactor'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const {code='',lang='',instruction='',file=''}=data;
+    const sys='You are an expert code refactoring assistant. Refactor the given code based on the instruction. Return ONLY the refactored code, no markdown fences, no explanations.';
+    const userMsg=`File: ${file||'untitled'}\nLanguage: ${lang}\nInstruction: ${instruction}\n\nCode:\n${code}`;
+    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:userMsg}]});
+    try{
+      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+      let refactored=result.content?.[0]?.text||code;
+      refactored=refactored.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
+      return sendJson(res,{refactored});
+    }catch(e){return sendJson(res,{error:e.message},500);}
+  }
+
+  // AI: analyze code for issues, patterns, improvements
+  if(route==='/api/ai/analyze'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const {code='',lang='',file=''}=data;
+    const sys='You are an expert code reviewer. Analyze the given code and return a JSON object with: {"issues": [{"line": number, "severity": "error|warning|info", "message": string}], "summary": string, "suggestions": [string], "complexity": "low|medium|high"}';
+    const userMsg=`File: ${file||'untitled'}\nLanguage: ${lang}\n\nCode:\n${code.slice(0,8000)}`;
+    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:[{role:'user',content:userMsg}]});
+    try{
+      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+      let text=result.content?.[0]?.text||'{}';
+      text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
+      let analysis;try{analysis=JSON.parse(text);}catch(e){analysis={summary:text,issues:[],suggestions:[],complexity:'unknown'};}
+      return sendJson(res,analysis);
+    }catch(e){return sendJson(res,{error:e.message},500);}
+  }
+
   // AI Agent — multi-file editing with tool use
   if(route==='/api/agent'&&req.method==='POST'){
     const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key'},401);
@@ -2162,6 +2372,26 @@ Return ONLY valid JSON array. No markdown.`;
     return new Promise(resolve=>{
       exec(cmd,{timeout:30000,maxBuffer:1024*1024},(err,stdout,stderr)=>{
         resolve(sendJson(res,{output:(stdout||'')+(stderr?'\n'+stderr:''),exitCode:err?err.code:0}));
+      });
+    });
+  }
+
+  // Test coverage
+  if(route==='/api/tests/coverage'&&req.method==='POST'){
+    const dir=safe(data.dir);if(!dir)return sendJson(res,{error:'Not allowed'},403);
+    const lang=data.lang||'';
+    let cmd='';
+    if(lang==='py'||data.file?.endsWith('.py'))cmd=`cd "${dir}" && python3 -m pytest --cov=. --cov-report=json --cov-report=term -q 2>&1; cat coverage.json 2>/dev/null | head -c 50000 || echo '{}'`;
+    else if(lang==='js'||lang==='ts'||lang==='jsx'||lang==='tsx')cmd=`cd "${dir}" && npx jest --coverage --coverageReporters=json-summary --no-cache 2>&1 | tail -100; cat coverage/coverage-summary.json 2>/dev/null || echo '{}'`;
+    else if(lang==='go')cmd=`cd "${dir}" && go test -coverprofile=coverage.out ./... 2>&1 && go tool cover -func=coverage.out 2>&1 | tail -20`;
+    else cmd=`cd "${dir}" && echo "Coverage not available for language: ${lang}"`;
+    return new Promise(resolve=>{
+      exec(cmd,{timeout:60000,maxBuffer:2*1024*1024},(err,stdout,stderr)=>{
+        const output=(stdout||'')+(stderr?'\n'+stderr:'');
+        // Try to parse a coverage percentage from the output
+        let pct=null;
+        const m=output.match(/(\d+(?:\.\d+)?)\s*%/);if(m)pct=parseFloat(m[1]);
+        resolve(sendJson(res,{output:output.slice(0,8000),coverage:pct,exitCode:err?err.code:0}));
       });
     });
   }
@@ -2394,6 +2624,41 @@ Return ONLY valid JSON array. No markdown.`;
   if(route==='/api/debug/list'&&req.method==='GET'){
     const sessions=Object.entries(debugSessions).map(([id,s])=>({id,lang:s.lang,file:s.file,state:s.state,exited:s.exited}));
     return sendJson(res,{sessions});
+  }
+  if(route==='/api/debug/stepOver'&&req.method==='POST'){
+    const id=data.id||'';const sess=debugSessions[id];
+    if(!sess)return sendJson(res,{error:'No session'});
+    try{await dapRequest(sess,'next',{threadId:sess.stoppedThread||1});sess.state='running';return sendJson(res,{ok:true});}
+    catch(e){return sendJson(res,{error:e.message});}
+  }
+  if(route==='/api/debug/stepInto'&&req.method==='POST'){
+    const id=data.id||'';const sess=debugSessions[id];
+    if(!sess)return sendJson(res,{error:'No session'});
+    try{await dapRequest(sess,'stepIn',{threadId:sess.stoppedThread||1});sess.state='running';return sendJson(res,{ok:true});}
+    catch(e){return sendJson(res,{error:e.message});}
+  }
+  if(route==='/api/debug/stepOut'&&req.method==='POST'){
+    const id=data.id||'';const sess=debugSessions[id];
+    if(!sess)return sendJson(res,{error:'No session'});
+    try{await dapRequest(sess,'stepOut',{threadId:sess.stoppedThread||1});sess.state='running';return sendJson(res,{ok:true});}
+    catch(e){return sendJson(res,{error:e.message});}
+  }
+  if(route==='/api/debug/pause'&&req.method==='POST'){
+    const id=data.id||'';const sess=debugSessions[id];
+    if(!sess)return sendJson(res,{error:'No session'});
+    try{await dapRequest(sess,'pause',{threadId:sess.stoppedThread||1});sess.state='paused';return sendJson(res,{ok:true});}
+    catch(e){return sendJson(res,{error:e.message});}
+  }
+  if(route==='/api/debug/state'&&req.method==='POST'){
+    const id=data.id||'';const sess=debugSessions[id];
+    if(!sess)return sendJson(res,{error:'No session'});
+    try{
+      const threads=await dapRequest(sess,'threads',{});
+      let stackFrames=[];
+      const tid=sess.stoppedThread||1;
+      try{const sf=await dapRequest(sess,'stackTrace',{threadId:tid,startFrame:0,levels:20});stackFrames=sf.body?.stackFrames||[];}catch(e){}
+      return sendJson(res,{state:sess.state,threads:threads.body?.threads||[],stackFrames,stoppedThread:tid});
+    }catch(e){return sendJson(res,{error:e.message});}
   }
   // Parsed git diff for visual diff editor
   if(route==='/api/git/diff-parsed'&&req.method==='GET'){
@@ -2847,6 +3112,154 @@ Return ONLY valid JSON array. No markdown.`;
       let out2;try{out2=JSON.parse(text);}catch(e){out2={refactored:text};}
       return sendJson(res,out2);
     }catch(e){return sendJson(res,{error:e.message},500);}
+  }
+
+  // Refactor sub-routes — delegate to the main /api/refactor handler logic
+  if(route==='/api/refactor/extract'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const {code='',lang='',selection=''}=data;
+    const sys='You are a code refactoring engine. Extract the selected code into a well-named function. Return JSON: {"refactored":"full new file content","functionName":"extracted function name","explanation":"brief description"}';
+    const msg=`Language: ${lang}\nFull file:\n${code}\nSelected code to extract:\n${selection}`;
+    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:msg}]});
+    try{const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+    let text=result.content?.[0]?.text||'{}';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
+    let out;try{out=JSON.parse(text);}catch(e){out={refactored:text};}return sendJson(res,out);}
+    catch(e){return sendJson(res,{error:e.message},500);}
+  }
+  if(route==='/api/refactor/rename'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const {code='',oldName='',newName=''}=data;
+    if(!oldName||!newName)return sendJson(res,{error:'oldName and newName required'},400);
+    // Simple text-level rename — replace all occurrences of the symbol
+    const escaped=oldName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const re=new RegExp(`\\b${escaped}\\b`,'g');
+    const refactored=code.replace(re,newName);
+    const count=(code.match(re)||[]).length;
+    return sendJson(res,{refactored,renamedCount:count,oldName,newName});
+  }
+  if(route==='/api/refactor/cleanup'&&req.method==='POST'){
+    const apiKey=getKey(data.apiKey);if(!apiKey)return sendJson(res,{error:'No API key'},401);
+    const {code='',lang=''}=data;
+    const sys='You are a code cleanup engine. Remove dead code, fix formatting, organize imports, remove unused variables. Return JSON: {"refactored":"full cleaned file content","changes":["list of changes made"]}';
+    const msg=`Language: ${lang}\nCode to clean:\n${code}`;
+    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:msg}]});
+    try{const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+    let text=result.content?.[0]?.text||'{}';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
+    let out;try{out=JSON.parse(text);}catch(e){out={refactored:text,changes:[]};}return sendJson(res,out);}
+    catch(e){return sendJson(res,{error:e.message},500);}
+  }
+
+  // ── Database (MySQL) ───────────────────────────────────────────
+  const DB_CONNS_FILE=path.join(DATA,'db_connections.json');
+  const loadDbConns=()=>{try{return JSON.parse(fs.readFileSync(DB_CONNS_FILE,'utf8'));}catch(e){return[];}};
+  const saveDbConns=(c)=>{atomicWriteSync(DB_CONNS_FILE,JSON.stringify(c));};
+  if(route==='/api/db/connections'&&req.method==='GET'){
+    return sendJson(res,{connections:loadDbConns().map(c=>({...c,password:undefined}))});
+  }
+  if(route==='/api/db/connections'&&req.method==='POST'){
+    // Test the connection first, then save
+    const {name='',host='localhost',port=3306,user='root',password='',database=''}=data;
+    if(!name||!host||!user)return sendJson(res,{error:'name, host and user required'},400);
+    let mysql2;try{mysql2=require('mysql2/promise');}catch(e){return sendJson(res,{error:'mysql2 not installed. Run: npm install mysql2'},500);}
+    let conn;
+    try{
+      conn=await mysql2.createConnection({host,port:+port,user,password,database:database||undefined,connectTimeout:5000});
+      await conn.ping();
+      const id=crypto.randomUUID();
+      const conns=loadDbConns();
+      const existing=conns.findIndex(c=>c.id===data.id);
+      const record={id:data.id||id,name,host,port:+port,user,password,database,created:new Date().toISOString()};
+      if(existing>=0)conns[existing]=record;else conns.push(record);
+      saveDbConns(conns);
+      return sendJson(res,{ok:true,id:record.id,message:'Connected successfully'});
+    }catch(e){return sendJson(res,{error:'Connection failed: '+e.message},400);}
+    finally{if(conn)try{await conn.end();}catch(e){}}
+  }
+  if(route.match(/^\/api\/db\/connections\/[^/]+$/)&&req.method==='DELETE'){
+    const cid=route.split('/')[4];
+    saveDbConns(loadDbConns().filter(c=>c.id!==cid));
+    return sendJson(res,{ok:true});
+  }
+  if(route==='/api/db/query'&&req.method==='POST'){
+    const {connectionId='',sql='',limit=500}=data;
+    if(!sql.trim())return sendJson(res,{error:'sql required'},400);
+    const conns=loadDbConns();const cfg=conns.find(c=>c.id===connectionId);
+    if(!cfg)return sendJson(res,{error:'Connection not found'},404);
+    let mysql2;try{mysql2=require('mysql2/promise');}catch(e){return sendJson(res,{error:'mysql2 not installed'},500);}
+    let conn;
+    try{
+      conn=await mysql2.createConnection({host:cfg.host,port:+cfg.port,user:cfg.user,password:cfg.password,database:cfg.database||undefined,connectTimeout:8000});
+      // Allow only SELECT/SHOW/DESCRIBE/EXPLAIN for safety unless explicitly unlocked
+      const safeSql=sql.trim();
+      const firstWord=safeSql.split(/\s+/)[0].toUpperCase();
+      const safeOps=new Set(['SELECT','SHOW','DESCRIBE','DESC','EXPLAIN','WITH']);
+      if(!safeOps.has(firstWord)&&!data.allowWrite)return sendJson(res,{error:'Only SELECT/SHOW/DESCRIBE/EXPLAIN allowed. Pass allowWrite:true to run write queries.'},403);
+      const [rows,fields]=await conn.execute(safeSql);
+      const columns=(fields||[]).map(f=>({name:f.name,type:f.type}));
+      const limited=Array.isArray(rows)?rows.slice(0,+limit):rows;
+      return sendJson(res,{rows:limited,columns,rowCount:Array.isArray(rows)?rows.length:0,truncated:Array.isArray(rows)&&rows.length>+limit});
+    }catch(e){return sendJson(res,{error:e.message},400);}
+    finally{if(conn)try{await conn.end();}catch(e){}}
+  }
+  if(route==='/api/db/tables'&&req.method==='POST'){
+    const {connectionId=''}=data;
+    const conns=loadDbConns();const cfg=conns.find(c=>c.id===connectionId);
+    if(!cfg)return sendJson(res,{error:'Connection not found'},404);
+    let mysql2;try{mysql2=require('mysql2/promise');}catch(e){return sendJson(res,{error:'mysql2 not installed'},500);}
+    let conn;
+    try{
+      conn=await mysql2.createConnection({host:cfg.host,port:+cfg.port,user:cfg.user,password:cfg.password,database:cfg.database||undefined,connectTimeout:5000});
+      const [tables]=await conn.execute(`SELECT TABLE_NAME as name, TABLE_ROWS as rows, TABLE_TYPE as type FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME`);
+      return sendJson(res,{tables:tables||[]});
+    }catch(e){return sendJson(res,{error:e.message},400);}
+    finally{if(conn)try{await conn.end();}catch(e){}}
+  }
+
+  // ── Workspaces ─────────────────────────────────────────────────
+  const WS_FILE=path.join(DATA,'workspaces.json');
+  const loadWS=()=>{try{return JSON.parse(fs.readFileSync(WS_FILE,'utf8'));}catch(e){return[];}};
+  const saveWS=(w)=>{atomicWriteSync(WS_FILE,JSON.stringify(w));};
+  if(route==='/api/workspaces'&&req.method==='GET'){
+    return sendJson(res,{workspaces:loadWS()});
+  }
+  if(route==='/api/workspaces'&&req.method==='POST'){
+    const{name='',folders=[],settings={}}=data;
+    if(!name)return sendJson(res,{error:'name required'},400);
+    const ws=loadWS();
+    const existing=ws.findIndex(w=>w.id===data.id);
+    const record={id:data.id||crypto.randomUUID(),name,folders,settings,updated:new Date().toISOString()};
+    if(existing>=0)ws[existing]=record;else ws.unshift(record);
+    saveWS(ws);return sendJson(res,{ok:true,workspace:record});
+  }
+  if(route.match(/^\/api\/workspaces\/[^/]+$/)&&req.method==='DELETE'){
+    const wid=route.split('/')[3];saveWS(loadWS().filter(w=>w.id!==wid));return sendJson(res,{ok:true});
+  }
+
+  // ── Terminal Profiles ──────────────────────────────────────────
+  const TP_FILE=path.join(DATA,'terminal_profiles.json');
+  const DEFAULT_PROFILES=[
+    {id:'default',name:'Default',shell:process.env.SHELL||'/bin/bash',args:[],env:{},cwd:'~',icon:'🖥',isDefault:true},
+    {id:'zsh',name:'Zsh',shell:'/bin/zsh',args:[],env:{},cwd:'~',icon:'⚡'},
+    {id:'fish',name:'Fish',shell:'/usr/bin/fish',args:[],env:{},cwd:'~',icon:'🐟'},
+  ];
+  const loadTP=()=>{try{return JSON.parse(fs.readFileSync(TP_FILE,'utf8'));}catch(e){return DEFAULT_PROFILES;}};
+  const saveTP=(p)=>{atomicWriteSync(TP_FILE,JSON.stringify(p));};
+  if(route==='/api/terminal/profiles'&&req.method==='GET'){
+    return sendJson(res,{profiles:loadTP()});
+  }
+  if(route==='/api/terminal/profiles'&&req.method==='POST'){
+    const{name='',shell='',args=[],env={},cwd='~',icon='🖥',isDefault=false}=data;
+    if(!name||!shell)return sendJson(res,{error:'name and shell required'},400);
+    const profiles=loadTP();
+    if(isDefault)profiles.forEach(p=>p.isDefault=false);
+    const existing=profiles.findIndex(p=>p.id===data.id);
+    const record={id:data.id||crypto.randomUUID(),name,shell,args,env,cwd,icon,isDefault};
+    if(existing>=0)profiles[existing]=record;else profiles.push(record);
+    saveTP(profiles);return sendJson(res,{ok:true,profile:record});
+  }
+  if(route.match(/^\/api\/terminal\/profiles\/[^/]+$/)&&req.method==='DELETE'){
+    const pid2=route.split('/')[4];
+    saveTP(loadTP().filter(p=>p.id!==pid2));return sendJson(res,{ok:true});
   }
 
   // ── Notepads ──────────────────────────────────────────────────

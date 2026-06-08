@@ -1,28 +1,46 @@
 {
   "name": "axiom-ide",
   "version": "6.0.0",
-  "description": "AXIOM v6 - East Africa Edition Web IDE",
-  "main": "src/server.js",
+  "description": "AXIOM v6 — AI-Powered IDE, East Africa Edition",
+  "main": "electron/main.js",
+  "homepage": "https://axiom.dev",
+  "author": {
+    "name": "AXIOM IDE",
+    "email": "hello@axiom.dev"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "web": "node src/server.js",
+    "electron": "electron . --no-sandbox",
+    "electron:dev": "NODE_ENV=development electron . --dev",
+    "build": "electron-builder --publish never",
+    "build:win": "electron-builder --win --publish never",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:linux": "electron-builder --linux --publish never",
+    "build:all": "electron-builder -mwl --publish never",
+    "dist": "electron-builder --publish always",
     "test": "node --test tests/basic.test.js",
     "migrate": "node scripts/migrate.js",
-    "lint": "node -c src/server.js && node scripts/lint-check.js"
+    "lint": "node -c src/server.js && node scripts/lint-check.js",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "ide",
     "web-ide",
+    "desktop",
     "editor",
     "terminal",
     "lsp",
     "dap",
     "ai",
-    "east-africa"
+    "east-africa",
+    "electron"
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.0.0",
+    "electron": ">=28.0.0"
   },
   "dependencies": {
     "express": "^5.2.1",
@@ -31,5 +49,152 @@
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "xterm-addon-web-links": "^0.9.0"
+  },
+  "devDependencies": {
+    "electron": "^30.5.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.axiom.ide",
+    "productName": "AXIOM IDE",
+    "copyright": "Copyright © 2025 AXIOM IDE",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "public/**/*",
+      "extensions/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "!node_modules/.cache",
+      "!**/*.test.js",
+      "!tests/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "public",
+        "to": "public"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "AXIOM IDE",
+        "schemes": [
+          "axiom"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "publisherName": "AXIOM IDE"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Development",
+      "synopsis": "AI-Powered IDE for East Africa",
+      "description": "Full-featured AI IDE with terminal, git, LSP, and Claude AI integration",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "snap",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AXIOM IDE",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "license": "LICENSE"
+    },
+    "dmg": {
+      "title": "AXIOM IDE ${version}",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "axiom-ide",
+        "repo": "axiom"
+      }
+    ]
   }
 }
