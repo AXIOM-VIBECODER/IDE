@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#0d0d0d"/>
+  <text x="256" y="300" font-family="monospace" font-size="220" font-weight="bold" fill="#f5c518" text-anchor="middle">Ax</text>
+  <rect x="60" y="380" width="392" height="6" rx="3" fill="#f5c518" opacity="0.4"/>
+  <rect x="60" y="400" width="260" height="6" rx="3" fill="#f5c518" opacity="0.25"/>
+</svg>

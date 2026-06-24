@@ -1,9 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#0d0d0d"/>
+<meta name="description" content="AI-Powered IDE for East African Developers — runs in your browser"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="AXIOM IDE"/>
+<meta name="application-name" content="AXIOM IDE"/>
+<meta name="msapplication-TileColor" content="#0d0d0d"/>
+<meta name="msapplication-TileImage" content="/icons/icon.svg"/>
 <title>AXIOM IDE — Source Code Editor</title>
+<link rel="manifest" href="/manifest.json"/>
 <link rel="icon" type="image/png" href="/axiom-logo.png"/>
+<link rel="apple-touch-icon" href="/icons/icon.svg"/>
+<link rel="apple-touch-startup-image" href="/icons/icon.svg"/>
 <link id="hltheme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <!-- xterm.js served locally — no CDN dependency -->
@@ -992,6 +1005,36 @@ button:active {
 .ea-hub-ic { font-size: 20px; flex-shrink: 0; width: 28px; text-align: center; }
 .ea-hub-name { font-size: 12px; font-weight: 500; color: var(--tx); }
 .ea-hub-desc { font-size: 10px; color: var(--tx3); line-height: 1.4; margin-top: 1px; }
+/* EA Tools */
+.ea-tool-btn { display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--tx);cursor:pointer;font-size:12px;text-align:left;transition:background .1s;margin-bottom:5px; }
+.ea-tool-btn:hover { background:var(--ac3); }
+.ea-tool-btn .etb-ic { font-size:16px;flex-shrink:0; }
+.ea-tool-btn .etb-label { font-weight:500; }
+.ea-tool-btn .etb-desc { font-size:10px;color:var(--tx3); }
+/* Orchestra roles */
+.orch-role { border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:var(--surface); }
+.orch-role-hdr { display:flex;align-items:center;gap:10px;margin-bottom:8px; }
+.orch-icon { font-size:20px;width:28px;text-align:center;flex-shrink:0; }
+.orch-role-name { font-size:12px;font-weight:600;color:var(--tx); }
+.orch-role-desc { font-size:10px;color:var(--tx3);margin-top:1px; }
+/* Orchestra run output */
+.orch-output { border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:8px; }
+.orch-agent-block { border-bottom:1px solid var(--border); }
+.orch-agent-block:last-child { border-bottom:none; }
+.orch-agent-hdr { display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);cursor:pointer;font-size:12px;font-weight:600;color:var(--tx); }
+.orch-agent-hdr .oa-status { margin-left:auto;font-size:10px;font-weight:400; }
+.orch-agent-body { padding:12px;background:var(--panel);font-size:12px;color:var(--tx);line-height:1.6;white-space:pre-wrap;font-family:'JetBrains Mono',monospace;max-height:300px;overflow-y:auto; }
+.orch-agent-body.collapsed { display:none; }
+/* USSD builder */
+.ussd-node { border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;background:var(--surface); }
+.ussd-node-hdr { display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px;font-weight:600;color:var(--tx); }
+.ussd-option { display:flex;gap:6px;margin-bottom:4px;align-items:center; }
+.ussd-option input { flex:1;background:var(--panel);border:1px solid var(--border2);border-radius:3px;color:var(--tx);font-size:11px;padding:3px 6px; }
+/* Snippet cards */
+.snippet-card { border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;background:var(--surface);cursor:pointer;transition:border-color .1s; }
+.snippet-card:hover { border-color:var(--ac); }
+.snippet-card-title { font-size:12px;font-weight:600;color:var(--tx);display:flex;align-items:center;gap:6px; }
+.snippet-card-desc { font-size:10px;color:var(--tx3);margin-top:2px; }
 
 /* Timeline */
 .tl-item { display: flex; gap: 8px; padding: 6px 12px; cursor: pointer; font-size: 11px; font-family: 'JetBrains Mono', monospace; border-bottom: 1px solid var(--border); }
@@ -3610,12 +3653,30 @@ body[data-t="dark"]{
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js" onload="
   require.config({ paths: { vs: _monacoBaseUrl } });
   require(['vs/editor/editor.main'], function() {
+    clearTimeout(window._monacoFallbackTimer);
     window._monacoLoaded = true;
     window._monacoInstances = {};
     window._monacoProxies = {};
     if (typeof initMonacoEditors === 'function') initMonacoEditors();
   });
+" onerror="
+  clearTimeout(window._monacoFallbackTimer);
+  console.warn('[AXIOM] Monaco CDN failed to load — running in basic editor mode');
+  window._monacoOffline = true;
+  setTimeout(function() {
+    if (typeof notif === 'function') notif('Monaco editor unavailable (CDN unreachable) — using basic editor mode', 'warn');
+  }, 2000);
 "></script>
+<script>
+  // Timeout fallback: if Monaco hasn't loaded in 10 s, notify the user
+  window._monacoFallbackTimer = setTimeout(function() {
+    if (!window._monacoLoaded) {
+      window._monacoOffline = true;
+      if (typeof notif === 'function') notif('Monaco editor timed out — using basic editor mode', 'warn');
+      console.warn('[AXIOM] Monaco load timeout');
+    }
+  }, 10000);
+</script>
 <body data-t="dark">
 
 <!-- ═══════════════════════════════════════════════════════
@@ -3733,6 +3794,7 @@ body[data-t="dark"]{
       <button class="tb-btn" onclick="openPalette()" title="Command palette (Ctrl+P)">⌘P</button>
       <div class="tb-divider"></div>
       <button class="tb-btn ai" id="ai-toggle" onclick="toggleAI()">Cascade</button>
+      <button class="tb-btn" onclick="runOrchestra()" title="AI Orchestra — Architect + Coder + Documenter" style="font-size:13px;letter-spacing:0">🎼</button>
       <div class="user-avatar" id="user-avatar" onclick="toggleUserMenu()" title="Account"></div>
     </div>
   </div>
@@ -4273,19 +4335,13 @@ body[data-t="dark"]{
       <div class="panel-section" id="ps-database">
         <div class="panel-hdr">
           <span class="panel-title">Database</span>
-          <div class="panel-acts"><button class="pact" onclick="queryAdminDB()">▶</button></div>
+          <div class="panel-acts">
+            <button class="pact" onclick="refreshDbPanel()" title="Refresh">↺</button>
+            <button class="pact" onclick="showAddDbConnectionModal()" title="New Connection">+</button>
+          </div>
         </div>
-        <div class="db-section">
-          <div class="db-hdr">Natural Language Query</div>
-          <textarea class="db-query" id="db-query" placeholder="Ask about your data… (e.g. 'How many users signed up this week?')"></textarea>
-          <button class="db-run" onclick="queryAdminDB()">Run Query ▶</button>
-          <div class="db-result" id="db-result" style="display:none"></div>
-        </div>
-        <div class="db-section">
-          <div class="db-hdr">Tables</div>
-          <div class="db-table" onclick="queryAdminDB('list all users')"><span class="db-table-ic">🗃</span> users</div>
-          <div class="db-table" onclick="queryAdminDB('list all payments')"><span class="db-table-ic">🗃</span> payments</div>
-          <div class="db-table" onclick="queryAdminDB('show analytics overview')"><span class="db-table-ic">🗃</span> analytics</div>
+        <div id="db-panel-body" style="flex:1;overflow-y:auto;padding:4px 6px">
+          <div style="color:var(--tx3);font-size:11px;padding:10px 4px">Loading connections…</div>
         </div>
       </div>
 
@@ -4488,7 +4544,84 @@ body[data-t="dark"]{
       <div class="panel-section" id="ps-set">
         <div class="panel-hdr"><span class="panel-title">Settings</span></div>
         <div class="stng">
-          <div class="ss"><div class="ss-hdr">Anthropic API Key</div><input type="password" class="si key" id="s-key" placeholder="sk-ant-…"/><span class="kst" id="kst"></span><button class="ss-btn" onclick="saveKey()">Save Key</button></div>
+          <!-- AI PROVIDER SECTION -->
+          <div class="ss" id="ss-ai-provider">
+            <div class="ss-hdr">AI Provider</div>
+            <div class="sr"><label>Provider</label>
+              <select id="s-ai-provider" onchange="onProviderChange()" style="flex:1">
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="ollama">Ollama (local)</option>
+                <option value="lmstudio">LM Studio (local)</option>
+              </select>
+            </div>
+            <div class="sr" id="sr-ai-model"><label>Model</label>
+              <select id="s-ai-model" style="flex:1"><option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option></select>
+              <button class="ss-btn" onclick="fetchAIModels()" style="margin-left:4px;padding:3px 7px;font-size:10px" title="Refresh models">↺</button>
+            </div>
+            <div class="sr" id="sr-ai-baseurl" style="display:none"><label>Base URL</label>
+              <input type="text" class="si" id="s-ai-baseurl" placeholder="http://localhost:11434" style="flex:1;font-size:11px"/>
+            </div>
+            <div class="sr" id="sr-ai-status"><label>Status</label><span id="ai-provider-status" style="font-size:11px;color:var(--tx3)">—</span></div>
+            <button class="ss-btn" onclick="saveAIProviderSettings()">Save Provider</button>
+          </div>
+          <!-- AI ORCHESTRA -->
+          <div class="ss" id="ss-orchestra">
+            <div class="ss-hdr">AI Orchestra <span style="font-size:10px;font-weight:400;color:var(--tx3);margin-left:6px">3 specialized agents</span></div>
+            <div style="font-size:11px;color:var(--tx3);margin-bottom:10px;line-height:1.5">
+              Assign each role a different model. The pipeline runs: <strong style="color:var(--ac)">Architect → Coder → Documenter</strong>
+            </div>
+            <!-- Architect -->
+            <div class="orch-role" id="orch-architect">
+              <div class="orch-role-hdr">
+                <span class="orch-icon">🏗</span>
+                <div><div class="orch-role-name">Architect</div><div class="orch-role-desc">Plans structure, architecture &amp; data flow</div></div>
+              </div>
+              <div class="sr"><label>Provider</label>
+                <select class="orch-prov" data-role="architect" onchange="onOrchProviderChange('architect')">
+                  <option value="anthropic">Anthropic</option><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option>
+                </select>
+              </div>
+              <div class="sr"><label>Model</label><input class="orch-model" data-role="architect" placeholder="claude-opus-4-8" style="flex:1;padding:4px 8px;background:var(--panel);border:1px solid var(--border2);border-radius:4px;color:var(--tx);font-size:11px"/></div>
+              <div class="sr orch-url-row" data-role="architect" style="display:none"><label>Base URL</label><input class="orch-url" data-role="architect" placeholder="http://localhost:11434" style="flex:1;padding:4px 8px;background:var(--panel);border:1px solid var(--border2);border-radius:4px;color:var(--tx);font-size:11px"/></div>
+            </div>
+            <!-- Coder -->
+            <div class="orch-role" id="orch-coder">
+              <div class="orch-role-hdr">
+                <span class="orch-icon">⌨️</span>
+                <div><div class="orch-role-name">Coder</div><div class="orch-role-desc">Writes production-ready implementation</div></div>
+              </div>
+              <div class="sr"><label>Provider</label>
+                <select class="orch-prov" data-role="coder" onchange="onOrchProviderChange('coder')">
+                  <option value="anthropic">Anthropic</option><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option>
+                </select>
+              </div>
+              <div class="sr"><label>Model</label><input class="orch-model" data-role="coder" placeholder="claude-sonnet-4-20250514" style="flex:1;padding:4px 8px;background:var(--panel);border:1px solid var(--border2);border-radius:4px;color:var(--tx);font-size:11px"/></div>
+              <div class="sr orch-url-row" data-role="coder" style="display:none"><label>Base URL</label><input class="orch-url" data-role="coder" placeholder="http://localhost:11434" style="flex:1;padding:4px 8px;background:var(--panel);border:1px solid var(--border2);border-radius:4px;color:var(--tx);font-size:11px"/></div>
+            </div>
+            <!-- Documenter -->
+            <div class="orch-role" id="orch-documenter">
+              <div class="orch-role-hdr">
+                <span class="orch-icon">📝</span>
+                <div><div class="orch-role-name">Documenter</div><div class="orch-role-desc">Writes docs, JSDoc, and usage examples</div></div>
+              </div>
+              <div class="sr"><label>Provider</label>
+                <select class="orch-prov" data-role="documenter" onchange="onOrchProviderChange('documenter')">
+                  <option value="anthropic">Anthropic</option><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option>
+                </select>
+              </div>
+              <div class="sr"><label>Model</label><input class="orch-model" data-role="documenter" placeholder="claude-haiku-4-5-20251001" style="flex:1;padding:4px 8px;background:var(--panel);border:1px solid var(--border2);border-radius:4px;color:var(--tx);font-size:11px"/></div>
+              <div class="sr orch-url-row" data-role="documenter" style="display:none"><label>Base URL</label><input class="orch-url" data-role="documenter" placeholder="http://localhost:11434" style="flex:1;padding:4px 8px;background:var(--panel);border:1px solid var(--border2);border-radius:4px;color:var(--tx);font-size:11px"/></div>
+            </div>
+            <button class="ss-btn" onclick="saveOrchestra()" style="margin-top:6px">Save Orchestra</button>
+            <button class="ss-btn" onclick="runOrchestra()" style="background:var(--ac);color:#000;font-weight:600;margin-left:6px">▶ Run Orchestra</button>
+          </div>
+          <!-- ANTHROPIC KEY (shown only when provider=anthropic) -->
+          <div class="ss" id="ss-anthropic-key">
+            <div class="ss-hdr">Anthropic API Key</div>
+            <input type="password" class="si key" id="s-key" placeholder="sk-ant-…"/>
+            <span class="kst" id="kst"></span>
+            <button class="ss-btn" onclick="saveKey()">Save Key</button>
+          </div>
           <div class="ss">
             <div class="ss-hdr">Editor</div>
             <div class="sr"><label>Font size</label><select id="s-fs" onchange="applyPrefs()"><option value="12">12px</option><option value="13" selected>13px</option><option value="14">14px</option><option value="15">15px</option></select></div>
@@ -4605,6 +4738,36 @@ body[data-t="dark"]{
             <div class="ea-hub-ic">🌍</div>
             <div><div class="ea-hub-name">Awesome Africa</div><div class="ea-hub-desc">Curated list of African tech resources</div></div>
           </div>
+
+          <div style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px">EA Dev Tools</div>
+          <button class="ea-tool-btn" onclick="openUSSDBuilder()">
+            <span class="etb-ic">📟</span>
+            <div><div class="etb-label">USSD Menu Builder</div><div class="etb-desc">Visual builder for *123# USSD flows</div></div>
+          </button>
+          <button class="ea-tool-btn" onclick="insertMpesaSnippet()">
+            <span class="etb-ic">📱</span>
+            <div><div class="etb-label">M-Pesa STK Push</div><div class="etb-desc">Drop-in Daraja API payment code</div></div>
+          </button>
+          <button class="ea-tool-btn" onclick="insertSnippetByTag('sms')">
+            <span class="etb-ic">📨</span>
+            <div><div class="etb-label">SMS via Africa's Talking</div><div class="etb-desc">Send SMS snippet (Node/Python)</div></div>
+          </button>
+          <button class="ea-tool-btn" onclick="insertSnippetByTag('airtime')">
+            <span class="etb-ic">📶</span>
+            <div><div class="etb-label">Airtime Top-Up</div><div class="etb-desc">Africa's Talking airtime API snippet</div></div>
+          </button>
+          <button class="ea-tool-btn" onclick="openSwahiliPrompt()">
+            <span class="etb-ic">🌍</span>
+            <div><div class="etb-label">Ask AI in Swahili/Sheng</div><div class="etb-desc">Niambie AI kwa Kiswahili</div></div>
+          </button>
+          <button class="ea-tool-btn" onclick="openDeployModal()">
+            <span class="etb-ic">🚀</span>
+            <div><div class="etb-label">One-Click Deploy</div><div class="etb-desc">Deploy to Railway, Render, Fly.io</div></div>
+          </button>
+          <button class="ea-tool-btn" onclick="checkOfflineStatus()">
+            <span class="etb-ic">📡</span>
+            <div><div class="etb-label">Offline Status</div><div class="etb-desc">Check what works without internet</div></div>
+          </button>
 
           <div style="margin-top:12px;padding:10px;background:var(--surface);border-radius:8px;text-align:center">
             <div style="font-size:11px;color:var(--ac);font-weight:500;margin-bottom:4px">Mtu ni watu</div>
@@ -5716,6 +5879,8 @@ async function boot() {
     api('GET', '/api/key').catch(() => ({})),
     api('GET', '/api/memory').catch(() => ({}))
   ]);
+  loadAIProviderSettings().catch(()=>{});
+  loadOrchestra().catch(()=>{});
   api('POST', '/api/session/start').catch(() => {});
 
   // API key status
@@ -5923,6 +6088,7 @@ function setPanel(name) {
   if(name==='profile')loadUserProfile();
   if(name==='billing')loadMpesaTxns();
   if(name==='timeline')loadTimeline();
+  if(name==='database')refreshDbPanel();
   if(typeof saveWorkspace==='function') saveWorkspace();
 }
 
@@ -5951,9 +6117,10 @@ function abPanel(name) {
 // OUTLINE PANEL — document symbols
 // ═══════════════════════════════════════════════════════
 function buildOutline() {
-  const ed = document.getElementById('editor');
-  const code = ed?.value || '';
   const tab = tabs.find(t=>t.id===atab);
+  const code = (window._monacoReady && window._monacoInstances?.[1])
+    ? window._monacoInstances[1].getValue()
+    : (document.getElementById('editor')?.value || tab?.content || '');
   const lang = tab ? getLangKey(tab.name) : '';
   const el = document.getElementById('outline-tree');
   if (!code.trim()) { el.innerHTML='<div class="outline-empty">Open a file to see its outline</div>'; return; }
@@ -7245,6 +7412,9 @@ function closeTerm(id){
   else activeTerm=null;
 }
 
+// closeTermTab: alias used by terminal manager overlay
+function closeTermTab(id){ closeTerm(id); }
+
 function clearActiveTerm(){if(activeTerm&&terms[activeTerm]){terms[activeTerm].term.clear();terms[activeTerm].term.focus();}}
 
 function focusActiveTerm(){if(activeTerm&&terms[activeTerm])setTimeout(()=>{try{terms[activeTerm].fitAddon.fit();}catch(e){}terms[activeTerm].term.focus();},50);}
@@ -7517,7 +7687,7 @@ async function loadWorkspaces(){
 
 async function addWorkspace(name, path, type = 'folder'){
   try{
-    const r = await api('POST', '/api/workspaces', { name, path, type });
+    const r = await api('POST', '/api/workspaces', { name, folders: path ? [path] : [], settings: {type} });
     if(r.workspace){
       workspacesCache.push(r.workspace);
       notif('Workspace added successfully','ok');
@@ -7551,7 +7721,7 @@ async function detectProjectTasks(dir){
 async function runTask(command, dir){
   try{
     const r = await api('POST', '/api/tasks/run', { command, dir });
-    if(r.success){
+    if(r.ok || r.exitCode===0){
       notif('Task completed successfully','ok');
       return r.output;
     }else{
@@ -7956,8 +8126,8 @@ async function extractMethod(startLine, endLine, methodName = 'extractedMethod')
       methodName
     });
 
-    if(r.success){
-      notif(`Extracted method: ${methodName}`,'success');
+    if(r.refactored){
+      notif(`Extracted: ${r.functionName||methodName}`,'ok');
       const fileR = await api('GET', `/api/file?path=${encodeURIComponent(curFile)}`);
       if(fileR.content){
         const ed = getEd(1);
@@ -7992,8 +8162,8 @@ async function renameSymbol(oldName, newName){
       newName
     });
 
-    if(r.success){
-      notif(`Renamed ${r.replacements} occurrence${r.replacements !== 1 ? 's' : ''}`,'success');
+    if(r.refactored){
+      notif(`Renamed ${r.renamedCount||0} occurrence(s)`,'ok');
       const fileR = await api('GET', `/api/file?path=${encodeURIComponent(curFile)}`);
       if(fileR.content){
         const ed = getEd(1);
@@ -8020,8 +8190,8 @@ async function codeCleanup(){
       path: curFile
     });
 
-    if(r.success){
-      notif(`Cleanup complete: ${r.fixes.length} fix${r.fixes.length !== 1 ? 'es' : ''}`,'success');
+    if(r.refactored){
+      notif('Cleanup complete','ok');
       if(r.fixes.length > 0){
         notif('Fixes: ' + r.fixes.join(', '),'info');
       }
@@ -8356,6 +8526,34 @@ async function loadDbConnections(){
   }
 }
 
+async function refreshDbPanel(){
+  await loadDbConnections();
+  const el = document.getElementById('db-panel-body');
+  if(!el) return;
+  if(!dbConnections.length){
+    el.innerHTML = `<div style="color:var(--tx3);font-size:11px;padding:10px 4px;text-align:center">No connections<br><button onclick="showAddDbConnectionModal()" style="margin-top:6px;padding:5px 12px;background:var(--ac);border:none;border-radius:4px;color:#fff;font-size:11px;cursor:pointer">Add Connection</button></div>`;
+    return;
+  }
+  const typeIcon = {mysql:'🐬', postgresql:'🐘', sqlite:'🗃', default:'🔌'};
+  el.innerHTML = dbConnections.map(c => `
+    <div style="padding:8px 6px;border-radius:5px;background:var(--surface);margin-bottom:5px;cursor:pointer" onclick="selectAndQueryDb('${esc(c.id)}')">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:14px">${typeIcon[c.type]||typeIcon.default}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</div>
+          <div style="font-size:10px;color:var(--tx3)">${esc(c.type)} · ${esc(c.database||c.host||'')}</div>
+        </div>
+        <button onclick="event.stopPropagation();deleteDbConnection('${esc(c.id)}')" title="Remove" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:13px;padding:2px 4px">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function selectAndQueryDb(id){
+  selectedDbConnection = dbConnections.find(c => c.id === id);
+  if(selectedDbConnection) showQueryEditorModal();
+}
+
 async function addDbConnection(name, type, host, port, database, user, password){
   try{
     const r = await api('POST', '/api/db/connections', {
@@ -8368,10 +8566,10 @@ async function addDbConnection(name, type, host, port, database, user, password)
       password
     });
     
-    if(r.success){
-      notif('Database connection added','success');
+    if(r.ok){
+      notif('Database connection added','ok');
       await loadDbConnections();
-      return r.connection;
+      return dbConnections.find(c=>c.id===r.id)||null;
     }else{
       notif('Failed to add connection: ' + r.error,'err');
       return null;
@@ -8385,8 +8583,8 @@ async function addDbConnection(name, type, host, port, database, user, password)
 async function deleteDbConnection(id){
   try{
     const r = await api('DELETE', `/api/db/connections/${id}`);
-    if(r.success){
-      notif('Database connection deleted','success');
+    if(r.ok){
+      notif('Database connection deleted','ok');
       await loadDbConnections();
     }else{
       notif('Failed to delete connection: ' + r.error,'err');
@@ -8411,7 +8609,7 @@ async function executeDbQuery(connectionId, query){
 
 async function getDbSchema(connectionId){
   try{
-    const r = await api('GET', `/api/db/schema/${connectionId}`);
+    const r = await api('POST', '/api/db/tables', {connectionId});
     showSchemaResults(r);
   }catch(e){
     notif('Failed to get schema: ' + e.message,'err');
@@ -9532,7 +9730,7 @@ function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
 // ═══════════════════════════════════════════════════════
 // GIT
 // ═══════════════════════════════════════════════════════
-async function loadGit(){if(!curDir)return;const[st,lg,br]=await Promise.all([api('GET',`/api/git/status?dir=${encodeURIComponent(curDir)}`),api('GET',`/api/git/log?dir=${encodeURIComponent(curDir)}`),api('GET',`/api/git/branches?dir=${encodeURIComponent(curDir)}`)]);const lines=(st.out||'').split('\n').filter(Boolean);const branch=lines.find(l=>l.startsWith('##'))?.replace('##','').split('...')[0].trim()||'—';document.getElementById('gbranch').textContent='⎇ '+branch;document.getElementById('sbi-branch').textContent='⎇ '+branch;const bsel=document.getElementById('git-branch-sel');bsel.innerHTML=(br.out||'').split('\n').filter(Boolean).map(b=>{const n=b.replace(/^\*\s*/,'').trim();return`<option value="${esc(n)}" ${b.startsWith('*')?'selected':''}>${esc(n)}</option>`;}).join('');gitMod=new Set();const files=lines.filter(l=>!l.startsWith('##'));document.getElementById('git-cnt').textContent=files.length;document.getElementById('git-badge')&&(document.getElementById('git-badge').style.display=files.length?'block':'none');document.getElementById('git-changes').innerHTML=files.length?files.map(f=>{const xy=f.slice(0,2),name=f.slice(3).trim(),x=xy[0],cls=x==='M'||xy[1]==='M'?'gm':x==='A'?'ga':'gd';if(curDir)gitMod.add(curDir+'/'+name);return`<div class="gfile ${cls}" onclick="showFileDiff('${esc(name)}')"><span style="font-size:10px;width:12px;opacity:.7">${x}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(name)}</span><button onclick="event.stopPropagation();stageFile('${esc(name)}')" style="background:none;border:1px solid var(--border);border-radius:2px;color:var(--tx3);font-size:9px;padding:1px 4px;cursor:pointer">+</button></div>`;}).join(''):'<div style="padding:6px 12px;font-size:12px;color:var(--tx3)">Clean working tree</div>';document.getElementById('git-log').innerHTML=(lg.out||'').split('\n').filter(Boolean).slice(0,20).map(c=>{const[hash,...rest]=c.split(' ');return`<div class="gcommit"><b>${esc(hash)}</b>${esc(rest.join(' '))}</div>`;}).join('')||'<div style="padding:6px 12px;font-size:11px;color:var(--tx3)">No commits</div>';}
+async function loadGit(){if(!curDir)return;const[st,lg,br]=await Promise.all([api('GET',`/api/git/status?dir=${encodeURIComponent(curDir)}`),api('GET',`/api/git/log?dir=${encodeURIComponent(curDir)}`),api('GET',`/api/git/branches?dir=${encodeURIComponent(curDir)}`)]);const lines=(st.out||'').split('\n').filter(Boolean);const branch=lines.find(l=>l.startsWith('##'))?.replace('##','').split('...')[0].trim()||'—';document.getElementById('gbranch').textContent='⎇ '+branch;document.getElementById('sbi-branch').textContent='⎇ '+branch;const bsel=document.getElementById('git-branch-sel');bsel.innerHTML=(br.out||'').split('\n').filter(Boolean).map(b=>{const n=b.replace(/^\*\s*/,'').trim();return`<option value="${esc(n)}" ${b.startsWith('*')?'selected':''}>${esc(n)}</option>`;}).join('');gitMod=new Set();const files=lines.filter(l=>!l.startsWith('##'));document.getElementById('git-cnt').textContent=files.length;document.getElementById('git-badge')&&(document.getElementById('git-badge').style.display=files.length?'block':'none');document.getElementById('git-changes').innerHTML=files.length?files.map(f=>{const xy=f.slice(0,2),name=f.slice(3).trim(),x=xy[0],cls=x==='M'||xy[1]==='M'?'gm':x==='A'?'ga':'gd';if(curDir)gitMod.add(curDir+'/'+name);const isStaged=x!=='?'&&x!==' ';const stageBtn=isStaged?`<button onclick="event.stopPropagation();unstageFile('${esc(name)}')" title="Unstage" style="background:none;border:1px solid var(--border);border-radius:2px;color:var(--yellow,#e5c07b);font-size:9px;padding:1px 4px;cursor:pointer">−</button>`:`<button onclick="event.stopPropagation();stageFile('${esc(name)}')" title="Stage" style="background:none;border:1px solid var(--border);border-radius:2px;color:var(--tx3);font-size:9px;padding:1px 4px;cursor:pointer">+</button>`;return`<div class="gfile ${cls}" onclick="showFileDiff('${esc(name)}')"><span style="font-size:10px;width:12px;opacity:.7">${x}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(name)}</span>${stageBtn}</div>`;}).join(''):'<div style="padding:6px 12px;font-size:12px;color:var(--tx3)">Clean working tree</div>';document.getElementById('git-log').innerHTML=(lg.out||'').split('\n').filter(Boolean).slice(0,20).map(c=>{const[hash,...rest]=c.split(' ');return`<div class="gcommit"><b>${esc(hash)}</b>${esc(rest.join(' '))}</div>`;}).join('')||'<div style="padding:6px 12px;font-size:11px;color:var(--tx3)">No commits</div>';}
 // LCS-based line diff for side-by-side rendering
 function _lineDiff(aLines,bLines){
   const n=aLines.length, m=bLines.length;
@@ -9614,6 +9812,7 @@ async function showFileDiff(file){
   L.onscroll=sync(L,R); R.onscroll=sync(R,L);
 }
 async function stageFile(f){if(!curDir)return;await api('POST','/api/git/stage',{dir:curDir,file:f});loadGit();}
+async function unstageFile(f){if(!curDir)return;const r=await api('POST','/api/git/unstage',{dir:curDir,file:f});notif(r.ok?'Unstaged '+f:'Unstage failed',r.ok?'ok':'err');loadGit();}
 async function gitStage(){if(!curDir)return;const r=await api('POST','/api/git/stage',{dir:curDir,file:'.'});notif(r.ok?'Staged all':'Stage failed',r.ok?'ok':'err');loadGit();}
 async function gitCommit(){if(!curDir)return;const msg=document.getElementById('git-msg').value.trim()||'AXIOM commit';const r=await api('POST','/api/git/commit',{dir:curDir,msg});if(r.ok){notif('Committed: '+msg,'ok');document.getElementById('git-msg').value='';loadGit();}else notif('Commit failed — stage first','err');}
 async function gitPull(){if(!curDir)return;notif('Pulling…','info');const r=await api('POST','/api/git/pull',{dir:curDir});notif(r.ok?'Pull complete':'Pull failed: '+(r.err||r.out||'').slice(0,60),r.ok?'ok':'err');if(r.ok){loadGit();loadDir(curDir);}}
@@ -9838,7 +10037,209 @@ function filterExts(q){extFilt=q||'';renderExts();}
 // SETTINGS
 // ═══════════════════════════════════════════════════════
 async function saveKey(){const k=document.getElementById('s-key').value.trim();if(!k)return notif('Paste key first','err');const r=await api('POST','/api/key',{key:k});if(r.ok){notif('API key saved — AI ready!','ok');document.getElementById('s-key').value='';document.getElementById('kst').textContent='✓ Active';}else notif(r.error||'Error','err');}
+
+// ── AI Provider switcher ─────────────────────────────────────────
+async function loadAIProviderSettings(){
+  try{
+    const p=await api('GET','/api/ai/provider');
+    const provSel=document.getElementById('s-ai-provider');
+    if(provSel)provSel.value=p.provider||'anthropic';
+    const basUrlEl=document.getElementById('s-ai-baseurl');
+    if(basUrlEl&&p.baseUrl)basUrlEl.value=p.baseUrl;
+    onProviderChange(false);
+    await fetchAIModels(p.model);
+  }catch(e){}
+}
+function onProviderChange(save=false){
+  const prov=document.getElementById('s-ai-provider')?.value||'anthropic';
+  const baseRow=document.getElementById('sr-ai-baseurl');
+  const keyBox=document.getElementById('ss-anthropic-key');
+  if(baseRow)baseRow.style.display=prov==='anthropic'?'none':'flex';
+  if(keyBox)keyBox.style.display=prov==='anthropic'?'block':'none';
+  if(prov==='ollama'&&document.getElementById('s-ai-baseurl')?.value==='')
+    document.getElementById('s-ai-baseurl').value='http://localhost:11434';
+  if(prov==='lmstudio'&&document.getElementById('s-ai-baseurl')?.value==='')
+    document.getElementById('s-ai-baseurl').value='http://localhost:1234';
+  if(save)fetchAIModels();
+}
+async function fetchAIModels(selectModel=''){
+  const statusEl=document.getElementById('ai-provider-status');
+  const modelSel=document.getElementById('s-ai-model');
+  if(!modelSel)return;
+  if(statusEl)statusEl.textContent='Fetching models…';
+  try{
+    const r=await api('GET','/api/ai/models');
+    const models=r.models||[];
+    modelSel.innerHTML=models.map(m=>`<option value="${esc(m)}"${(selectModel||''===m)||m===selectModel?' selected':''}>${esc(m)}</option>`).join('');
+    if(selectModel){const opt=[...modelSel.options].find(o=>o.value===selectModel);if(opt)opt.selected=true;}
+    if(statusEl)statusEl.textContent=r.error?('⚠ '+r.error.slice(0,40)):models.length+' model'+(models.length===1?'':'s')+' available';
+  }catch(e){if(statusEl)statusEl.textContent='⚠ Could not connect';}
+}
+async function saveAIProviderSettings(){
+  const provider=document.getElementById('s-ai-provider')?.value||'anthropic';
+  const model=document.getElementById('s-ai-model')?.value||'';
+  const baseUrl=document.getElementById('s-ai-baseurl')?.value.trim()||'';
+  const r=await api('POST','/api/ai/provider',{provider,model,baseUrl});
+  if(r.ok){
+    notif('AI provider set to '+(provider==='anthropic'?'Anthropic Claude':provider==='ollama'?'Ollama ('+model+')':'LM Studio ('+model+')'),'ok');
+    const statusEl=document.getElementById('ai-provider-status');
+    if(statusEl)statusEl.textContent='✓ Saved — '+provider+' / '+(model||'default');
+  }else notif(r.error||'Failed to save','err');
+}
 async function saveIdentity(){}
+
+// ══════════════════════════════════════════════════════════════
+// AI ORCHESTRA — multi-agent role management
+// ══════════════════════════════════════════════════════════════
+async function loadOrchestra() {
+  try {
+    const orch = await api('GET', '/api/ai/orchestra');
+    ['architect','coder','documenter'].forEach(role => {
+      const cfg = orch[role] || {};
+      const provEl = document.querySelector(`.orch-prov[data-role="${role}"]`);
+      const modelEl = document.querySelector(`.orch-model[data-role="${role}"]`);
+      const urlEl = document.querySelector(`.orch-url[data-role="${role}"]`);
+      if (provEl) provEl.value = cfg.provider || 'anthropic';
+      if (modelEl) modelEl.value = cfg.model || '';
+      if (urlEl) urlEl.value = cfg.baseUrl || '';
+      onOrchProviderChange(role);
+    });
+  } catch(e) {}
+}
+
+function onOrchProviderChange(role) {
+  const provEl = document.querySelector(`.orch-prov[data-role="${role}"]`);
+  const urlRow = document.querySelector(`.orch-url-row[data-role="${role}"]`);
+  if (!provEl || !urlRow) return;
+  const isLocal = provEl.value === 'ollama' || provEl.value === 'lmstudio';
+  urlRow.style.display = isLocal ? '' : 'none';
+  const urlEl = document.querySelector(`.orch-url[data-role="${role}"]`);
+  if (urlEl && !urlEl.value) {
+    urlEl.placeholder = provEl.value === 'lmstudio' ? 'http://localhost:1234' : 'http://localhost:11434';
+  }
+}
+
+async function saveOrchestra() {
+  const roles = ['architect','coder','documenter'];
+  let ok = true;
+  for (const role of roles) {
+    const provider = document.querySelector(`.orch-prov[data-role="${role}"]`)?.value || 'anthropic';
+    const model = document.querySelector(`.orch-model[data-role="${role}"]`)?.value.trim() || '';
+    const baseUrl = document.querySelector(`.orch-url[data-role="${role}"]`)?.value.trim() || '';
+    const r = await api('POST', '/api/ai/orchestra', { role, provider, model, baseUrl });
+    if (!r.ok) { ok = false; notif('Failed to save ' + role + ': ' + (r.error||''), 'err'); }
+  }
+  if (ok) notif('Orchestra saved — 3 agents configured', 'ok');
+}
+
+async function runOrchestra() {
+  const task = await swalPrompt(
+    '🎼 AI Orchestra — what should the three agents build together?',
+    '',
+    { placeholder: 'E.g. Build a REST API for M-Pesa payments with Express and MySQL…' }
+  );
+  if (!task?.trim()) return;
+
+  const tab = tabs.find(t => t.id === atab);
+  const lang = tab ? getLangKey(tab.name) : 'javascript';
+
+  // Show orchestra output panel
+  const panelId = 'orch-run-' + Date.now();
+  const html = `<div id="${panelId}" style="min-width:560px;max-height:80vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:12px">
+      🎼 Orchestra Running <span style="font-size:11px;font-weight:400;color:var(--tx3)">— ${esc(task.slice(0,60))}${task.length>60?'…':''}</span>
+    </div>
+    <div class="orch-output">
+      ${['architect','coder','documenter'].map((r,i) => `
+        <div class="orch-agent-block" id="oab-${r}">
+          <div class="orch-agent-hdr" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+            <span>${r==='architect'?'🏗':r==='coder'?'⌨️':'📝'}</span>
+            <span>${r.charAt(0).toUpperCase()+r.slice(1)}</span>
+            <span class="oa-status" id="oas-${r}">waiting…</span>
+          </div>
+          <div class="orch-agent-body${i>0?' collapsed':''}" id="oab-body-${r}">Waiting for previous agent…</div>
+        </div>`).join('')}
+    </div>
+    <div id="orch-actions" style="display:none;margin-top:10px;display:flex;gap:6px">
+      <button id="orch-btn-insert" style="padding:6px 14px;background:var(--ac);color:#000;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer">Insert Code</button>
+      <button id="orch-btn-newfile" style="padding:6px 14px;background:var(--surface);border:1px solid var(--border);border-radius:5px;font-size:12px;color:var(--tx);cursor:pointer">Open as New File</button>
+    </div>
+  </div>`;
+  swalAlert(html, 'AI Orchestra');
+
+  // Stream results from server
+  let finalImpl = '', finalDocs = '';
+  try {
+    const resp = await fetch('/api/ai/orchestra/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, lang, mode: 'full' })
+    });
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          const bodyEl = document.getElementById('oab-body-' + ev.role);
+          const statEl = document.getElementById('oas-' + ev.role);
+          if (!bodyEl) continue;
+          if (ev.role === 'summary') {
+            try { const d = JSON.parse(ev.content); finalImpl = d.implementation; finalDocs = d.documentation; } catch(e) {}
+            const actEl = document.getElementById('orch-actions');
+            if (actEl) actEl.style.display = 'flex';
+            document.getElementById('orch-btn-insert')?.addEventListener('click', () => {
+              if (finalImpl) { const ed = getEd(1); if (ed?.insertText) ed.insertText(finalImpl); else insertTextAtCursor(finalImpl); }
+              document.querySelector('.swal-overlay')?.remove();
+            });
+            document.getElementById('orch-btn-newfile')?.addEventListener('click', () => {
+              openNewTab('orchestra_output.' + (lang==='python'?'py':'js'), finalImpl + '\n\n/* --- DOCUMENTATION ---\n' + finalDocs + '\n*/');
+              document.querySelector('.swal-overlay')?.remove();
+            });
+          } else if (ev.role === 'error') {
+            if (statEl) statEl.textContent = '✗ Error';
+            if (bodyEl) bodyEl.textContent = ev.content;
+          } else {
+            bodyEl.classList.remove('collapsed');
+            bodyEl.textContent = ev.content || '…';
+            if (statEl) statEl.textContent = ev.done ? '✓ Done' : '⟳ Working…';
+            if (statEl) statEl.style.color = ev.done ? 'var(--green)' : 'var(--ac)';
+            if (ev.done) {
+              if (ev.role === 'coder') finalImpl = ev.content;
+              if (ev.role === 'documenter') finalDocs = ev.content;
+              // Collapse and move to next
+              const nextRole = { architect:'coder', coder:'documenter' }[ev.role];
+              if (nextRole) {
+                setTimeout(() => {
+                  bodyEl.classList.add('collapsed');
+                  document.getElementById('oab-body-' + nextRole)?.classList.remove('collapsed');
+                }, 400);
+              }
+            }
+          }
+        } catch(e) {}
+      }
+    }
+  } catch(e) {
+    notif('Orchestra error: ' + e.message, 'err');
+  }
+}
+
+function insertTextAtCursor(text) {
+  if (!atab) return;
+  const inst = window._monacoInstances?.[1];
+  if (inst) {
+    const pos = inst.getPosition();
+    inst.executeEdits('orchestra', [{ range: { startLineNumber: pos.lineNumber, startColumn: pos.column, endLineNumber: pos.lineNumber, endColumn: pos.column }, text }]);
+  }
+}
 
 function applyPrefs(){
   edFS=+document.getElementById('s-fs')?.value||13;
@@ -9879,7 +10280,7 @@ function applyExternalSettings(s){
   if(s.indentGuides)_setEl('s-indent',s.indentGuides);
   if(s.bracketMatch)_setEl('s-bracket',s.bracketMatch);
   if(s.lintOnType)_setEl('s-lint',s.lintOnType);
-  if(s.stickyScroll)_setEl('s-sticky',s.stickyScroll);
+  if(s.stickyScroll){_setEl('s-sticky',s.stickyScroll);if(window._monacoReady)applyMonacoPrefs();}
   if(s.vimMode!=null)_setEl('s-vim',s.vimMode);
   if(s.zenMode!=null)_setEl('s-zen',s.zenMode);
   if(s.theme){_setEl('s-theme',s.theme);try{applyTheme();}catch(e){}}
@@ -10599,7 +11000,15 @@ let lightbulbOpen=false;
 function toggleLightbulb(){lightbulbOpen=!lightbulbOpen;document.getElementById('lightbulb-menu')?.classList.toggle('on',lightbulbOpen);}
 function closeLightbulb(){lightbulbOpen=false;document.getElementById('lightbulb-menu')?.classList.remove('on');}
 function lightbulbAction(action){closeLightbulb();const ed=document.getElementById('editor');const sel=ed.value.slice(ed.selectionStart,ed.selectionEnd)||ed.value.slice(Math.max(0,ed.selectionStart-100),ed.selectionStart+100);const tab=tabs.find(t=>t.id===atab);const lang=tab?getLangKey(tab.name):'code';const prompts={fix:`Fix this code:\n\`\`\`${lang}\n${sel}\n\`\`\``,extract:`Extract to function:\n\`\`\`${lang}\n${sel}\n\`\`\``,rename:`Suggest better names:\n\`\`\`${lang}\n${sel}\n\`\`\``,import:`What imports needed?\n\`\`\`${lang}\n${sel}\n\`\`\``,docs:`Generate docs:\n\`\`\`${lang}\n${sel}\n\`\`\``};document.getElementById('cinput').value=prompts[action]||'';document.getElementById('ai-panel').classList.remove('closed');sendChat();}
-function showLightbulb(ed){if(!problems.length){document.getElementById('lightbulb-btn')?.classList.remove('on');return;}const pos=ed.selectionStart,lineN=ed.value.slice(0,pos).split('\n').length;const lineHasError=problems.some(p=>p.ln===lineN);const btn=document.getElementById('lightbulb-btn');}
+function showLightbulb(ed){
+  const btn=document.getElementById('lightbulb-btn');
+  if(!btn)return;
+  if(!problems.length){btn.classList.remove('on');return;}
+  const pos=ed.selectionStart;
+  const lineN=ed.value.slice(0,pos).split('\n').length;
+  const lineHasError=problems.some(p=>p.ln===lineN||p.ln===lineN-1||p.ln===lineN+1);
+  btn.classList.toggle('on',lineHasError);
+}
 
 // ═══════════════════════════════════════════════════════
 // AI ENHANCEMENTS - Context Management & Refactoring
@@ -11688,15 +12097,15 @@ function selectDebugConfig(index) {
   renderDebugConfigs();
 }
 
-function addDebugConfig() {
-  const name = prompt('Debug configuration name:');
+async function addDebugConfig() {
+  const name = await swalPrompt('Debug configuration name:', '', { placeholder: 'e.g. Run Python' });
   if (!name) return;
-  
+
   const tab = tabs.find(t => t.id === atab);
   if (!tab) return;
-  
+
   const lang = getLangKey(tab.name);
-  
+
   debugConfigs.push({
     name: name,
     type: lang,
@@ -11704,7 +12113,7 @@ function addDebugConfig() {
     cwd: curDir,
     args: []
   });
-  
+
   debugConfigSelected = debugConfigs.length - 1;
   renderDebugConfigs();
   notif('Debug config added', 'ok');
@@ -13311,7 +13720,7 @@ async function lspRename(){
   const line=before.split('\n').length-1;const character=before.length-(before.lastIndexOf('\n')+1);
   const wordMatch=ed.value.substring(Math.max(0,pos-50),pos+50).match(/\b(\w+)\b/g);
   const word=wordMatch?wordMatch[Math.floor(wordMatch.length/2)]:'';
-  const newName=prompt('Rename "'+word+'" to:',word);
+  const newName=await swalPrompt('Rename "'+word+'" to:',word,{placeholder:'New name'});
   if(!newName||newName===word)return;
   try{
     const r=await api('POST','/api/lsp/rename',{dir:curDir,lang,file:activeFile,line,character,newName});
@@ -14149,10 +14558,10 @@ function handleEditorChange(oldValue,newValue){
   }
 }
 
-function startCollabSession(roomId){
+async function startCollabSession(roomId){
   if(collabWs){stopCollab();}
   const name=localStorage.getItem('ax_username')||'User-'+Math.floor(Math.random()*1000);
-  roomId=roomId||prompt('Room name:','axiom-'+Math.floor(Math.random()*9999));
+  if(!roomId)roomId=await swalPrompt('Room name:','axiom-'+Math.floor(Math.random()*9999),{placeholder:'Room ID'});
   if(!roomId)return;
   collabRoom=roomId;collabReconnectAttempts=0;
   connectCollab(roomId,name);
@@ -14507,15 +14916,15 @@ showGhostText=function(ed,pos,completion){
 // ═══════════════════════════════════════════════════════
 async function gitCherryPick(){
   if(!curDir){notif('Open a folder first','warn');return;}
-  const hash=prompt('Commit hash to cherry-pick:');if(!hash)return;
+  const hash=await swalPrompt('Commit hash to cherry-pick:','',{placeholder:'e.g. a1b2c3d'});if(!hash)return;
   const r=await api('POST','/api/git/cherry-pick',{dir:curDir,hash});
   notif(r.ok?'Cherry-pick successful':'Cherry-pick failed: '+r.output,r.ok?'ok':'err');
 }
 
 async function gitCreateTag(){
   if(!curDir){notif('Open a folder first','warn');return;}
-  const name=prompt('Tag name:');if(!name)return;
-  const msg=prompt('Tag message (optional):','');
+  const name=await swalPrompt('Tag name:','',{placeholder:'e.g. v1.0.0'});if(!name)return;
+  const msg=await swalPrompt('Tag message (optional):','',{placeholder:'Release notes…'});
   const r=await api('POST','/api/git/tag',{dir:curDir,name,message:msg});
   notif(r.ok?'Tag created: '+name:'Tag failed: '+r.output,r.ok?'ok':'err');
 }
@@ -14534,7 +14943,7 @@ async function gitRebase(action){
   if(!curDir)return;
   const data={dir:curDir};
   if(action)data.action=action;
-  else{data.onto=prompt('Rebase onto branch:','main');if(!data.onto)return;}
+  else{data.onto=await swalPrompt('Rebase onto branch:','main',{placeholder:'branch name'});if(!data.onto)return;}
   const r=await api('POST','/api/git/rebase',data);
   notif(r.ok?'Rebase '+(action||'started'):'Rebase: '+r.output,r.ok?'ok':'err');
 }
@@ -14637,8 +15046,8 @@ async function loadPluginsFromDir(){
 let remoteConn=null;
 
 async function connectRemote(){
-  const host=prompt('SSH host (user@host):');if(!host)return;
-  const dir=prompt('Remote directory:','/home');if(!dir)return;
+  const host=await swalPrompt('SSH host (user@host):','',{placeholder:'user@hostname'});if(!host)return;
+  const dir=await swalPrompt('Remote directory:','/home',{placeholder:'/home/user/project'});if(!dir)return;
   notif('Connecting to '+host+'...','info');
   try{
     showBottom();setBpTab('terminal');
@@ -14652,8 +15061,8 @@ async function connectRemote(){
 // ═══════════════════════════════════════════════════════
 let workspaceRoots=[];
 
-function addWorkspaceFolder(){
-  const dir=prompt('Folder path to add:');
+async function addWorkspaceFolder(){
+  const dir=await swalPrompt('Folder path to add:','',{placeholder:'/path/to/project'});
   if(!dir)return;
   if(workspaceRoots.includes(dir)){notif('Already in workspace','warn');return;}
   workspaceRoots.push(dir);
@@ -14744,8 +15153,8 @@ async function setup2FA(){
   if(!window.AX_TOKEN&&!localStorage.getItem('ax_jwt')){notif('Sign in to enable 2FA','warn');return;}
   const status=await api('GET','/api/2fa/status').catch(()=>({}));
   if(status.enabled){
-    const token=prompt('Enter current TOTP code to disable 2FA:');
-    if(token===null)return;
+    const token=await swalPrompt('Enter current TOTP code to disable 2FA:','',{placeholder:'6-digit code'});
+    if(!token)return;
     const r=await api('POST','/api/2fa/disable',{token});
     notif(r.ok?'2FA disabled':'Disable failed: '+(r.error||''),r.ok?'ok':'err');
     load2FAStatus();return;
@@ -15588,10 +15997,10 @@ async function insertMention(type,label){
   const val=inp.value,pos=inp.selectionStart;
   const atIdx=val.lastIndexOf('@',pos);
   let mention={type,label};
-  if(type==='file'){const fp=prompt('File path:',activeFile||'');if(!fp)return;mention.path=fp;mention.label='@file:'+fp.split('/').pop();}
-  else if(type==='folder'){const fp=prompt('Folder path:',curDir||'');if(!fp)return;mention.path=fp;mention.label='@folder:'+fp.split('/').pop();}
-  else if(type==='codebase'){const q2=prompt('Search query:','');if(!q2)return;mention.query=q2;mention.label='@codebase:'+q2;}
-  else if(type==='web'){const q2=prompt('Web search query:','');if(!q2)return;mention.query=q2;const r=await api('POST','/api/web/search',{query:q2});mention.content=r.results?.map(x=>x.title+': '+x.url+(x.snippet?' — '+x.snippet:'')).join('\n')||'No results';mention.label='@web:'+q2;if(r.results?.length)notif('Found '+r.results.length+' results for "'+q2+'"','ok');}
+  if(type==='file'){const fp=await swalPrompt('File path:',activeFile||'',{placeholder:'path/to/file.js'});if(!fp)return;mention.path=fp;mention.label='@file:'+fp.split('/').pop();}
+  else if(type==='folder'){const fp=await swalPrompt('Folder path:',curDir||'',{placeholder:'path/to/folder'});if(!fp)return;mention.path=fp;mention.label='@folder:'+fp.split('/').pop();}
+  else if(type==='codebase'){const q2=await swalPrompt('Search query:','',{placeholder:'what to search for…'});if(!q2)return;mention.query=q2;mention.label='@codebase:'+q2;}
+  else if(type==='web'){const q2=await swalPrompt('Web search query:','',{placeholder:'search the web for…'});if(!q2)return;mention.query=q2;const r=await api('POST','/api/web/search',{query:q2});mention.content=r.results?.map(x=>x.title+': '+x.url+(x.snippet?' — '+x.snippet:'')).join('\n')||'No results';mention.label='@web:'+q2;if(r.results?.length)notif('Found '+r.results.length+' results for "'+q2+'"','ok');}
   chatMentions.push(mention);
   inp.value=val.slice(0,atIdx)+mention.label+' '+val.slice(pos);
   inp.selectionStart=inp.selectionEnd=atIdx+mention.label.length+1;
@@ -15860,6 +16269,229 @@ function useNotepad(){
 }
 
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// EAST AFRICA FEATURES
+// ═══════════════════════════════════════════════════════
+
+// ── USSD Builder ────────────────────────────────────────
+let ussdFlow = { title:'My USSD App', nodes:[] };
+
+function openUSSDBuilder() {
+  if(!ussdFlow.nodes.length) {
+    ussdFlow.nodes = [
+      { id:1, text:'Welcome to our service\n1. Check Balance\n2. Send Money\n3. Buy Airtime\n0. Exit', options:[
+        {key:'1',label:'Check Balance',next:2},
+        {key:'2',label:'Send Money',next:3},
+        {key:'3',label:'Buy Airtime',next:4},
+        {key:'0',label:'Exit',next:null}
+      ]},
+      { id:2, text:'Your balance is KES {balance}\n0. Back', options:[{key:'0',label:'Back',next:1}]},
+      { id:3, text:'Enter phone number:', options:[], input:true, next:4},
+      { id:4, text:'Enter amount (KES):', options:[], input:true, next:5},
+      { id:5, text:'Confirm: Send KES {amount} to {phone}?\n1. Confirm\n2. Cancel', options:[{key:'1',label:'Confirm',next:null},{key:'2',label:'Cancel',next:1}]}
+    ];
+  }
+  renderUSSDBuilder();
+}
+
+function renderUSSDBuilder() {
+  const html = `<div style="min-width:520px;max-height:70vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:600;color:var(--tx)">📟 USSD Menu Builder</div>
+      <div style="display:flex;gap:6px">
+        <button onclick="addUSSDNode()" style="padding:4px 10px;background:var(--green);border:none;border-radius:4px;color:#fff;font-size:11px;cursor:pointer">+ Add Screen</button>
+        <button onclick="generateUSSDCode()" style="padding:4px 10px;background:var(--ac);border:none;border-radius:4px;color:#fff;font-size:11px;cursor:pointer">Generate Code ✓</button>
+      </div>
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:10px;color:var(--tx3)">App Name</label>
+      <input id="ussd-title" value="${esc(ussdFlow.title)}" style="width:100%;padding:5px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--tx);font-size:12px;box-sizing:border-box;margin-top:2px"/>
+    </div>
+    <div id="ussd-nodes">` +
+    ussdFlow.nodes.map((node,i) => `
+      <div class="ussd-node">
+        <div class="ussd-node-hdr">
+          <span style="background:var(--ac);color:#000;border-radius:3px;padding:1px 6px;font-size:10px">Screen ${node.id}</span>
+          <span style="color:var(--tx3);font-size:10px;flex:1;margin-left:4px">${node.input?'(text input)':node.options.length+' options'}</span>
+          <button onclick="deleteUSSDNode(${i})" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:12px">✕</button>
+        </div>
+        <textarea style="width:100%;min-height:60px;background:var(--panel);border:1px solid var(--border2);border-radius:3px;color:var(--tx);font-size:11px;padding:5px;box-sizing:border-box;font-family:'JetBrains Mono',monospace;resize:vertical" oninput="ussdFlow.nodes[${i}].text=this.value">${esc(node.text)}</textarea>
+        ${node.options.map((opt,oi) => `
+          <div class="ussd-option">
+            <input value="${esc(opt.key)}" placeholder="key" style="width:36px" oninput="ussdFlow.nodes[${i}].options[${oi}].key=this.value"/>
+            <input value="${esc(opt.label)}" placeholder="Label…" oninput="ussdFlow.nodes[${i}].options[${oi}].label=this.value"/>
+            <select onchange="ussdFlow.nodes[${i}].options[${oi}].next=this.value?+this.value:null" style="background:var(--panel);border:1px solid var(--border2);border-radius:3px;color:var(--tx);font-size:11px;padding:3px">
+              <option value="">→ End</option>
+              ${ussdFlow.nodes.map(n=>`<option value="${n.id}" ${opt.next===n.id?'selected':''}>→ Screen ${n.id}</option>`).join('')}
+            </select>
+            <button onclick="ussdFlow.nodes[${i}].options.splice(${oi},1);renderUSSDBuilder()" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:11px">✕</button>
+          </div>`).join('')}
+        <button onclick="ussdFlow.nodes[${i}].options.push({key:'',label:'',next:null});renderUSSDBuilder()" style="font-size:10px;background:none;border:1px dashed var(--border);border-radius:3px;color:var(--tx3);cursor:pointer;padding:2px 8px;margin-top:2px">+ option</button>
+      </div>`).join('') +
+    `</div>
+  </div>`;
+  swalAlert(html, 'USSD Builder');
+}
+
+function addUSSDNode() {
+  const id = Math.max(...ussdFlow.nodes.map(n=>n.id), 0) + 1;
+  ussdFlow.nodes.push({ id, text: 'Screen '+id+' text\n0. Back', options:[{key:'0',label:'Back',next:1}] });
+  renderUSSDBuilder();
+}
+function deleteUSSDNode(i) { ussdFlow.nodes.splice(i,1); renderUSSDBuilder(); }
+
+function generateUSSDCode() {
+  const title = document.getElementById('ussd-title')?.value || ussdFlow.title;
+  ussdFlow.title = title;
+  const tab = tabs.find(t=>t.id===atab);
+  const lang = tab ? getLangKey(tab.name) : 'javascript';
+
+  let code = '';
+  if(lang === 'python') {
+    code = `# ${title} — USSD App (Africa's Talking)\nimport africastalking\n\nafricas_talking = africastalking.initialize('sandbox', 'apiKey')\nsms = africastalking.SMS\n\ndef ussd_callback(session_id, service_code, phone_number, text):\n    response = ""\n    text_array = text.split("*")\n    user_response = text_array[-1] if text else ""\n\n`;
+    ussdFlow.nodes.forEach((node, i) => {
+      code += `    # Screen ${node.id}\n`;
+      if(i===0) code += `    if not text:  # Entry point\n        response = "CON " + """${node.text}"""\n`;
+      else code += `    elif len(text_array) == ${i}:\n        response = "CON " + """${node.text}"""\n`;
+    });
+    code += `    else:\n        response = "END Thank you for using ${title}"\n\n    return response\n`;
+  } else {
+    code = `// ${title} — USSD App (Africa's Talking)\nconst express = require('express');\nconst app = express();\napp.use(express.urlencoded({ extended: true }));\n\napp.post('/ussd', (req, res) => {\n  const { sessionId, serviceCode, phoneNumber, text } = req.body;\n  const textArray = text ? text.split('*') : [];\n  const level = textArray.length;\n  let response = '';\n\n`;
+    ussdFlow.nodes.forEach((node, i) => {
+      const cond = i===0 ? '  if (!text)' : `  } else if (level === ${i})`;
+      code += `${cond} {\n    response = \`CON ${node.text.replace(/`/g,"'")}\`;\n`;
+    });
+    code += `  } else {\n    response = 'END Thank you for using ${title}';\n  }\n\n  res.set('Content-Type', 'text/plain');\n  res.send(response);\n});\n\napp.listen(3000, () => console.log('USSD server on port 3000'));\n`;
+  }
+
+  document.querySelector('.swal-overlay')?.remove();
+  openNewTab('ussd_app.'+(lang==='python'?'py':'js'), code);
+  notif('USSD code generated — '+ussdFlow.nodes.length+' screens', 'ok');
+}
+
+// ── M-Pesa STK Push snippet ───────────────────────────────────────
+function insertMpesaSnippet() {
+  const tab = tabs.find(t=>t.id===atab);
+  const lang = tab ? getLangKey(tab.name) : 'javascript';
+  let code = '';
+  if(lang === 'python') {
+    code = `# M-Pesa STK Push (Daraja API)\nimport requests, base64, datetime\n\nCONSUMER_KEY = 'your_consumer_key'\nCONSUMER_SECRET = 'your_consumer_secret'\nBUSINESS_SHORT_CODE = '174379'  # Sandbox\nPASSKEY = 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919'\nCALLBACK_URL = 'https://your-domain.com/mpesa/callback'\n\ndef get_access_token():\n    auth = base64.b64encode(f'{CONSUMER_KEY}:{CONSUMER_SECRET}'.encode()).decode()\n    r = requests.get(\n        'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',\n        headers={'Authorization': f'Basic {auth}'}\n    )\n    return r.json()['access_token']\n\ndef stk_push(phone: str, amount: int, account_ref: str = 'Order001'):\n    token = get_access_token()\n    timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')\n    password = base64.b64encode(\n        f'{BUSINESS_SHORT_CODE}{PASSKEY}{timestamp}'.encode()\n    ).decode()\n    payload = {\n        'BusinessShortCode': BUSINESS_SHORT_CODE,\n        'Password': password,\n        'Timestamp': timestamp,\n        'TransactionType': 'CustomerPayBillOnline',\n        'Amount': amount,\n        'PartyA': phone,\n        'PartyB': BUSINESS_SHORT_CODE,\n        'PhoneNumber': phone,\n        'CallBackURL': CALLBACK_URL,\n        'AccountReference': account_ref,\n        'TransactionDesc': f'Payment for {account_ref}'\n    }\n    r = requests.post(\n        'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest',\n        json=payload, headers={'Authorization': f'Bearer {token}'}\n    )\n    return r.json()\n\n# Usage:\nresult = stk_push('254712345678', 100, 'Order001')\nprint(result)\n`;
+  } else {
+    code = `// M-Pesa STK Push (Daraja API) — Node.js\nconst axios = require('axios');\n\nconst config = {\n  consumerKey: process.env.MPESA_CONSUMER_KEY,\n  consumerSecret: process.env.MPESA_CONSUMER_SECRET,\n  shortCode: '174379',          // Sandbox shortcode\n  passkey: 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919',\n  callbackUrl: 'https://your-domain.com/mpesa/callback',\n  env: 'sandbox'                // Change to 'production' for live\n};\n\nasync function getAccessToken() {\n  const auth = Buffer.from(\`\${config.consumerKey}:\${config.consumerSecret}\`).toString('base64');\n  const { data } = await axios.get(\n    \`https://\${config.env}.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials\`,\n    { headers: { Authorization: \`Basic \${auth}\` } }\n  );\n  return data.access_token;\n}\n\nasync function stkPush({ phone, amount, accountRef = 'Order001', description = 'Payment' }) {\n  const token = await getAccessToken();\n  const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);\n  const password = Buffer.from(\`\${config.shortCode}\${config.passkey}\${timestamp}\`).toString('base64');\n\n  const { data } = await axios.post(\n    \`https://\${config.env}.safaricom.co.ke/mpesa/stkpush/v1/processrequest\`,\n    {\n      BusinessShortCode: config.shortCode,\n      Password: password, Timestamp: timestamp,\n      TransactionType: 'CustomerPayBillOnline',\n      Amount: amount, PartyA: phone, PartyB: config.shortCode,\n      PhoneNumber: phone, CallBackURL: config.callbackUrl,\n      AccountReference: accountRef, TransactionDesc: description\n    },\n    { headers: { Authorization: \`Bearer \${token}\` } }\n  );\n  return data;\n}\n\n// Callback handler (Express route)\n// app.post('/mpesa/callback', (req, res) => {\n//   const { Body: { stkCallback } } = req.body;\n//   if (stkCallback.ResultCode === 0) {\n//     const items = stkCallback.CallbackMetadata.Item;\n//     const amount = items.find(i => i.Name === 'Amount')?.Value;\n//     const mpesaRef = items.find(i => i.Name === 'MpesaReceiptNumber')?.Value;\n//     const phone = items.find(i => i.Name === 'PhoneNumber')?.Value;\n//     console.log(\`Payment confirmed: KES \${amount} from \${phone} — Ref: \${mpesaRef}\`);\n//   }\n//   res.json({ ResultCode: 0, ResultDesc: 'Accepted' });\n// });\n\nmodule.exports = { stkPush };\n`;
+  }
+  openNewTab('mpesa.'+(lang==='python'?'py':'js'), code);
+  notif('M-Pesa STK Push snippet inserted', 'ok');
+}
+
+// ── Africa's Talking SMS/Airtime snippets ────────────────────────
+function insertSnippetByTag(tag) {
+  const tab = tabs.find(t=>t.id===atab);
+  const lang = tab ? getLangKey(tab.name) : 'javascript';
+  const snippets = {
+    sms: {
+      javascript: `// Send SMS via Africa's Talking\nconst AfricasTalking = require('africastalking');\nconst at = AfricasTalking({ apiKey: process.env.AT_API_KEY, username: 'sandbox' });\nconst sms = at.SMS;\n\nasync function sendSMS(to, message) {\n  const result = await sms.send({\n    to: Array.isArray(to) ? to : [to],  // e.g. ['+254712345678']\n    message,\n    from: 'AXIOM'   // registered sender ID\n  });\n  console.log(result);\n  return result;\n}\n\n// Usage\nsendSMS('+254712345678', 'Habari! Your order has been confirmed.');\n`,
+      python: `# Send SMS via Africa's Talking\nimport africastalking\nafricas_talking = africastalking.initialize('sandbox', 'your_api_key')\nsms = africastalking.SMS\n\ndef send_sms(recipients, message):\n    if isinstance(recipients, str):\n        recipients = [recipients]\n    response = sms.send(message, recipients, sender_id='AXIOM')\n    return response\n\n# Usage\nresponse = send_sms(['+254712345678'], 'Habari! Your order has been confirmed.')\nprint(response)\n`
+    },
+    airtime: {
+      javascript: `// Send Airtime via Africa's Talking\nconst AfricasTalking = require('africastalking');\nconst at = AfricasTalking({ apiKey: process.env.AT_API_KEY, username: 'sandbox' });\nconst airtime = at.AIRTIME;\n\nasync function sendAirtime(phone, amount, currencyCode = 'KES') {\n  const result = await airtime.send({\n    recipients: [{ phoneNumber: phone, amount: \`\${currencyCode} \${amount}\` }]\n  });\n  console.log(result);\n  return result;\n}\n\n// Usage — top up KES 50 airtime\nsendAirtime('+254712345678', 50, 'KES');\n// Uganda: sendAirtime('+256712345678', 1000, 'UGX');\n// Tanzania: sendAirtime('+255712345678', 2000, 'TZS');\n`,
+      python: `# Send Airtime via Africa's Talking\nimport africastalking\nafricas_talking = africastalking.initialize('sandbox', 'your_api_key')\nairtime = africastalking.Airtime\n\ndef send_airtime(phone, amount, currency='KES'):\n    recipients = [{'phoneNumber': phone, 'amount': f'{currency} {amount}'}]\n    response = airtime.send(recipients=recipients)\n    return response\n\n# Usage\nresponse = send_airtime('+254712345678', 50, 'KES')\nprint(response)\n`
+    }
+  };
+  const snip = snippets[tag]?.[lang] || snippets[tag]?.javascript || '';
+  if(!snip){ notif('No snippet for this language','warn'); return; }
+  openNewTab(tag+'_snippet.'+(lang==='python'?'py':'js'), snip);
+  notif(tag.charAt(0).toUpperCase()+tag.slice(1)+' snippet ready', 'ok');
+}
+
+function openNewTab(name, content) {
+  const id = Date.now();
+  tabs.push({ id, name, content, dirty: true, path: null });
+  atab = id;
+  renderTabs();
+  swTab(id);
+}
+
+// ── Swahili/Sheng AI prompt helper ──────────────────────────────
+async function openSwahiliPrompt() {
+  const input = await swalPrompt(
+    'Niambie AI kwa Kiswahili au Sheng:\n(Ask AI in Swahili or Sheng)',
+    '',
+    { placeholder: 'Mfano: tengeneza function ya kulipa kwa M-Pesa...' }
+  );
+  if(!input) return;
+  const prefix = `[Jibu kwa Kiswahili iwezekanavyo. Msimbo uwe wa hali ya juu.]\n\n`;
+  const cinput = document.getElementById('cinput');
+  if(cinput){ cinput.value = prefix + input; document.getElementById('ai-panel')?.classList.remove('closed'); sendChat(); }
+}
+
+// ── One-Click Deploy modal ───────────────────────────────────────
+function openDeployModal() {
+  if(!curDir){ notif('Open a project folder first','warn'); return; }
+  const projName = curDir.split('/').pop();
+  const html = `<div style="min-width:440px">
+    <div style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:12px">🚀 Deploy ${esc(projName)}</div>
+    <div style="display:grid;gap:8px">
+      <button onclick="deployTo('railway')" style="padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--tx);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">🚂</span>
+        <div><div style="font-weight:500;font-size:13px">Railway</div><div style="font-size:11px;color:var(--tx3)">Free tier · Auto-deploy from GitHub · Great for Node/Python</div></div>
+      </button>
+      <button onclick="deployTo('render')" style="padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--tx);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">⚙️</span>
+        <div><div style="font-weight:500;font-size:13px">Render</div><div style="font-size:11px;color:var(--tx3)">Free tier · Static sites + web services · CDN in Africa</div></div>
+      </button>
+      <button onclick="deployTo('fly')" style="padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--tx);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">🪰</span>
+        <div><div style="font-weight:500;font-size:13px">Fly.io</div><div style="font-size:11px;color:var(--tx3)">Edge nodes close to Africa · Pay per use · Docker-based</div></div>
+      </button>
+      <button onclick="deployTo('vercel')" style="padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--tx);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">▲</span>
+        <div><div style="font-weight:500;font-size:13px">Vercel</div><div style="font-size:11px;color:var(--tx3)">Zero-config frontend · Next.js, React, Vue · Free tier</div></div>
+      </button>
+    </div>
+  </div>`;
+  swalAlert(html, 'Deploy');
+}
+
+async function deployTo(platform) {
+  document.querySelector('.swal-overlay')?.remove();
+  const cmds = {
+    railway: 'npm install -g @railway/cli && railway login && railway init && railway up',
+    render:  '# Push to GitHub first, then connect at render.com/new\ngit add . && git commit -m "deploy" && git push',
+    fly:     'curl -L https://fly.io/install.sh | sh && fly auth login && fly launch && fly deploy',
+    vercel:  'npm install -g vercel && vercel login && vercel --prod'
+  };
+  const cmd = cmds[platform];
+  if(cmd){ newTermTab(curDir); setTimeout(()=>{ if(activeTerm&&terms[activeTerm])terms[activeTerm].ws.send(cmd+'\n'); },800); }
+  notif('Deploy command sent to terminal','ok');
+}
+
+// ── Offline status check ─────────────────────────────────────────
+async function checkOfflineStatus() {
+  const checks = [
+    { name:'Editor (Monaco)', ok: !!window._monacoReady },
+    { name:'Terminal (WebSocket)', ok: Object.keys(terms).length>0 },
+    { name:'File operations', ok: true },
+    { name:'Git (local)', ok: !!curDir },
+    { name:'LSP (local servers)', ok: false },
+    { name:'AI (needs internet)', ok: navigator.onLine },
+    { name:'M-Pesa (needs internet)', ok: navigator.onLine },
+  ];
+  try{ const r=await api('GET','/api/lsp/available'); checks[4].ok=Object.values(r.servers||{}).some(Boolean); }catch(e){}
+  const html = `<div style="min-width:360px">
+    <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:10px">📡 Offline Capability</div>
+    ${checks.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">${c.ok?'✅':'🔴'}</span>
+      <span style="font-size:12px;color:${c.ok?'var(--tx)':'var(--tx3)'};flex:1">${esc(c.name)}</span>
+      <span style="font-size:10px;color:${c.ok?'var(--green)':'var(--tx3)'}">${c.ok?'Available':'Needs internet'}</span>
+    </div>`).join('')}
+    <div style="margin-top:10px;padding:8px;background:var(--surface);border-radius:6px;font-size:11px;color:var(--tx3)">
+      💡 Tip: Use Ollama locally for AI without internet. Install with:<br>
+      <code style="color:var(--ac)">curl https://ollama.ai/install.sh | sh && ollama pull qwen2.5-coder:7b</code>
+    </div>
+  </div>`;
+  swalAlert(html, 'Offline Status');
+}
+
 // MCP SERVER MANAGER
 // ═══════════════════════════════════════════════════════
 async function openMcpManager(){
@@ -15898,7 +16530,7 @@ async function stopMcpServer(name){
   document.querySelector('.swal-overlay')?.remove();setTimeout(openMcpManager,300);
 }
 async function callMcpServer(name){
-  const method=prompt('Method (e.g. tools/list):','tools/list');if(!method)return;
+  const method=await swalPrompt('MCP method to call:','tools/list',{placeholder:'e.g. tools/call'});if(!method)return;
   const r=await api('POST','/api/mcp/call',{name,method,params:{}});
   swalAlert('<pre style="font-size:11px;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:var(--tx)">'+esc(JSON.stringify(r.result||r.error,null,2))+'</pre>','MCP Response: '+method);
 }
@@ -15988,7 +16620,7 @@ function switchProfile(name){
       {ic:'📓',n:'Notepads — Reusable prompts',fn:openNotepads},
       {ic:'🔌',n:'MCP Server Manager',fn:openMcpManager},
       {ic:'⚠',n:'Workspace Problems — Scan TODO/FIXME/debugger',fn:showWorkspaceProblems},
-      {ic:'🔍',n:'Semantic Search (Codebase)',fn:()=>{const q2=prompt('Search codebase:','');if(q2)api('POST','/api/codebase/search',{dir:curDir,query:q2}).then(r=>swalAlert('<div style="min-width:360px">'+(r.results||[]).map(x=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="color:var(--ac);font-size:12px;font-family:\'JetBrains Mono\',monospace">${esc(x.file)}</div><div style="font-size:11px;color:var(--tx3)">${esc(x.preview)}</div></div>`).join('')+'</div>','Codebase Search: '+q2));}},
+      {ic:'🔍',n:'Semantic Search (Codebase)',fn:async()=>{const q2=await swalPrompt('Search codebase:','',{placeholder:'function name, concept…'});if(q2)api('POST','/api/codebase/search',{dir:curDir,query:q2}).then(r=>swalAlert('<div style="min-width:360px">'+(r.results||[]).map(x=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="color:var(--ac);font-size:12px;font-family:\'JetBrains Mono\',monospace">${esc(x.file)}</div><div style="font-size:11px;color:var(--tx3)">${esc(x.preview)}</div></div>`).join('')+'</div>','Codebase Search: '+q2));}},
       {ic:'📑',n:'Index Codebase',fn:()=>{if(!curDir)return;api('POST','/api/codebase/index',{dir:curDir}).then(r=>notif('Indexed '+r.files+' files','ok'));}},
       {ic:'↕',n:'Export Settings (sync)',fn:exportSettingsSync},
       {ic:'↕',n:'Import Settings (sync)',fn:importSettingsSync},
@@ -16508,7 +17140,15 @@ async function initMonacoEditors() {
     ['editor-2','hl-2','lnums-2','minimap-2','indent-canvas-2']);
 
   if (ed1) {
-    ed1.onDidChangeModelContent(() => { try { onEdit(1); } catch(e) {} });
+    ed1.onDidChangeModelContent(() => {
+      try {
+        // Keep tabs[] in sync so saveCur/closeTab always have fresh content
+        const t = (typeof tabs !== 'undefined' && typeof atab !== 'undefined')
+          ? tabs.find(x => x.id === atab) : null;
+        if (t) { t.content = ed1.getValue(); t.dirty = true; }
+        onEdit(1);
+      } catch(e) {}
+    });
     ed1.onDidChangeCursorPosition(() => { try { updPos(1); } catch(e) {} });
     ed1.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => { try { saveCur(); } catch(e) {} });
     ed1.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => { try { openPalette(); } catch(e) {} });
@@ -16563,6 +17203,11 @@ async function initMonacoEditors() {
   registerLSPCompletionProvider();
   registerLSPHoverProvider();
   registerLSPSignatureProvider();
+  registerLSPDefinitionProvider();
+  registerLSPReferenceProvider();
+  registerLSPRenameProvider();
+  registerLSPDocumentSymbolProvider();
+  registerLSPCodeActionProvider();
 
   // Restore active tab content into Monaco
   try {
@@ -16576,38 +17221,77 @@ async function initMonacoEditors() {
   } catch(e) {}
 
   window._monacoReady = true;
+  // Apply saved font/tab/wrap/stickyScroll preferences immediately
+  applyMonacoPrefs();
   console.log('[AXIOM] ✓ Monaco editor ready');
   if (typeof notif === 'function') notif('Monaco editor active — full syntax highlighting, LSP & IntelliSense enabled', 'ok');
 }
 
-// ── swTab hook: set Monaco language + model when switching tabs ──
+// ── swTab hook: per-file Monaco models + content sync ──
 (function patchSwTab() {
   const _orig = window.swTab;
   if (typeof _orig !== 'function') return;
+  window._monacoModels = window._monacoModels || {};
+
   window.swTab = function(id, ...args) {
+    // Save current Monaco content back to the outgoing tab before switching
+    if (window._monacoReady && window._monacoInstances?.[1]) {
+      try {
+        const curTab = (typeof tabs !== 'undefined' && typeof atab !== 'undefined')
+          ? tabs.find(t => t.id === atab) : null;
+        if (curTab) curTab.content = window._monacoInstances[1].getValue();
+      } catch(e) {}
+    }
+
     const result = _orig.call(this, id, ...args);
     if (!window._monacoReady) return result;
+
     try {
       const tab = (typeof tabs !== 'undefined') ? tabs.find(t => t.id === id) : null;
       if (!tab || !window._monacoInstances?.[1]) return result;
       const ed = window._monacoInstances[1];
       const lang = getMonacoLang(tab.name || tab.path || '');
-      // Replace model so undo history is per-file
-      const existing = ed.getModel();
-      if (existing) {
-        monaco.editor.setModelLanguage(existing, lang);
+      const content = tab.content || '';
+
+      // Get or create a dedicated model for this tab (preserves per-file undo history)
+      let model = window._monacoModels[id];
+      if (!model || model.isDisposed()) {
+        const uri = monaco.Uri.parse('inmemory://axiom/' + id + '/' + encodeURIComponent(tab.name || 'untitled'));
+        model = monaco.editor.createModel(content, lang, uri);
+        window._monacoModels[id] = model;
+      } else {
+        // Sync content if it changed externally (file reload, external edit)
+        if (model.getValue() !== content) {
+          model.pushEditOperations([], [{ range: model.getFullModelRange(), text: content }], () => null);
+        }
+        monaco.editor.setModelLanguage(model, lang);
       }
-      // Trigger diagnostics
+      ed.setModel(model);
+
+      // Trigger LSP diagnostics for the new file
       if (tab.path) {
         clearTimeout(window._diagTimer);
         window._diagTimer = setTimeout(() => {
-          const model = ed.getModel();
-          updateMonacoDiagnostics(tab.path, model?.getValue() || '', lang);
+          updateMonacoDiagnostics(tab.path, model.getValue() || '', lang);
         }, 1500);
       }
     } catch(e) {}
     return result;
   };
+
+  // Clean up model when a tab is closed
+  const _origClose = window.closeTab;
+  if (typeof _origClose === 'function') {
+    window.closeTab = function(e, id) {
+      const result = _origClose.call(this, e, id);
+      try {
+        const m = window._monacoModels?.[id];
+        if (m && !m.isDisposed()) m.dispose();
+        if (window._monacoModels) delete window._monacoModels[id];
+      } catch(e) {}
+      return result;
+    };
+  }
 })();
 
 // ── Diagnostics debounce on edit ──
@@ -16749,6 +17433,179 @@ function registerLSPSignatureProvider() {
   });
 }
 
+// ── LSP Definition Provider (F12 / Go to Definition) ──
+function registerLSPDefinitionProvider() {
+  const ALL_LANGS = ['javascript','typescript','python','go','rust','css','html','json',
+    'java','kotlin','php','ruby','cpp','c','swift','dart','shell'];
+  ALL_LANGS.forEach(langId => {
+    monaco.languages.registerDefinitionProvider(langId, {
+      async provideDefinition(model, position) {
+        if (!curDir || !activeFile) return null;
+        try {
+          const r = await api('POST', '/api/lsp/definition', {
+            dir: curDir, lang: langId, file: activeFile,
+            line: position.lineNumber - 1, character: position.column - 1
+          });
+          if (!r.locations?.length) return null;
+          return r.locations.map(loc => ({
+            uri: monaco.Uri.file(loc.uri.replace('file://', '')),
+            range: {
+              startLineNumber: (loc.range.start.line || 0) + 1,
+              startColumn: (loc.range.start.character || 0) + 1,
+              endLineNumber: (loc.range.end.line || 0) + 1,
+              endColumn: (loc.range.end.character || 0) + 1,
+            }
+          }));
+        } catch(e) { return null; }
+      }
+    });
+  });
+}
+
+// ── LSP Reference Provider (Shift+F12 / Find All References) ──
+function registerLSPReferenceProvider() {
+  const ALL_LANGS = ['javascript','typescript','python','go','rust','css','html','json',
+    'java','kotlin','php','ruby','cpp','c','swift','dart','shell'];
+  ALL_LANGS.forEach(langId => {
+    monaco.languages.registerReferenceProvider(langId, {
+      async provideReferences(model, position) {
+        if (!curDir || !activeFile) return null;
+        try {
+          const r = await api('POST', '/api/lsp/references', {
+            dir: curDir, lang: langId, file: activeFile,
+            line: position.lineNumber - 1, character: position.column - 1
+          });
+          if (!r.locations?.length) return null;
+          return r.locations.map(loc => ({
+            uri: monaco.Uri.file(loc.uri.replace('file://', '')),
+            range: {
+              startLineNumber: (loc.range.start.line || 0) + 1,
+              startColumn: (loc.range.start.character || 0) + 1,
+              endLineNumber: (loc.range.end.line || 0) + 1,
+              endColumn: (loc.range.end.character || 0) + 1,
+            }
+          }));
+        } catch(e) { return null; }
+      }
+    });
+  });
+}
+
+// ── LSP Rename Provider (F2 / Rename Symbol) ──
+function registerLSPRenameProvider() {
+  const ALL_LANGS = ['javascript','typescript','python','go','rust','java','kotlin','php','ruby','cpp','c','swift','dart'];
+  ALL_LANGS.forEach(langId => {
+    monaco.languages.registerRenameProvider(langId, {
+      async provideRenameEdits(model, position, newName) {
+        if (!curDir || !activeFile) return null;
+        try {
+          const r = await api('POST', '/api/lsp/rename', {
+            dir: curDir, lang: langId, file: activeFile,
+            line: position.lineNumber - 1, character: position.column - 1, newName
+          });
+          if (r.error || !r.changes) return { edits: [], rejectReason: r.error || 'No changes' };
+          const edits = [];
+          for (const [fp, fileEdits] of Object.entries(r.changes || {})) {
+            const uri = monaco.Uri.file(fp.replace('file://', ''));
+            for (const e of fileEdits) {
+              edits.push({
+                resource: uri,
+                textEdit: {
+                  range: {
+                    startLineNumber: e.range.start.line + 1, startColumn: e.range.start.character + 1,
+                    endLineNumber: e.range.end.line + 1, endColumn: e.range.end.character + 1,
+                  },
+                  text: e.newText
+                }
+              });
+            }
+          }
+          return { edits };
+        } catch(e) { return null; }
+      }
+    });
+  });
+}
+
+// ── LSP Document Symbol Provider (Outline / Breadcrumb) ──
+function registerLSPDocumentSymbolProvider() {
+  const ALL_LANGS = ['javascript','typescript','python','go','rust','java','kotlin','php','ruby','cpp','c','swift','dart'];
+  const KIND_MAP = { function: 12, method: 6, class: 5, variable: 13, const: 14, interface: 11, module: 2, property: 10 };
+  ALL_LANGS.forEach(langId => {
+    monaco.languages.registerDocumentSymbolProvider(langId, {
+      async provideDocumentSymbols(model) {
+        if (!curDir || !activeFile) return null;
+        try {
+          // Use the semanticTokens route to get symbol outlines
+          const r = await api('POST', '/api/lsp/semanticTokens', {
+            dir: curDir, lang: langId, file: activeFile, content: model.getValue()
+          });
+          if (!r.symbols?.length) return null;
+          return r.symbols.map(s => ({
+            name: s.name,
+            detail: s.detail || '',
+            kind: KIND_MAP[s.kind] || 12,
+            range: {
+              startLineNumber: (s.line || 0) + 1, startColumn: 1,
+              endLineNumber: (s.endLine || s.line || 0) + 1, endColumn: 999,
+            },
+            selectionRange: {
+              startLineNumber: (s.line || 0) + 1, startColumn: (s.character || 0) + 1,
+              endLineNumber: (s.line || 0) + 1, endColumn: (s.character || 0) + s.name.length + 1,
+            }
+          }));
+        } catch(e) { return null; }
+      }
+    });
+  });
+}
+
+function registerLSPCodeActionProvider() {
+  const ALL_LANGS = ['javascript','typescript','python','go','rust','java','kotlin','php','ruby','cpp','c'];
+  ALL_LANGS.forEach(langId => {
+    monaco.languages.registerCodeActionProvider(langId, {
+      async provideCodeActions(model, range, context) {
+        if (!curDir || !activeFile) return { actions: [], dispose() {} };
+        try {
+          const r = await api('POST', '/api/lsp/codeAction', {
+            dir: curDir, lang: langId, file: activeFile, content: model.getValue(),
+            line: range.startLineNumber - 1, character: range.startColumn - 1,
+            diagnostics: context.markers?.map(m => ({
+              message: m.message,
+              severity: m.severity,
+              range: { start: { line: m.startLineNumber - 1, character: m.startColumn - 1 },
+                       end:   { line: m.endLineNumber - 1,   character: m.endColumn - 1 } }
+            })) || []
+          });
+          if (!r.actions?.length) return { actions: [], dispose() {} };
+          const actions = r.actions.map(a => ({
+            title: a.title,
+            kind: a.kind || 'quickfix',
+            isPreferred: a.isPreferred || false,
+            command: a.command ? {
+              id: 'lsp.applyEdit',
+              title: a.title,
+              arguments: [a]
+            } : undefined,
+            edit: a.edit ? {
+              edits: (a.edit.changes ? Object.entries(a.edit.changes).flatMap(([uri, edits]) =>
+                edits.map(e => ({
+                  resource: monaco.Uri.parse(uri),
+                  textEdit: { range: {
+                    startLineNumber: e.range.start.line + 1, startColumn: e.range.start.character + 1,
+                    endLineNumber: e.range.end.line + 1, endColumn: e.range.end.character + 1
+                  }, text: e.newText }
+                }))
+              ) : [])
+            } : undefined
+          }));
+          return { actions, dispose() {} };
+        } catch(e) { return { actions: [], dispose() {} }; }
+      }
+    });
+  });
+}
+
 // ── LSP Diagnostics → Monaco Error Markers ──
 let _diagPending = {};
 async function updateMonacoDiagnostics(filePath, content, langKey) {
@@ -16844,12 +17701,16 @@ function applyMonacoPrefs() {
   const tabSize = typeof edTS !== 'undefined' ? edTS : 2;
   const wrap = localStorage.getItem('s-wrap') || 'off';
   const minimap = localStorage.getItem('s-minimap') !== 'off';
+  const stickyScroll = localStorage.getItem('s-sticky') === 'on';
+  const renderWhitespace = localStorage.getItem('s-ws') || 'none';
   [1, 2].forEach(pane => {
     const ed = window._monacoInstances[pane];
     if (ed) ed.updateOptions({
       fontSize, tabSize, insertSpaces: true,
       wordWrap: wrap === 'on' ? 'on' : 'off',
       minimap: { enabled: pane === 1 && minimap },
+      stickyScroll: { enabled: stickyScroll },
+      renderWhitespace,
     });
   });
 }
@@ -16974,8 +17835,9 @@ async function installExtension(id) {
 
 async function uninstallExtension(id) {
   try {
-    const r = await api('DELETE', '/api/extensions/' + encodeURIComponent(id));
+    const r = await api('POST', '/api/extensions/uninstall', { id });
     if (r.ok) notif('Extension removed', 'ok');
+    else notif(r.error || 'Uninstall failed', 'error');
     return r;
   } catch(e) { return { error: e.message }; }
 }
@@ -17090,6 +17952,58 @@ window.openImagePreview = openImagePreview;
 // Auto-init Monaco if already loaded (e.g. CDN cached)
 if (window._monacoLoaded && typeof monaco !== 'undefined') {
   requestAnimationFrame(() => initMonacoEditors());
+}
+
+// ── PWA Service Worker ───────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(reg => {
+        console.log('[PWA] Service worker registered:', reg.scope);
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              notif('Update available — reload to get the latest AXIOM', 'info');
+            }
+          });
+        });
+      })
+      .catch(err => console.warn('[PWA] SW registration failed:', err));
+
+    // Listen for online/offline events
+    window.addEventListener('online',  () => notif('Back online ✓', 'ok'));
+    window.addEventListener('offline', () => notif('Offline — editor still works, AI needs internet', 'warn'));
+  });
+
+  // Install prompt — show "Install AXIOM" button when browser fires beforeinstallprompt
+  let _pwaPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    _pwaPrompt = e;
+    // Add install button to status bar
+    const sb = document.getElementById('statusbar');
+    if (sb && !document.getElementById('pwa-install-btn')) {
+      const btn = document.createElement('button');
+      btn.id = 'pwa-install-btn';
+      btn.textContent = '⬇ Install App';
+      btn.title = 'Install AXIOM IDE on this device';
+      btn.style.cssText = 'background:var(--ac);color:#000;border:none;border-radius:3px;padding:1px 8px;font-size:11px;cursor:pointer;font-weight:600;margin-left:6px';
+      btn.onclick = () => {
+        _pwaPrompt.prompt();
+        _pwaPrompt.userChoice.then(r => {
+          if (r.outcome === 'accepted') { btn.remove(); notif('AXIOM installed on your device!', 'ok'); }
+          _pwaPrompt = null;
+        });
+      };
+      sb.prepend(btn);
+    }
+  });
+
+  window.addEventListener('appinstalled', () => {
+    document.getElementById('pwa-install-btn')?.remove();
+    notif('AXIOM IDE installed successfully!', 'ok');
+  });
 }
 </script>
 

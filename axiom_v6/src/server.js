@@ -22,7 +22,7 @@ function setSecurityHeaders(res){
   res.setHeader('X-DNS-Prefetch-Control','off');
   if(process.env.NODE_ENV==='production'){
     res.setHeader('Strict-Transport-Security','max-age=63072000; includeSubDomains; preload');
-    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.paystack.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; connect-src 'self' ws: wss: https://api.anthropic.com https://api.paystack.co https://standard.paystack.co https://api.github.com https://oauth2.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; frame-src https://checkout.paystack.com https://standard.paystack.co blob: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'self'");
+    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.paystack.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; connect-src 'self' ws: wss: https://api.anthropic.com https://api.paystack.co https://standard.paystack.co https://api.github.com https://oauth2.googleapis.com http://localhost:* http://127.0.0.1:*; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; frame-src https://checkout.paystack.com https://standard.paystack.co blob: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'self'");
   }
 }
 
@@ -433,6 +433,7 @@ const CFG_FILE=path.join(DATA,'config.json'),DB_FILE=path.join(DATA,'axiom.db');
 const SNIP_FILE=path.join(DATA,'snippets.json');
 const CHATS_FILE=path.join(DATA,'chats.json');
 const SETTINGS_FILE=path.join(DATA,'settings.json');
+const AI_PROVIDER_FILE=path.join(DATA,'ai_provider.json');
 fs.mkdirSync(DATA,{recursive:true,mode:0o700});
 
 // ── Logging ─────────────────────────────────────────────────────
@@ -902,6 +903,121 @@ Always write production-ready code: error handling, types, imports, edge cases. 
 
 // ── Helpers ──────────────────────────────────────────────────────
 function getKey(k){if(k)return k;if(process.env.ANTHROPIC_API_KEY)return process.env.ANTHROPIC_API_KEY;try{return fs.readFileSync(KEY_FILE,'utf8').trim();}catch(e){return'';}}
+function getAIProvider(){try{return JSON.parse(fs.readFileSync(AI_PROVIDER_FILE,'utf8'));}catch(e){return{provider:'anthropic',model:'claude-sonnet-4-20250514',baseUrl:''};}}
+function saveAIProvider(cfg){atomicWriteSync(AI_PROVIDER_FILE,JSON.stringify(cfg,null,2));}
+
+// ══════════════════════════════════════════════════════════════
+// AI ORCHESTRA — multi-agent role system
+// Roles: architect (design/structure), coder (implementation), documenter (docs)
+// Each role can use a different provider/model independently.
+// ══════════════════════════════════════════════════════════════
+const ORCHESTRA_FILE=path.join(DATA,'ai_orchestra.json');
+const ORCHESTRA_DEFAULTS={
+  architect:{provider:'anthropic',model:'claude-opus-4-8',baseUrl:'',
+    systemPrompt:'You are a senior software architect. Analyze requirements and produce a clear, structured implementation plan. Output only the plan — numbered steps, component names, data flow, edge cases. No code yet.'},
+  coder:{provider:'anthropic',model:'claude-sonnet-4-20250514',baseUrl:'',
+    systemPrompt:'You are an expert software engineer. Given an architecture plan, implement clean, production-ready code. Output only the code with minimal inline comments. No explanations.'},
+  documenter:{provider:'anthropic',model:'claude-haiku-4-5-20251001',baseUrl:'',
+    systemPrompt:'You are a technical writer. Given code, produce concise, clear documentation: a JSDoc/docstring header, a short usage example, and a brief API table if relevant. Output markdown.'}
+};
+
+function getOrchestra(){
+  try{return {...ORCHESTRA_DEFAULTS,...JSON.parse(fs.readFileSync(ORCHESTRA_FILE,'utf8'))};}
+  catch(e){return {...ORCHESTRA_DEFAULTS};}
+}
+function saveOrchestra(cfg){atomicWriteSync(ORCHESTRA_FILE,JSON.stringify(cfg,null,2));}
+
+// Call AI for a specific orchestra role, using that role's provider config
+async function aiCallRole(role,system,messages,{max_tokens=4096}={}){
+  const orch=getOrchestra();
+  const roleCfg=orch[role]||ORCHESTRA_DEFAULTS[role]||getAIProvider();
+  const prov={...getAIProvider(),...roleCfg};
+  if(prov.provider==='anthropic'){
+    const key=getKey();if(!key)throw new Error('No Anthropic key — add in Settings ⚙');
+    const model=prov.model||'claude-sonnet-4-20250514';
+    const rb=JSON.stringify({model,max_tokens,system:system||roleCfg.systemPrompt,messages});
+    const result=await new Promise((resolve,reject)=>{
+      const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+      r.on('error',reject);r.write(rb);r.end();
+    });
+    if(result.error)throw new Error(result.error.message||JSON.stringify(result.error));
+    return result.content?.[0]?.text||'';
+  } else {
+    const baseUrl=prov.baseUrl||(prov.provider==='lmstudio'?'http://localhost:1234':'http://localhost:11434');
+    const model=prov.model||(prov.provider==='lmstudio'?'local-model':'qwen2.5-coder:7b');
+    const rb=JSON.stringify({model,messages:[{role:'system',content:system||roleCfg.systemPrompt},...messages],stream:false,max_tokens,temperature:0.2});
+    const u=new urlMod.URL(baseUrl+'/v1/chat/completions');
+    const mod=u.protocol==='https:'?https:http;
+    const result=await new Promise((resolve,reject)=>{
+      const r=mod.request({hostname:u.hostname,port:u.port||(u.protocol==='https:'?443:80),path:u.pathname,method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(rb),...(prov.apiKey?{'Authorization':'Bearer '+prov.apiKey}:{})}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+      r.on('error',reject);r.write(rb);r.end();
+    });
+    if(result.error)throw new Error(result.error.message||JSON.stringify(result.error));
+    return result.choices?.[0]?.message?.content||'';
+  }
+}
+
+// Unified non-streaming AI call — works with Anthropic, Ollama, and LM Studio
+async function aiCall(system,messages,{apiKey,max_tokens=4096}={}){
+  const prov=getAIProvider();
+  if(prov.provider==='anthropic'){
+    const key=apiKey||getKey();if(!key)throw new Error('No API key — add in Settings ⚙');
+    const model=prov.model||'claude-sonnet-4-20250514';
+    const rb=JSON.stringify({model,max_tokens,system,messages});
+    const result=await new Promise((resolve,reject)=>{
+      const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+      r.on('error',reject);r.write(rb);r.end();
+    });
+    if(result.error)throw new Error(result.error.message||JSON.stringify(result.error));
+    return result.content?.[0]?.text||'';
+  } else {
+    // Ollama or LM Studio — OpenAI-compatible chat completions
+    const baseUrl=prov.baseUrl||(prov.provider==='lmstudio'?'http://localhost:1234':'http://localhost:11434');
+    const model=prov.model||(prov.provider==='lmstudio'?'local-model':'qwen2.5-coder:7b');
+    const rb=JSON.stringify({model,messages:[{role:'system',content:system},...messages],stream:false,max_tokens,temperature:0.2});
+    const u=new urlMod.URL(baseUrl+'/v1/chat/completions');
+    const mod=u.protocol==='https:'?https:http;
+    const result=await new Promise((resolve,reject)=>{
+      const r=mod.request({hostname:u.hostname,port:u.port||(u.protocol==='https:'?443:80),path:u.pathname,method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(rb),...(prov.apiKey?{'Authorization':'Bearer '+prov.apiKey}:{})}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+      r.on('error',reject);r.write(rb);r.end();
+    });
+    if(result.error)throw new Error(result.error.message||JSON.stringify(result.error));
+    return result.choices?.[0]?.message?.content||'';
+  }
+}
+
+// Streaming AI call — emits Anthropic-format SSE regardless of provider
+// so the frontend works unchanged whether using Claude, Ollama, or LM Studio
+function aiStream(system,messages,{apiKey,max_tokens=8192}={},httpRes){
+  const prov=getAIProvider();
+  if(prov.provider==='anthropic'){
+    const key=apiKey||getKey();
+    if(!key){httpRes.end('data: {"type":"error","error":{"message":"No API key — add in Settings"}}\n\n');return;}
+    const model=prov.model||'claude-sonnet-4-20250514';
+    const rb=JSON.stringify({model,max_tokens,stream:true,system,messages});
+    const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(apiRes)=>{apiRes.on('data',chunk=>httpRes.write(chunk));apiRes.on('end',()=>httpRes.end());});
+    apiReq.on('error',e=>{httpRes.end('data: {"type":"error","error":{"message":"'+e.message+'"}}\n\n');});
+    apiReq.end(rb);
+  } else {
+    // Local model: collect full response, emit as single Anthropic-format SSE chunk
+    aiCall(system,messages,{apiKey,max_tokens}).then(text=>{
+      const provider=prov.provider==='lmstudio'?'LM Studio':'Ollama';
+      const model=prov.model||'local';
+      httpRes.write('data: {"type":"message_start","message":{"model":"'+model+' ('+provider+')","usage":{"input_tokens":0,"output_tokens":0}}}\n\n');
+      httpRes.write('data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n');
+      // Stream in chunks of 200 chars so frontend renders progressively
+      const chunks=text.match(/.{1,200}/gs)||[text];
+      for(const chunk of chunks){
+        httpRes.write('data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":'+JSON.stringify(chunk)+'}}\n\n');
+      }
+      httpRes.write('data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":'+Math.ceil(text.length/4)+'}}\n\n');
+      httpRes.end();
+    }).catch(e=>{
+      httpRes.write('data: {"type":"error","error":{"message":'+JSON.stringify(e.message)+'}}\n\n');
+      httpRes.end();
+    });
+  }
+}
 function parseBody(req){return new Promise(r=>{let b='';let size=0;req.on('data',c=>{size+=c.length;if(size>MAX_BODY_SIZE){req.destroy();return r({text:'',json:{},error:'Body too large'});}b+=c;});req.on('end',()=>{try{r({text:b,json:JSON.parse(b)});}catch(e){r({text:b,json:{}});}});});}
 function sendJson(res,data,status=200){const j=JSON.stringify(data);res.writeHead(status,{'Content-Type':'application/json'});res.end(j);}
 const CORS_ORIGIN=process.env.CORS_ORIGIN||'*';
@@ -1186,7 +1302,7 @@ const server=http.createServer(async(req,res)=>{
     let fp=route==='/'?path.join(pub,'index.html'):route==='/admin'||route==='/admin/'?path.join(pub,'admin.html'):path.join(pub,route.slice(1));
     const rfp=path.resolve(fp);
     if(!rfp.startsWith(path.resolve(pub))){res.writeHead(403);res.end('Forbidden');return;}
-    if(fs.existsSync(rfp)&&fs.statSync(rfp).isFile()){const mime={'.html':'text/html','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon'};res.writeHead(200,{'Content-Type':mime[path.extname(rfp)]||'text/plain','Cache-Control':'no-store'});res.end(fs.readFileSync(rfp));return;}
+    if(fs.existsSync(rfp)&&fs.statSync(rfp).isFile()){const mime={'.html':'text/html','.js':'application/javascript','.mjs':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.json':'application/json','.webmanifest':'application/manifest+json','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf'};const isSW=route==='/sw.js';res.writeHead(200,{'Content-Type':mime[path.extname(rfp)]||'text/plain','Cache-Control':isSW?'no-store':'public, max-age=3600'});res.end(fs.readFileSync(rfp));return;}
     const idx=path.join(pub,route.startsWith('/admin')?'admin.html':'index.html');
     res.writeHead(200,{'Content-Type':'text/html','Cache-Control':'no-store'});
     res.end(fs.existsSync(idx)?fs.readFileSync(idx):Buffer.from('AXIOM'));return;
@@ -1200,6 +1316,79 @@ const server=http.createServer(async(req,res)=>{
   // API key
   if(route==='/api/key'&&req.method==='GET'){const k=getKey();return sendJson(res,{hasKey:!!k,masked:k?k.slice(0,14)+'••••':''});}
   if(route==='/api/key'&&req.method==='POST'){if(!(data.key||'').startsWith('sk-ant-'))return sendJson(res,{error:'Invalid key'},400);atomicWriteSync(KEY_FILE,data.key,{mode:0o600});return sendJson(res,{ok:true});}
+
+  // ── AI Provider config (Anthropic / Ollama / LM Studio) ──────────
+  if(route==='/api/ai/provider'&&req.method==='GET'){return sendJson(res,getAIProvider());}
+  if(route==='/api/ai/provider'&&req.method==='POST'){
+    const {provider='anthropic',model='',baseUrl='',apiKey:provKey=''}=data;
+    if(!['anthropic','ollama','lmstudio'].includes(provider))return sendJson(res,{error:'Unknown provider'},400);
+    const cfg={provider,model:model||undefined,baseUrl:baseUrl||undefined,apiKey:provKey||undefined,updated:new Date().toISOString()};
+    Object.keys(cfg).forEach(k=>{if(cfg[k]===undefined)delete cfg[k];});
+    saveAIProvider(cfg);return sendJson(res,{ok:true,provider:cfg});
+  }
+  if(route==='/api/ai/models'&&req.method==='GET'){
+    const prov=getAIProvider();
+    if(prov.provider==='anthropic'){
+      return sendJson(res,{models:['claude-opus-4-8','claude-sonnet-4-6','claude-sonnet-4-20250514','claude-haiku-4-5-20251001'],provider:'anthropic'});
+    }
+    const baseUrl=prov.baseUrl||(prov.provider==='lmstudio'?'http://localhost:1234':'http://localhost:11434');
+    try{
+      const result=await new Promise((resolve,reject)=>{
+        const u=new urlMod.URL(baseUrl+'/v1/models');
+        const mod2=u.protocol==='https:'?https:http;
+        const r=mod2.get({hostname:u.hostname,port:u.port,path:u.pathname,timeout:4000},resp=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+        r.on('error',reject);r.on('timeout',()=>{r.destroy();reject(new Error('timeout'));});
+      });
+      const models=(result.data||result.models||[]).map(m=>m.id||m.name||m).filter(Boolean);
+      return sendJson(res,{models,provider:prov.provider});
+    }catch(e){return sendJson(res,{models:[],error:e.message,provider:prov.provider});}
+  }
+
+  // ── AI Orchestra ─────────────────────────────────────────────────
+  if(route==='/api/ai/orchestra'&&req.method==='GET'){return sendJson(res,getOrchestra());}
+  if(route==='/api/ai/orchestra'&&req.method==='POST'){
+    const orch=getOrchestra();
+    const {role,provider,model,baseUrl,apiKey:rKey,systemPrompt}=data;
+    if(!['architect','coder','documenter'].includes(role))return sendJson(res,{error:'Unknown role'},400);
+    orch[role]={...orch[role],...(provider&&{provider}),...(model&&{model}),...(baseUrl!==undefined&&{baseUrl}),...(rKey!==undefined&&{apiKey:rKey}),...(systemPrompt&&{systemPrompt})};
+    saveOrchestra(orch);return sendJson(res,{ok:true,orchestra:orch});
+  }
+  // Orchestrated pipeline: task → architect plan → coder implementation → documenter docs
+  if(route==='/api/ai/orchestra/run'&&req.method==='POST'){
+    const {task,code,mode='full',lang='javascript'}=data;
+    if(!task&&!code)return sendJson(res,{error:'task or code required'},400);
+    res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Access-Control-Allow-Origin':'*'});
+    const emit=(role,content,done=false)=>{
+      try{res.write('data: '+JSON.stringify({role,content,done})+'\n\n');}catch(e){}
+    };
+    try{
+      let plan='',impl='',docs='';
+      if(mode==='full'||mode==='architect'){
+        emit('architect','Analyzing and structuring your request…');
+        const sys=getOrchestra().architect.systemPrompt;
+        plan=await aiCallRole('architect',sys,[{role:'user',content:`Language: ${lang}\n\nTask: ${task||'Analyze and plan this code:\n'+code}`}],{max_tokens:2048});
+        emit('architect',plan,mode==='architect');
+      }
+      if(mode==='full'||mode==='coder'){
+        emit('coder','Writing implementation…');
+        const codeTask=mode==='full'?`Architecture plan:\n${plan}\n\nOriginal task: ${task||''}`:task||code;
+        const sys2=getOrchestra().coder.systemPrompt;
+        impl=await aiCallRole('coder',sys2,[{role:'user',content:`Language: ${lang}\n\n${codeTask}`}],{max_tokens:4096});
+        emit('coder',impl,mode==='coder');
+      }
+      if(mode==='full'||mode==='documenter'){
+        emit('documenter','Generating documentation…');
+        const docSrc=impl||code||task;
+        const sys3=getOrchestra().documenter.systemPrompt;
+        docs=await aiCallRole('documenter',sys3,[{role:'user',content:`Language: ${lang}\n\nDocument this:\n\`\`\`${lang}\n${docSrc}\n\`\`\``}],{max_tokens:2048});
+        emit('documenter',docs,true);
+      }
+      if(mode==='full'){
+        emit('summary',JSON.stringify({plan,implementation:impl,documentation:docs}),true);
+      }
+    }catch(e){emit('error',e.message,true);}
+    res.end();return;
+  }
 
   // Memory
   if(route==='/api/memory'){if(req.method==='GET')return sendJson(res,Mem.load());if(req.method==='PUT'){Mem.patch(data);return sendJson(res,{ok:true,memory:Mem.load()});}if(req.method==='DELETE'){Mem.clear();return sendJson(res,{ok:true});}}
@@ -1368,6 +1557,10 @@ const server=http.createServer(async(req,res)=>{
     atomicWriteSync(THEMES_FILE,JSON.stringify(themes,null,2));
     return sendJson(res,{ok:true,theme});
   }
+  if(route==='/api/themes/active'&&req.method==='GET'){
+    try{const t=JSON.parse(fs.readFileSync(THEMES_FILE,'utf8'));return sendJson(res,{active:t.active||'dark'});}
+    catch(e){return sendJson(res,{active:'dark'});}
+  }
   if(route==='/api/themes/active'&&req.method==='PUT'){
     let themes;try{themes=JSON.parse(fs.readFileSync(THEMES_FILE,'utf8'));}catch(e){themes={custom:[],active:'dark'};}
     themes.active=data.theme||'dark';themes.updated=new Date().toISOString();
@@ -1516,9 +1709,7 @@ const server=http.createServer(async(req,res)=>{
 
   // AI complete
   if(route==='/api/complete'&&req.method==='POST'){
-    const apiKey=getKey();if(!apiKey)return sendJson(res,{error:'No API key'},401);
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:400,system:'Code completion engine. Return ONLY the completion text. No markdown, no explanation, no backticks.',messages:[{role:'user',content:`Language: ${data.lang||'code'}\nCode before cursor:\n${data.prefix}\nComplete naturally from exactly where the code left off:`}]});
-    try{const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});return sendJson(res,{completion:result.content?.[0]?.text||''});}
+    try{const text=await aiCall('Code completion engine. Return ONLY the completion text. No markdown, no explanation, no backticks.',[{role:'user',content:`Language: ${data.lang||'code'}\nCode before cursor:\n${data.prefix}\nComplete naturally from exactly where the code left off:`}],{max_tokens:400});return sendJson(res,{completion:text});}
     catch(e){return sendJson(res,{error:e.message},500);}
   }
 
@@ -1555,35 +1746,31 @@ const server=http.createServer(async(req,res)=>{
       relCtx=rparts.join('\n');
     }
     res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','Access-Control-Allow-Origin':'*','X-Accel-Buffering':'no'});
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,stream:true,system:sysPrompt(projCtx+fileCtx+relCtx),messages:msgs});
-    const inputTokens=Math.ceil(Buffer.byteLength(rb)/4); // Rough estimate: 1 token ~ 4 bytes
-    const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},apiRes=>{
-      let full='';let outputTokens=0;
-      apiRes.on('data',chunk=>{res.write(chunk);const s=chunk.toString();const m=s.match(/"text":"((?:[^"\\]|\\.)*)"/);if(m){const t=m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/\\\\/g,'\\');full+=t;outputTokens+=Math.ceil(t.length/4);}
-        // Extract usage from message_delta event
-        const um=s.match(/"usage"\s*:\s*\{[^}]*"output_tokens"\s*:\s*(\d+)/);if(um)outputTokens=parseInt(um[1]);
-        const im=s.match(/"usage"\s*:\s*\{[^}]*"input_tokens"\s*:\s*(\d+)/);if(im&&parseInt(im[1])>0)outputTokens=outputTokens; // keep existing
+    const prov=getAIProvider();
+    if(prov.provider==='anthropic'){
+      const rb=JSON.stringify({model:prov.model||'claude-sonnet-4-20250514',max_tokens:8192,stream:true,system:sysPrompt(projCtx+fileCtx+relCtx),messages:msgs});
+      const inputTokens=Math.ceil(Buffer.byteLength(rb)/4);
+      const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},apiRes=>{
+        let full='';let outputTokens=0;
+        apiRes.on('data',chunk=>{res.write(chunk);const s=chunk.toString();const m=s.match(/"text":"((?:[^"\\]|\\.)*)"/);if(m){const t=m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/\\\\/g,'\\');full+=t;outputTokens+=Math.ceil(t.length/4);}
+          const um=s.match(/"usage"\s*:\s*\{[^}]*"output_tokens"\s*:\s*(\d+)/);if(um)outputTokens=parseInt(um[1]);
+        });
+        apiRes.on('end',()=>{res.end();const lastUser=msgs.length?msgs[msgs.length-1].content:'';if(lastUser&&typeof lastUser==='string')Mem.extract(lastUser,full);if(chatUser){const totalUsed=inputTokens+outputTokens;if(dbPool)dbPool.query('UPDATE users SET tokens_used_month=tokens_used_month+? WHERE id=?',[totalUsed,chatUser.id]).catch(()=>{});try{const ud=JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));const u=ud.users?.find(x=>x.id===chatUser.id);if(u){u.tokens_used_month=(u.tokens_used_month||0)+totalUsed;atomicWriteSync(USERS_FILE,JSON.stringify(ud,null,2),{mode:0o600});}}catch(e){}DB.recordUsage({user_id:chatUser.id,action:'chat',tokens_in:inputTokens,tokens_out:outputTokens,cost:totalUsed*0.000003});}});
       });
-      apiRes.on('end',()=>{
-        res.end();
-        const lastUser=msgs.length?msgs[msgs.length-1].content:'';if(lastUser&&typeof lastUser==='string')Mem.extract(lastUser,full);
-        // Record token usage for budget tracking
-        if(chatUser){
-          const totalUsed=inputTokens+outputTokens;
-          // Update monthly usage
-          if(dbPool){
-            dbPool.query('UPDATE users SET tokens_used_month=tokens_used_month+? WHERE id=?',[totalUsed,chatUser.id]).catch(()=>{});
-          }
-          try{
-            const ud=JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));
-            const u=ud.users?.find(x=>x.id===chatUser.id);
-            if(u){u.tokens_used_month=(u.tokens_used_month||0)+totalUsed;atomicWriteSync(USERS_FILE,JSON.stringify(ud,null,2),{mode:0o600});}
-          }catch(e){}
-          DB.recordUsage({user_id:chatUser.id,action:'chat',tokens_in:inputTokens,tokens_out:outputTokens,cost:totalUsed*0.000003});
-        }
-      });
-    });
-    apiReq.on('error',()=>{try{res.end();}catch(x){}});apiReq.write(rb);apiReq.end();return;
+      apiReq.on('error',()=>{try{res.end();}catch(x){}});apiReq.write(rb);apiReq.end();
+    } else {
+      // Local model (Ollama / LM Studio) — non-streaming, emitted as Anthropic-format SSE
+      aiCall(sysPrompt(projCtx+fileCtx+relCtx),msgs,{apiKey,max_tokens:8192}).then(text=>{
+        const model=prov.model||'local';const provider=prov.provider==='lmstudio'?'LM Studio':'Ollama';
+        res.write('data: {"type":"message_start","message":{"model":"'+model+' ('+provider+')","usage":{"input_tokens":0,"output_tokens":0}}}\n\n');
+        res.write('data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n');
+        const chunks=text.match(/.{1,200}/gs)||[text];for(const chunk of chunks)res.write('data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":'+JSON.stringify(chunk)+'}}\n\n');
+        res.write('data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":'+Math.ceil(text.length/4)+'}}\n\n');
+        res.end();const lastUser=msgs.length?msgs[msgs.length-1].content:'';if(lastUser&&typeof lastUser==='string')Mem.extract(lastUser,text);
+        if(chatUser)DB.recordUsage({user_id:chatUser.id,action:'chat',tokens_in:0,tokens_out:Math.ceil(text.length/4),cost:0});
+      }).catch(e=>{res.write('data: {"type":"error","error":{"message":'+JSON.stringify(e.message)+'}}\n\n');res.end();});
+    }
+    return;
   }
 
   // Admin login — password-based authentication for admin dashboard
@@ -1613,7 +1800,7 @@ const server=http.createServer(async(req,res)=>{
     const local=await DB.nlQuery(question);const apiKey=getKey();if(!apiKey)return sendJson(res,{...local,ai_enhanced:false});
     const a=await DB.getAnalytics();
     const sys=`You are AXIOM Admin AI for Zawadi. Live data: ${a.overview.total_users} users, ${a.overview.paying_users} paying, $${a.revenue.total.toFixed(2)} revenue, $${a.revenue.mrr}/mo MRR. Local query: ${local.answer}. Answer concisely with insights.`;
-    try{const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,system:sys,messages:[{role:'user',content:question}]});const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});return sendJson(res,{...local,ai_answer:result.content?.[0]?.text||local.answer,ai_enhanced:true});}
+    try{const aiText=await aiCall(sys,[{role:'user',content:question}],{apiKey,max_tokens:800});return sendJson(res,{...local,ai_answer:aiText||local.answer,ai_enhanced:true});}
     catch(e){return sendJson(res,{...local,ai_enhanced:false});}
   }
   if(route==='/api/admin/chat'&&req.method==='POST'){
@@ -1621,9 +1808,7 @@ const server=http.createServer(async(req,res)=>{
     const a=await DB.getAnalytics();const msgs=(data.messages||[]).slice(-20);
     const sys=`You are AXIOM Admin for Zawadi. Live: ${a.overview.total_users} users, $${a.revenue.mrr}/mo MRR, $${a.revenue.total.toFixed(2)} total. Give specific insights and recommendations.`;
     res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','Access-Control-Allow-Origin':'*','X-Accel-Buffering':'no'});
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2048,stream:true,system:sys,messages:msgs});
-    const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},apiRes=>{apiRes.on('data',chunk=>res.write(chunk));apiRes.on('end',()=>res.end());});
-    apiReq.on('error',()=>{try{res.end();}catch(x){}});apiReq.write(rb);apiReq.end();return;
+    aiStream(sys,msgs,{apiKey,max_tokens:2048},res);return;
   }
   if(route==='/api/admin/users/export'&&req.method==='GET'){const users=await DB.getUsers();const csv='id,name,email,plan,status,total_paid,chat_count,tokens_in,tokens_out,tokens_used_month,created_at,last_seen\n'+users.map(u=>[u.id,u.name,u.email,u.plan,u.status,u.total_paid||0,u.chat_count||0,u.tokens_in||0,u.tokens_out||0,u.tokens_used_month||0,u.created_at,u.last_seen||''].join(',')).join('\n');res.writeHead(200,{'Content-Type':'text/csv','Content-Disposition':'attachment; filename="axiom_users.csv"','Access-Control-Allow-Origin':'*'});res.end(csv);return;}
 
@@ -2230,8 +2415,7 @@ const server=http.createServer(async(req,res)=>{
     const code=data.code||'',instruction=data.instruction||'',lang=data.lang||'code',context=data.context||'';
     const sys=`You are a precise code editor. Given code and an instruction, return ONLY the modified code. No markdown, no backticks, no explanation. Just the raw code.`;
     const userMsg=`Language: ${lang}\n${context?'File context (surrounding code):\n'+context.slice(0,2000)+'\n\n':''}Code to edit:\n${code}\n\nInstruction: ${instruction}`;
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:[{role:'user',content:userMsg}]});
-    try{const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+    try{const result={content:[{text:await aiCall(sys,[{role:'user',content:userMsg}],{apiKey,max_tokens:4096})}]};
     let edited=result.content?.[0]?.text||'';
     edited=edited.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
     return sendJson(res,{edited});}
@@ -2272,10 +2456,9 @@ const server=http.createServer(async(req,res)=>{
     const {code='',lang='',instruction='',file=''}=data;
     const sys='You are an expert code refactoring assistant. Refactor the given code based on the instruction. Return ONLY the refactored code, no markdown fences, no explanations.';
     const userMsg=`File: ${file||'untitled'}\nLanguage: ${lang}\nInstruction: ${instruction}\n\nCode:\n${code}`;
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:userMsg}]});
     try{
-      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
-      let refactored=result.content?.[0]?.text||code;
+      const refactored2=await aiCall(sys,[{role:'user',content:userMsg}],{apiKey,max_tokens:8192});
+      let refactored=refactored2||code;
       refactored=refactored.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
       return sendJson(res,{refactored});
     }catch(e){return sendJson(res,{error:e.message},500);}
@@ -2287,10 +2470,8 @@ const server=http.createServer(async(req,res)=>{
     const {code='',lang='',file=''}=data;
     const sys='You are an expert code reviewer. Analyze the given code and return a JSON object with: {"issues": [{"line": number, "severity": "error|warning|info", "message": string}], "summary": string, "suggestions": [string], "complexity": "low|medium|high"}';
     const userMsg=`File: ${file||'untitled'}\nLanguage: ${lang}\n\nCode:\n${code.slice(0,8000)}`;
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:[{role:'user',content:userMsg}]});
     try{
-      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
-      let text=result.content?.[0]?.text||'{}';
+      let text=await aiCall(sys,[{role:'user',content:userMsg}],{apiKey,max_tokens:4096})||'{}';
       text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
       let analysis;try{analysis=JSON.parse(text);}catch(e){analysis={summary:text,issues:[],suggestions:[],complexity:'unknown'};}
       return sendJson(res,analysis);
@@ -2317,9 +2498,8 @@ Respond with a JSON array of steps. Each step is an object with:
 Example: [{"action":"edit","path":"src/app.js","find":"console.log","replace":"logger.info","explanation":"Replace console.log with logger"}]
 Return ONLY valid JSON array. No markdown.`;
     const userMsg=`Project: ${dir}\n${projCtx?'Project info: '+projCtx+'\n':''}${fileCtx?'Current file:\n'+fileCtx.slice(0,4000)+'\n':''}Instruction: ${instruction}`;
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:userMsg}]});
     try{
-      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+      const result={content:[{text:await aiCall(sys,[{role:'user',content:userMsg}],{apiKey,max_tokens:8192})}]};
       let text=result.content?.[0]?.text||'[]';
       text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
       let steps;try{steps=JSON.parse(text);}catch(e){return sendJson(res,{error:'AI returned invalid JSON',raw:text.slice(0,500)});}
@@ -2933,9 +3113,7 @@ Return ONLY valid JSON array. No markdown.`;
     const sys='You are a code completion engine. Given code context, predict the next 1-5 lines. Return ONLY the code to insert — no explanation, no markdown, no backticks. If uncertain, return an empty string.';
     const msg=`Language: ${lang}\nFile: ${file||'unknown'}\nCode before cursor:\n${prefix}\nCode after cursor:\n${suffix}\n\nCompletion:`;
     try{
-      const rb=JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:150,system:sys,messages:[{role:'user',content:msg}]});
-      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
-      let completion=result.content?.[0]?.text||'';
+      let completion=await aiCall(sys,[{role:'user',content:msg}],{apiKey,max_tokens:150});
       completion=completion.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
       return sendJson(res,{completion});
     }catch(e){return sendJson(res,{completion:''});}
@@ -2996,9 +3174,8 @@ Return ONLY valid JSON array. No markdown.`;
     const instruction=data.instruction||'',fileContext=data.fileContext||'',extraContext=data.extraContext||'',rules=data.rules||'';
     const sys=`You are AXIOM Composer, an AI that proposes multi-file code edits.${rules?'\n\nProject rules:\n'+rules:''}\nRespond with ONLY a JSON object:\n{"summary":"brief description","files":[{"path":"rel/path","action":"edit|create|delete","content":"full file content","explanation":"what changed"}]}`;
     const msg=`Project: ${dir}\n${extraContext?extraContext+'\n':''}${fileContext?'Current file:\n'+fileContext.slice(0,3000)+'\n':''}Instruction: ${instruction}`;
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:msg}]});
     try{
-      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+      const result={content:[{text:await aiCall(sys,[{role:'user',content:msg}],{apiKey,max_tokens:8192})}]};
       let text=result.content?.[0]?.text||'{}';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
       let proposal;try{proposal=JSON.parse(text);}catch(e){return sendJson(res,{error:'AI returned invalid JSON',raw:text.slice(0,500)});}
       for(const f of(proposal.files||[])){if(f.action==='edit'){try{const fp=path.resolve(dir,f.path);if(fp.startsWith(dir))f.original=fs.readFileSync(fp,'utf8').slice(0,5000);}catch(e){f.original='';}}};
@@ -3027,13 +3204,10 @@ Return ONLY valid JSON array. No markdown.`;
       exec(`cd "${dir}" && git diff HEAD 2>&1`,{maxBuffer:2*1024*1024},(_err,diff)=>{
         if(!diff||diff.length<10)return resolve(sendJson(res,{issues:[],message:'No uncommitted changes to review'}));
         const sys='You are a code reviewer. Analyze this git diff for bugs, security issues, and code quality problems. Return ONLY a JSON array: [{"severity":"error|warning|info","file":"path","line":42,"title":"Issue title","description":"Details","fix":"Suggested fix"}]. Focus on real bugs, not style nitpicks.';
-        const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:[{role:'user',content:'Review this diff:\n\n'+diff.slice(0,12000)}]});
-        const req2=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{
-          let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{
-            try{const r=JSON.parse(d);let text=r.content?.[0]?.text||'[]';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');let issues;try{issues=JSON.parse(text);}catch(e){issues=[];}resolve(sendJson(res,{issues,diffSize:diff.length}));}
-            catch(e){resolve(sendJson(res,{issues:[],error:e.message}));}
-          });
-        });req2.on('error',e=>resolve(sendJson(res,{issues:[],error:e.message})));req2.end(rb);
+        aiCall(sys,[{role:'user',content:'Review this diff:\n\n'+diff.slice(0,12000)}],{apiKey,max_tokens:4096}).then(text=>{
+          text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');let issues;try{issues=JSON.parse(text);}catch(e){issues=[];}
+          resolve(sendJson(res,{issues,diffSize:diff.length}));
+        }).catch(e=>resolve(sendJson(res,{issues:[],error:e.message})));
       });
     });
   }
@@ -3043,7 +3217,7 @@ Return ONLY valid JSON array. No markdown.`;
     const q2=encodeURIComponent(data.query||'');if(!q2)return sendJson(res,{results:[]});
     try{
       const html=await new Promise((resolve,reject)=>{
-        const r=https.get({hostname:'html.duckduckgo.com',path:'/html/?q='+q2,headers:{'User-Agent':'Mozilla/5.0 (compatible; AXIOM-IDE/1.0)','Accept':'text/html','Accept-Language':'en-US,en;q=0.9'}},{timeout:8000},resp=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>resolve(d));});
+        const r=https.get({hostname:'html.duckduckgo.com',path:'/html/?q='+q2,headers:{'User-Agent':'Mozilla/5.0 (compatible; AXIOM-IDE/1.0)','Accept':'text/html','Accept-Language':'en-US,en;q=0.9'},timeout:8000},resp=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>resolve(d));});
         r.on('error',reject);r.on('timeout',()=>{r.destroy();reject(new Error('timeout'));});
       });
       const results=[];
@@ -3105,9 +3279,8 @@ Return ONLY valid JSON array. No markdown.`;
     };
     const sys='You are a code refactoring engine. '+(prompts[action]||'Improve the code. Return JSON: {"refactored":"full new file content","explanation":"what changed"}');
     const msg=`Language: ${lang}\nFull file:\n${code}\n${selection?'\nSelected code:\n'+selection:''}`;
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:msg}]});
     try{
-      const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
+      const result={content:[{text:await aiCall(sys,[{role:'user',content:msg}],{apiKey,max_tokens:8192})}]};
       let text=result.content?.[0]?.text||'{}';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
       let out2;try{out2=JSON.parse(text);}catch(e){out2={refactored:text};}
       return sendJson(res,out2);
@@ -3120,9 +3293,8 @@ Return ONLY valid JSON array. No markdown.`;
     const {code='',lang='',selection=''}=data;
     const sys='You are a code refactoring engine. Extract the selected code into a well-named function. Return JSON: {"refactored":"full new file content","functionName":"extracted function name","explanation":"brief description"}';
     const msg=`Language: ${lang}\nFull file:\n${code}\nSelected code to extract:\n${selection}`;
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:msg}]});
-    try{const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
-    let text=result.content?.[0]?.text||'{}';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
+    try{let text=await aiCall(sys,[{role:'user',content:msg}],{apiKey,max_tokens:4096});
+    text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
     let out;try{out=JSON.parse(text);}catch(e){out={refactored:text};}return sendJson(res,out);}
     catch(e){return sendJson(res,{error:e.message},500);}
   }
@@ -3142,9 +3314,8 @@ Return ONLY valid JSON array. No markdown.`;
     const {code='',lang=''}=data;
     const sys='You are a code cleanup engine. Remove dead code, fix formatting, organize imports, remove unused variables. Return JSON: {"refactored":"full cleaned file content","changes":["list of changes made"]}';
     const msg=`Language: ${lang}\nCode to clean:\n${code}`;
-    const rb=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:8192,system:sys,messages:[{role:'user',content:msg}]});
-    try{const result=await new Promise((resolve,reject)=>{const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(rb);r.end();});
-    let text=result.content?.[0]?.text||'{}';text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
+    try{let text=await aiCall(sys,[{role:'user',content:msg}],{apiKey,max_tokens:4096});
+    text=text.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
     let out;try{out=JSON.parse(text);}catch(e){out={refactored:text,changes:[]};}return sendJson(res,out);}
     catch(e){return sendJson(res,{error:e.message},500);}
   }
@@ -3157,18 +3328,43 @@ Return ONLY valid JSON array. No markdown.`;
     return sendJson(res,{connections:loadDbConns().map(c=>({...c,password:undefined}))});
   }
   if(route==='/api/db/connections'&&req.method==='POST'){
-    // Test the connection first, then save
-    const {name='',host='localhost',port=3306,user='root',password='',database=''}=data;
+    const {name='',type='mysql',host='localhost',port,user='root',password='',database=''}=data;
     if(!name||!host||!user)return sendJson(res,{error:'name, host and user required'},400);
-    let mysql2;try{mysql2=require('mysql2/promise');}catch(e){return sendJson(res,{error:'mysql2 not installed. Run: npm install mysql2'},500);}
+    const defaultPort=type==='postgresql'?5432:type==='sqlite'?0:3306;
+    const connPort=+(port||defaultPort);
     let conn;
     try{
-      conn=await mysql2.createConnection({host,port:+port,user,password,database:database||undefined,connectTimeout:5000});
-      await conn.ping();
+      if(type==='sqlite'){
+        // SQLite: just test the file path exists — no network connection needed
+        if(!database)return sendJson(res,{error:'SQLite requires a database file path'},400);
+        try{fs.accessSync(database);}catch(e){
+          // If file doesn't exist, check we can write to parent dir
+          try{fs.accessSync(path.dirname(database),fs.constants.W_OK);}catch(e2){
+            return sendJson(res,{error:'SQLite file not found and directory not writable: '+database},400);
+          }
+        }
+      }else if(type==='postgresql'){
+        // Try pg module, fall back to a clear message if not installed
+        let pg;try{pg=require('pg');}catch(e){
+          // pg not installed — save anyway with a warning
+          const id=crypto.randomUUID();
+          const conns=loadDbConns();const existing=conns.findIndex(c=>c.id===data.id);
+          const record={id:data.id||id,name,type,host,port:connPort,user,password,database,created:new Date().toISOString()};
+          if(existing>=0)conns[existing]=record;else conns.push(record);
+          saveDbConns(conns);
+          return sendJson(res,{ok:true,id:record.id,message:'Saved (pg module not installed — run: npm install pg to enable live connections)',warning:true});
+        }
+        const client=new pg.Client({host,port:connPort,user,password,database:database||undefined,connectionTimeoutMillis:5000});
+        try{await client.connect();await client.query('SELECT 1');}finally{try{await client.end();}catch(e){}}
+      }else{
+        // MySQL (default)
+        let mysql2;try{mysql2=require('mysql2/promise');}catch(e){return sendJson(res,{error:'mysql2 not installed. Run: npm install mysql2'},500);}
+        conn=await mysql2.createConnection({host,port:connPort,user,password,database:database||undefined,connectTimeout:5000});
+        await conn.ping();
+      }
       const id=crypto.randomUUID();
-      const conns=loadDbConns();
-      const existing=conns.findIndex(c=>c.id===data.id);
-      const record={id:data.id||id,name,host,port:+port,user,password,database,created:new Date().toISOString()};
+      const conns=loadDbConns();const existing=conns.findIndex(c=>c.id===data.id);
+      const record={id:data.id||id,name,type,host,port:connPort,user,password,database,created:new Date().toISOString()};
       if(existing>=0)conns[existing]=record;else conns.push(record);
       saveDbConns(conns);
       return sendJson(res,{ok:true,id:record.id,message:'Connected successfully'});
@@ -3181,23 +3377,44 @@ Return ONLY valid JSON array. No markdown.`;
     return sendJson(res,{ok:true});
   }
   if(route==='/api/db/query'&&req.method==='POST'){
-    const {connectionId='',sql='',limit=500}=data;
-    if(!sql.trim())return sendJson(res,{error:'sql required'},400);
+    const {connectionId='',sql='',query='',limit=500}=data;
+    const safeSql=(sql||query).trim();
+    if(!safeSql)return sendJson(res,{error:'sql required'},400);
     const conns=loadDbConns();const cfg=conns.find(c=>c.id===connectionId);
     if(!cfg)return sendJson(res,{error:'Connection not found'},404);
-    let mysql2;try{mysql2=require('mysql2/promise');}catch(e){return sendJson(res,{error:'mysql2 not installed'},500);}
+    const firstWord=safeSql.split(/\s+/)[0].toUpperCase();
+    const safeOps=new Set(['SELECT','SHOW','DESCRIBE','DESC','EXPLAIN','WITH','PRAGMA']);
+    if(!safeOps.has(firstWord)&&!data.allowWrite)return sendJson(res,{error:'Only SELECT/SHOW/DESCRIBE/EXPLAIN allowed. Pass allowWrite:true to run write queries.'},403);
     let conn;
     try{
-      conn=await mysql2.createConnection({host:cfg.host,port:+cfg.port,user:cfg.user,password:cfg.password,database:cfg.database||undefined,connectTimeout:8000});
-      // Allow only SELECT/SHOW/DESCRIBE/EXPLAIN for safety unless explicitly unlocked
-      const safeSql=sql.trim();
-      const firstWord=safeSql.split(/\s+/)[0].toUpperCase();
-      const safeOps=new Set(['SELECT','SHOW','DESCRIBE','DESC','EXPLAIN','WITH']);
-      if(!safeOps.has(firstWord)&&!data.allowWrite)return sendJson(res,{error:'Only SELECT/SHOW/DESCRIBE/EXPLAIN allowed. Pass allowWrite:true to run write queries.'},403);
-      const [rows,fields]=await conn.execute(safeSql);
-      const columns=(fields||[]).map(f=>({name:f.name,type:f.type}));
-      const limited=Array.isArray(rows)?rows.slice(0,+limit):rows;
-      return sendJson(res,{rows:limited,columns,rowCount:Array.isArray(rows)?rows.length:0,truncated:Array.isArray(rows)&&rows.length>+limit});
+      if(cfg.type==='postgresql'){
+        let pg;try{pg=require('pg');}catch(e){return sendJson(res,{error:'pg not installed. Run: npm install pg'},500);}
+        const client=new pg.Client({host:cfg.host,port:+cfg.port,user:cfg.user,password:cfg.password,database:cfg.database||undefined,connectionTimeoutMillis:8000});
+        await client.connect();
+        try{
+          const result=await client.query(safeSql);
+          const columns=(result.fields||[]).map(f=>({name:f.name,type:f.dataTypeID}));
+          const limited=(result.rows||[]).slice(0,+limit);
+          return sendJson(res,{rows:limited,columns,rowCount:result.rowCount||result.rows?.length||0,truncated:(result.rows?.length||0)>+limit});
+        }finally{try{await client.end();}catch(e){}}
+      }else if(cfg.type==='sqlite'){
+        let sqlite3;try{sqlite3=require('better-sqlite3');}catch(e){return sendJson(res,{error:'better-sqlite3 not installed. Run: npm install better-sqlite3'},500);}
+        const db=new sqlite3(cfg.database,{readonly:!data.allowWrite});
+        try{
+          const stmt=db.prepare(safeSql);
+          const rows=stmt.all();const limited=rows.slice(0,+limit);
+          const columns=limited.length>0?Object.keys(limited[0]).map(n=>({name:n,type:'text'})):[];
+          return sendJson(res,{rows:limited,columns,rowCount:rows.length,truncated:rows.length>+limit});
+        }finally{try{db.close();}catch(e){}}
+      }else{
+        // MySQL (default)
+        let mysql2;try{mysql2=require('mysql2/promise');}catch(e){return sendJson(res,{error:'mysql2 not installed'},500);}
+        conn=await mysql2.createConnection({host:cfg.host,port:+cfg.port,user:cfg.user,password:cfg.password,database:cfg.database||undefined,connectTimeout:8000});
+        const [rows,fields]=await conn.execute(safeSql);
+        const columns=(fields||[]).map(f=>({name:f.name,type:f.type}));
+        const limited=Array.isArray(rows)?rows.slice(0,+limit):rows;
+        return sendJson(res,{rows:limited,columns,rowCount:Array.isArray(rows)?rows.length:0,truncated:Array.isArray(rows)&&rows.length>+limit});
+      }
     }catch(e){return sendJson(res,{error:e.message},400);}
     finally{if(conn)try{await conn.end();}catch(e){}}
   }
