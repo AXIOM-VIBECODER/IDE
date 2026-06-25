@@ -676,7 +676,7 @@ function initDbPool(cfg){
   try{
     if(dbPool){try{dbPool.end();}catch(e){}}
     const c=cfg||loadDbConfig();
-    dbPool=mysql.createPool({host:c.host,user:c.user,password:c.password,database:c.database,port:c.port||3306,waitForConnections:true,connectionLimit:5,queueLimit:0,timezone:'+00:00',decimalNumbers:true,connectTimeout:5000,acquireTimeout:5000});
+    dbPool=mysql.createPool({host:c.host,user:c.user,password:c.password,database:c.database,port:c.port||3306,waitForConnections:true,connectionLimit:5,queueLimit:0,timezone:'+00:00',decimalNumbers:true,connectTimeout:5000});
     // Prevent unhandled 'error' events from crashing the process when MySQL is unavailable
     dbPool.on('error',e=>{dbAvailable=false;dbLastError=e.message;console.warn('[DB] Pool error (MySQL offline):',e.message);});
     dbPool.getConnection().then(conn=>{
