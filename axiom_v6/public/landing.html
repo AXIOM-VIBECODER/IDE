@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="AXIOM IDE — The AI-powered browser IDE built for East African developers. M-Pesa, USSD, Swahili AI, Monaco editor, real terminal. Free to use."/>
+<meta name="theme-color" content="#0d0d0d"/>
+<meta property="og:title" content="AXIOM IDE — East Africa Edition"/>
+<meta property="og:description" content="A full-featured AI IDE that runs in your browser. Monaco editor, real terminal, AI Orchestra, M-Pesa, USSD builder."/>
+<meta property="og:image" content="/icons/icon.svg"/>
+<title>AXIOM IDE — East Africa Edition</title>
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml"/>
+<link rel="manifest" href="/manifest.json"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0d0d0d;
+  --bg2:#111116;
+  --panel:#16161c;
+  --surface:#1e1e26;
+  --border:rgba(255,255,255,.07);
+  --border2:rgba(255,255,255,.12);
+  --tx:#e8eaf0;
+  --tx2:rgba(232,234,240,.65);
+  --tx3:rgba(232,234,240,.35);
+  --ac:#f5c518;
+  --ac2:rgba(245,197,24,.15);
+  --ac3:rgba(245,197,24,.08);
+  --green:#7dba5a;
+  --blue:#22d3ee;
+  --purple:#a78bfa;
+  --red:#f87171;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--tx);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6;overflow-x:hidden}
+
+/* ── NAV ── */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 40px;height:60px;background:rgba(13,13,13,.85);border-bottom:1px solid var(--border);backdrop-filter:blur(16px)}
+.nav-logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.nav-logo-icon{width:32px;height:32px;background:var(--ac);border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;font-size:13px;font-weight:800;color:#000}
+.nav-logo-name{font-size:16px;font-weight:700;color:var(--tx);letter-spacing:-.02em}
+.nav-logo-badge{font-size:10px;color:var(--ac);background:var(--ac3);border:1px solid rgba(245,197,24,.25);border-radius:4px;padding:1px 6px;margin-left:6px}
+.nav-links{display:flex;align-items:center;gap:28px}
+.nav-links a{color:var(--tx2);text-decoration:none;font-size:13px;transition:color .15s}
+.nav-links a:hover{color:var(--tx)}
+.nav-cta{display:flex;align-items:center;gap:10px}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;transition:all .15s;cursor:pointer;border:none}
+.btn-ghost{background:transparent;color:var(--tx2);border:1px solid var(--border2)}
+.btn-ghost:hover{background:var(--surface);color:var(--tx)}
+.btn-primary{background:var(--ac);color:#000}
+.btn-primary:hover{background:#f0bb00;transform:translateY(-1px);box-shadow:0 4px 20px rgba(245,197,24,.35)}
+.btn-lg{padding:14px 28px;font-size:15px;border-radius:10px}
+
+/* ── HERO ── */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:100px 24px 60px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:900px;height:700px;background:radial-gradient(ellipse at center,rgba(245,197,24,.07) 0%,transparent 65%);pointer-events:none}
+.hero::after{content:'';position:absolute;bottom:0;left:0;right:0;height:200px;background:linear-gradient(to bottom,transparent,var(--bg));pointer-events:none}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:8px;background:var(--ac3);border:1px solid rgba(245,197,24,.2);border-radius:100px;padding:5px 14px;font-size:12px;color:var(--ac);font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-bottom:28px}
+.hero-eyebrow span{width:6px;height:6px;background:var(--ac);border-radius:50%;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+h1{font-size:clamp(38px,6vw,72px);font-weight:800;line-height:1.05;letter-spacing:-.03em;margin-bottom:24px;max-width:860px}
+h1 em{font-style:normal;color:var(--ac)}
+.hero-sub{font-size:clamp(15px,2vw,19px);color:var(--tx2);max-width:580px;margin:0 auto 40px;line-height:1.65}
+.hero-cta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:20px}
+.hero-note{font-size:12px;color:var(--tx3)}
+.hero-note a{color:var(--ac);text-decoration:none}
+
+/* ── IDE PREVIEW ── */
+.preview-wrap{margin:70px auto 0;max-width:1100px;width:100%;padding:0 24px;position:relative;z-index:1}
+.preview-window{background:var(--panel);border:1px solid var(--border2);border-radius:14px;overflow:hidden;box-shadow:0 40px 120px rgba(0,0,0,.7),0 0 0 1px rgba(245,197,24,.05)}
+.preview-titlebar{height:40px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:8px}
+.preview-dots{display:flex;gap:6px}
+.preview-dots span{width:12px;height:12px;border-radius:50%}
+.preview-tabs{display:flex;gap:2px;margin-left:16px}
+.preview-tab{font-size:11px;padding:4px 14px;border-radius:4px 4px 0 0;color:var(--tx3);cursor:pointer}
+.preview-tab.active{background:var(--panel);color:var(--tx);border:1px solid var(--border);border-bottom-color:var(--panel)}
+.preview-body{display:grid;grid-template-columns:200px 1fr 280px;height:440px}
+.preview-tree{border-right:1px solid var(--border);padding:10px 0;font-size:11px}
+.preview-tree-item{padding:4px 14px;color:var(--tx3);display:flex;align-items:center;gap:6px;cursor:pointer}
+.preview-tree-item:hover,.preview-tree-item.sel{background:var(--surface);color:var(--tx)}
+.preview-tree-item.sel{color:var(--tx)}
+.preview-tree-folder{padding:4px 10px;color:var(--tx2);font-weight:600;display:flex;align-items:center;gap:5px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-top:6px}
+.preview-code{padding:16px 20px;overflow:hidden;font-family:'JetBrains Mono','Fira Code',monospace;font-size:12px;line-height:1.7;position:relative}
+.ln{color:rgba(255,255,255,.18);display:inline-block;width:24px;user-select:none;font-size:10px}
+.kw{color:#c792ea}.fn{color:#82aaff}.st{color:#c3e88d}.cm{color:rgba(255,255,255,.25);font-style:italic}.nm{color:#f78c6c}.op{color:var(--ac)}.ty{color:var(--blue)}.nu{color:#f78c6c}
+.cursor{display:inline-block;width:2px;height:14px;background:var(--ac);animation:blink 1.2s step-end infinite;vertical-align:text-bottom;margin-left:1px}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.preview-ai{border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.preview-ai-hdr{padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--tx2);display:flex;align-items:center;gap:6px}
+.preview-ai-hdr-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s ease-in-out infinite}
+.ai-msg{padding:10px 14px;font-size:11px;line-height:1.6}
+.ai-msg.user{color:var(--tx2)}
+.ai-msg.ai{color:var(--tx);background:var(--surface);margin:0 8px;border-radius:6px;border:1px solid var(--border)}
+.ai-code{font-family:'JetBrains Mono',monospace;font-size:10px;background:var(--bg);border-radius:4px;padding:6px 8px;margin-top:6px;color:var(--green)}
+.ai-typing{padding:10px 14px;font-size:11px;color:var(--tx3);display:flex;align-items:center;gap:4px}
+.ai-dot{width:5px;height:5px;background:var(--ac);border-radius:50%;animation:bounce .9s ease-in-out infinite}
+.ai-dot:nth-child(2){animation-delay:.15s}
+.ai-dot:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}
+.statusbar{height:22px;background:#0a0a0e;border-top:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:16px;font-size:10px;color:var(--tx3);grid-column:1/-1}
+.sb-green{color:var(--green)}.sb-ac{color:var(--ac)}.sb-blue{color:var(--blue)}
+
+/* ── STATS ── */
+.stats{display:flex;justify-content:center;gap:60px;padding:60px 24px;flex-wrap:wrap}
+.stat{text-align:center}
+.stat-num{font-size:36px;font-weight:800;color:var(--ac);letter-spacing:-.02em}
+.stat-lbl{font-size:12px;color:var(--tx3);margin-top:2px;text-transform:uppercase;letter-spacing:.08em}
+
+/* ── FEATURES ── */
+section{padding:90px 24px}
+.section-label{text-align:center;font-size:11px;font-weight:700;color:var(--ac);text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px}
+.section-title{text-align:center;font-size:clamp(26px,4vw,42px);font-weight:800;letter-spacing:-.025em;margin-bottom:16px;max-width:700px;margin-left:auto;margin-right:auto}
+.section-sub{text-align:center;color:var(--tx2);font-size:15px;max-width:540px;margin:0 auto 60px}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;max-width:1100px;margin:0 auto}
+.feature-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;transition:border-color .2s,transform .2s}
+.feature-card:hover{border-color:rgba(245,197,24,.25);transform:translateY(-2px)}
+.feature-icon{font-size:28px;margin-bottom:14px;display:block}
+.feature-name{font-size:15px;font-weight:700;color:var(--tx);margin-bottom:8px}
+.feature-desc{font-size:13px;color:var(--tx2);line-height:1.6}
+.feature-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px}
+.feature-tag{font-size:10px;background:var(--surface);border:1px solid var(--border2);border-radius:4px;padding:2px 8px;color:var(--tx3)}
+
+/* ── EA SECTION ── */
+.ea-section{background:linear-gradient(135deg,rgba(245,197,24,.04) 0%,transparent 60%);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.ea-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;max-width:1000px;margin:0 auto}
+.ea-card{border-radius:12px;padding:22px;border:1px solid var(--border);background:var(--panel)}
+.ea-card-icon{font-size:32px;margin-bottom:12px}
+.ea-card-title{font-size:14px;font-weight:700;color:var(--tx);margin-bottom:6px}
+.ea-card-desc{font-size:12px;color:var(--tx2);line-height:1.6}
+.ea-code{font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--bg);border-radius:6px;padding:10px 12px;margin-top:10px;color:var(--green);border:1px solid var(--border)}
+
+/* ── ORCHESTRA ── */
+.orch-flow{display:flex;align-items:center;justify-content:center;gap:0;max-width:860px;margin:0 auto;flex-wrap:wrap}
+.orch-agent{background:var(--panel);border:1px solid var(--border2);border-radius:12px;padding:22px 24px;flex:1;min-width:200px;max-width:240px;text-align:center;position:relative;transition:border-color .2s}
+.orch-agent:hover{border-color:rgba(245,197,24,.3)}
+.orch-agent-icon{font-size:32px;margin-bottom:10px}
+.orch-agent-name{font-size:13px;font-weight:700;color:var(--tx);margin-bottom:4px}
+.orch-agent-model{font-size:10px;color:var(--ac);background:var(--ac3);border-radius:4px;padding:2px 7px;display:inline-block;font-family:monospace}
+.orch-agent-desc{font-size:11px;color:var(--tx3);margin-top:8px}
+.orch-arrow{font-size:20px;color:var(--ac);opacity:.5;padding:0 8px;flex-shrink:0}
+
+/* ── INSTALL ── */
+.install-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;max-width:900px;margin:0 auto}
+.install-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px;transition:border-color .2s}
+.install-card:hover{border-color:rgba(245,197,24,.25)}
+.install-os{font-size:28px;margin-bottom:10px}
+.install-name{font-size:14px;font-weight:700;color:var(--tx);margin-bottom:4px}
+.install-desc{font-size:12px;color:var(--tx3);margin-bottom:14px}
+.install-code{font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--bg);border-radius:6px;padding:8px 12px;color:var(--green);border:1px solid var(--border)}
+
+/* ── CTA SECTION ── */
+.cta-section{padding:100px 24px;text-align:center;position:relative;overflow:hidden}
+.cta-section::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(245,197,24,.06),transparent 65%);pointer-events:none}
+.cta-title{font-size:clamp(28px,5vw,52px);font-weight:800;letter-spacing:-.03em;margin-bottom:18px}
+.cta-title em{font-style:normal;color:var(--ac)}
+.cta-sub{color:var(--tx2);font-size:16px;max-width:500px;margin:0 auto 40px}
+.cta-btns{display:flex;align-items:center;gap:12px;justify-content:center;flex-wrap:wrap}
+
+/* ── FOOTER ── */
+footer{border-top:1px solid var(--border);padding:40px 40px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:20px}
+.footer-brand{font-size:13px;color:var(--tx3)}
+.footer-brand strong{color:var(--tx)}
+.footer-links{display:flex;gap:20px}
+.footer-links a{font-size:12px;color:var(--tx3);text-decoration:none;transition:color .15s}
+.footer-links a:hover{color:var(--ac)}
+.footer-ea{font-size:12px;color:var(--tx3)}
+.footer-ea span{color:var(--ac)}
+
+/* ── DIVIDER ── */
+.divider{width:100%;height:1px;background:var(--border);margin:0}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  nav{padding:0 20px}
+  .nav-links{display:none}
+  h1{font-size:36px}
+  .preview-body{grid-template-columns:1fr;height:auto}
+  .preview-tree,.preview-ai{display:none}
+  .preview-code{height:300px}
+  .stats{gap:32px}
+  .orch-flow{flex-direction:column}
+  .orch-arrow{transform:rotate(90deg)}
+  footer{flex-direction:column;align-items:flex-start;padding:30px 20px}
+}
+</style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+  <a class="nav-logo" href="/">
+    <div class="nav-logo-icon">AX</div>
+    <span class="nav-logo-name">AXIOM</span>
+    <span class="nav-logo-badge">v6</span>
+  </a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#orchestra">Orchestra</a>
+    <a href="#ea">East Africa</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/AXIOM-VIBECODER/IDE" target="_blank">GitHub</a>
+  </div>
+  <div class="nav-cta">
+    <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE" target="_blank">⭐ Star</a>
+    <a class="btn btn-primary" href="/app">Launch IDE →</a>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<section class="hero">
+  <div class="hero-eyebrow"><span></span>Built in East Africa · Powered by Claude AI</div>
+  <h1>The IDE that <em>thinks</em><br/>with you</h1>
+  <p class="hero-sub">A full-featured AI development environment that runs in your browser. Monaco editor, real terminal, AI Orchestra, M-Pesa, USSD — everything East African developers need.</p>
+  <div class="hero-cta">
+    <a class="btn btn-primary btn-lg" href="/app">🚀 Launch IDE Free</a>
+    <a class="btn btn-ghost btn-lg" href="https://github.com/AXIOM-VIBECODER/IDE" target="_blank">View on GitHub</a>
+  </div>
+  <p class="hero-note">No signup required · Works offline · <a href="#install">Download for desktop →</a></p>
+
+  <div class="preview-wrap">
+    <div class="preview-window">
+      <div class="preview-titlebar">
+        <div class="preview-dots">
+          <span style="background:#ff5f57"></span>
+          <span style="background:#febc2e"></span>
+          <span style="background:#28c840"></span>
+        </div>
+        <div class="preview-tabs">
+          <div class="preview-tab active">mpesa.js</div>
+          <div class="preview-tab">server.js</div>
+          <div class="preview-tab">+</div>
+        </div>
+      </div>
+      <div class="preview-body">
+        <div class="preview-tree">
+          <div class="preview-tree-folder">📁 src</div>
+          <div class="preview-tree-item sel">📄 mpesa.js</div>
+          <div class="preview-tree-item">📄 server.js</div>
+          <div class="preview-tree-item">📄 auth.js</div>
+          <div class="preview-tree-folder" style="margin-top:8px">📁 routes</div>
+          <div class="preview-tree-item">📄 pay.js</div>
+          <div class="preview-tree-item">📄 ussd.js</div>
+          <div class="preview-tree-folder" style="margin-top:8px">📁 public</div>
+          <div class="preview-tree-item">📄 index.html</div>
+        </div>
+        <div class="preview-code">
+<pre><span class="ln"> 1</span>  <span class="cm">// M-Pesa STK Push — Daraja API</span>
+<span class="ln"> 2</span>  <span class="kw">const</span> <span class="fn">axios</span> = <span class="fn">require</span>(<span class="st">'axios'</span>);
+<span class="ln"> 3</span>
+<span class="ln"> 4</span>  <span class="kw">async function</span> <span class="fn">stkPush</span>({ <span class="nm">phone</span>, <span class="nm">amount</span>, <span class="nm">ref</span> }) {
+<span class="ln"> 5</span>    <span class="kw">const</span> <span class="nm">token</span> = <span class="kw">await</span> <span class="fn">getToken</span>();
+<span class="ln"> 6</span>    <span class="kw">const</span> <span class="nm">timestamp</span> = <span class="fn">getTimestamp</span>();
+<span class="ln"> 7</span>    <span class="kw">const</span> <span class="nm">password</span> = <span class="fn">btoa</span>(
+<span class="ln"> 8</span>      <span class="nm">SHORTCODE</span> <span class="op">+</span> <span class="nm">PASSKEY</span> <span class="op">+</span> <span class="nm">timestamp</span>
+<span class="ln"> 9</span>    );
+<span class="ln">10</span>
+<span class="ln">11</span>    <span class="kw">const</span> { <span class="nm">data</span> } = <span class="kw">await</span> <span class="nm">axios</span>.<span class="fn">post</span>(
+<span class="ln">12</span>      <span class="st">`${BASE_URL}/mpesa/stkpush/v1/processrequest`</span>,
+<span class="ln">13</span>      {
+<span class="ln">14</span>        <span class="nm">BusinessShortCode</span>: <span class="nm">SHORTCODE</span>,
+<span class="ln">15</span>        <span class="nm">Password</span>: <span class="nm">password</span>,
+<span class="ln">16</span>        <span class="nm">Timestamp</span>: <span class="nm">timestamp</span>,
+<span class="ln">17</span>        <span class="nm">TransactionType</span>: <span class="st">'CustomerPayBillOnline'</span>,
+<span class="ln">18</span>        <span class="nm">Amount</span>: <span class="nm">amount</span>,
+<span class="ln">19</span>        <span class="nm">PartyA</span>: <span class="nm">phone</span>,<span class="cursor"></span></pre>
+        </div>
+        <div class="preview-ai">
+          <div class="preview-ai-hdr"><div class="preview-ai-hdr-dot"></div>AI Cascade · claude-sonnet</div>
+          <div class="ai-msg user">Add error handling and retry logic to the STK push</div>
+          <div class="ai-msg ai">
+            I'll add exponential backoff retry logic with proper error classification:
+            <div class="ai-code">async function stkPushWithRetry(opts, retries=3) {
+  for (let i = 0; i &lt; retries; i++) {
+    try {
+      return await stkPush(opts);
+    } catch (err) {
+      if (err.code === 'TIMEOUT' &amp;&amp; i &lt; retries-1) {
+        await sleep(1000 * 2**i); // backoff
+        continue;
+      }
+      throw err;
+    }
+  }
+}</div>
+          </div>
+          <div class="ai-typing"><div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div></div>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span class="sb-green">✓ Node.js 20</span>
+        <span>mpesa.js</span>
+        <span>UTF-8</span>
+        <span class="sb-ac">🎼 Orchestra ready</span>
+        <span style="margin-left:auto" class="sb-blue">⬇ Install App</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── STATS ── -->
+<div class="stats">
+  <div class="stat"><div class="stat-num">17K+</div><div class="stat-lbl">Lines of IDE</div></div>
+  <div class="stat"><div class="stat-num">11</div><div class="stat-lbl">EA Themes</div></div>
+  <div class="stat"><div class="stat-num">3</div><div class="stat-lbl">AI Agents</div></div>
+  <div class="stat"><div class="stat-num">6</div><div class="stat-lbl">Language Servers</div></div>
+  <div class="stat"><div class="stat-num">0</div><div class="stat-lbl">Signup Required</div></div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ── FEATURES ── -->
+<section id="features">
+  <div class="section-label">Everything you need</div>
+  <div class="section-title">A complete IDE, right in your browser</div>
+  <p class="section-sub">No Electron, no VS Code. A standalone Node.js server + single HTML file — run it anywhere.</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <span class="feature-icon">📝</span>
+      <div class="feature-name">Monaco Editor</div>
+      <div class="feature-desc">The same engine that powers VS Code. Split panes, per-file models, multi-cursor, minimap, bracket match, and full syntax highlighting for 50+ languages.</div>
+      <div class="feature-tags"><span class="feature-tag">IntelliSense</span><span class="feature-tag">Split panes</span><span class="feature-tag">Vim mode</span></div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">⬛</span>
+      <div class="feature-name">Real Terminal</div>
+      <div class="feature-desc">A real PTY terminal — not a fake web console. Run bash, zsh, fish. Multiple tabs, resize, full color support, command history.</div>
+      <div class="feature-tags"><span class="feature-tag">bash/zsh</span><span class="feature-tag">Multi-tab</span><span class="feature-tag">PTY</span></div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🤖</span>
+      <div class="feature-name">AI Chat (Cascade)</div>
+      <div class="feature-desc">Streaming AI chat with file context and persistent memory. Works with Claude, Ollama, or LM Studio — fully configurable per model.</div>
+      <div class="feature-tags"><span class="feature-tag">Claude</span><span class="feature-tag">Ollama</span><span class="feature-tag">Streaming</span></div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🌿</span>
+      <div class="feature-name">Git Panel</div>
+      <div class="feature-desc">Visual git integration — status, side-by-side diff, blame gutter, stage/unstage, commit, push, pull. No terminal required.</div>
+      <div class="feature-tags"><span class="feature-tag">Diff view</span><span class="feature-tag">Blame</span><span class="feature-tag">Push/Pull</span></div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🔬</span>
+      <div class="feature-name">LSP + Debugger</div>
+      <div class="feature-desc">Language servers for Python, JS/TS, Go, Rust, C/C++. DAP debugger with breakpoints, step-through, and variable watch.</div>
+      <div class="feature-tags"><span class="feature-tag">Pyright</span><span class="feature-tag">tsserver</span><span class="feature-tag">gopls</span></div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📱</span>
+      <div class="feature-name">PWA — Install Anywhere</div>
+      <div class="feature-desc">Install on Windows, macOS, Linux, Android, or iPhone from any browser. Works offline once installed. No app store needed.</div>
+      <div class="feature-tags"><span class="feature-tag">Offline</span><span class="feature-tag">iOS</span><span class="feature-tag">Android</span></div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🗄️</span>
+      <div class="feature-name">Database Panel</div>
+      <div class="feature-desc">MySQL query runner built-in. Connect, browse tables, run queries. Configure from Settings → Database with live connection test.</div>
+      <div class="feature-tags"><span class="feature-tag">MySQL</span><span class="feature-tag">Query runner</span></div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">⚙️</span>
+      <div class="feature-name">Full-Page Settings</div>
+      <div class="feature-desc">VS Code-style settings overlay with 8 sections: Editor, Appearance, AI, Orchestra, API Keys, Database, Features, and Keyboard shortcuts.</div>
+      <div class="feature-tags"><span class="feature-tag">11 themes</span><span class="feature-tag">Per-role AI</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── ORCHESTRA ── -->
+<section id="orchestra" style="background:linear-gradient(135deg,rgba(245,197,24,.03) 0%,transparent 60%)">
+  <div class="section-label">AI Orchestra</div>
+  <div class="section-title">Three agents. One pipeline.</div>
+  <p class="section-sub">Press 🎼 in the toolbar. Describe your task. Three specialized AI agents work in sequence — each can use a different model.</p>
+  <div class="orch-flow">
+    <div class="orch-agent">
+      <div class="orch-agent-icon">🏗</div>
+      <div class="orch-agent-name">Architect</div>
+      <div class="orch-agent-model">claude-opus-4-8</div>
+      <div class="orch-agent-desc">Plans routes, schema, middleware, and error boundaries</div>
+    </div>
+    <div class="orch-arrow">→</div>
+    <div class="orch-agent">
+      <div class="orch-agent-icon">⌨️</div>
+      <div class="orch-agent-name">Coder</div>
+      <div class="orch-agent-model">qwen2.5-coder (local)</div>
+      <div class="orch-agent-desc">Writes production-ready code from the architecture plan</div>
+    </div>
+    <div class="orch-arrow">→</div>
+    <div class="orch-agent">
+      <div class="orch-agent-icon">📝</div>
+      <div class="orch-agent-name">Documenter</div>
+      <div class="orch-agent-model">claude-haiku-4-5</div>
+      <div class="orch-agent-desc">Generates JSDoc, API tables, and usage examples</div>
+    </div>
+  </div>
+  <p style="text-align:center;font-size:13px;color:var(--tx3);margin-top:28px">Mix Claude, Ollama, and LM Studio per agent — Coder can run free/local while Architect uses Claude Opus</p>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── EAST AFRICA ── -->
+<section id="ea" class="ea-section">
+  <div class="section-label">East Africa First</div>
+  <div class="section-title">Built for where you build</div>
+  <p class="section-sub">First-class integrations for the tools and payments East African developers actually use.</p>
+  <div class="ea-grid">
+    <div class="ea-card">
+      <div class="ea-card-icon">💳</div>
+      <div class="ea-card-title">M-Pesa STK Push</div>
+      <div class="ea-card-desc">One click inserts a complete Daraja API implementation — token refresh, STK push, callback handler, transaction status.</div>
+      <div class="ea-code">await stkPush({ phone: '254712345678', amount: 100, ref: 'Order001' });</div>
+    </div>
+    <div class="ea-card">
+      <div class="ea-card-icon">📟</div>
+      <div class="ea-card-title">USSD Flow Builder</div>
+      <div class="ea-card-desc">Visual USSD menu designer. Add screens, wire transitions, then generate working Express or Python code for Africa's Talking.</div>
+      <div class="ea-code">Screen 1 → "1. Balance\n2. Send\n0. Exit"
+├── 1 → Balance screen
+└── 2 → Send screen</div>
+    </div>
+    <div class="ea-card">
+      <div class="ea-card-icon">📱</div>
+      <div class="ea-card-title">SMS & Airtime</div>
+      <div class="ea-card-desc">Ready-to-run Africa's Talking snippets for sending SMS and Airtime top-ups across Kenya, Uganda, Tanzania, Rwanda, Ethiopia.</div>
+      <div class="ea-code">await AT.airtime.send({ phoneNumber: '+254712345678', amount: '50', currencyCode: 'KES' });</div>
+    </div>
+    <div class="ea-card">
+      <div class="ea-card-icon">🗣</div>
+      <div class="ea-card-title">Swahili / Sheng AI</div>
+      <div class="ea-card-desc">Ask the AI in Kiswahili or Sheng — it responds naturally and writes code with culturally relevant examples and local context.</div>
+      <div class="ea-code">"Tengeneza API ya kulipa kwa M-Pesa"
+→ Full M-Pesa Express API</div>
+    </div>
+    <div class="ea-card">
+      <div class="ea-card-icon">🚀</div>
+      <div class="ea-card-title">One-Click Deploy</div>
+      <div class="ea-card-desc">Pre-wired deploy commands for Railway, Render, Fly.io, and Vercel — sent directly to the integrated terminal with one click.</div>
+      <div class="ea-code">railway up  # or: fly launch
+render deploy  # or: vercel</div>
+    </div>
+    <div class="ea-card">
+      <div class="ea-card-icon">📡</div>
+      <div class="ea-card-title">Works on Mobile Data</div>
+      <div class="ea-card-desc">Lightweight, offline-capable, installable as PWA. The Monaco editor and terminal work without internet once the shell is cached.</div>
+      <div class="ea-code">navigator.serviceWorker.register('/sw.js')
+// caches shell + Monaco CDN</div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── INSTALL ── -->
+<section id="install">
+  <div class="section-label">Get Started</div>
+  <div class="section-title">Run it your way</div>
+  <p class="section-sub">Browser, desktop app, or self-hosted server. All from the same codebase.</p>
+  <div class="install-grid">
+    <div class="install-card">
+      <div class="install-os">🌐</div>
+      <div class="install-name">Browser (Fastest)</div>
+      <div class="install-desc">Clone and run in 30 seconds. Open in Chrome, Edge, Firefox, or Safari.</div>
+      <div class="install-code">git clone https://github.com/AXIOM-VIBECODER/IDE
+cd IDE/axiom_v6 &amp;&amp; npm install
+npm start
+# → http://localhost:5000</div>
+    </div>
+    <div class="install-card">
+      <div class="install-os">🪟</div>
+      <div class="install-name">Windows</div>
+      <div class="install-desc">Download the NSIS installer — double click, next next finish. Creates a Start Menu shortcut.</div>
+      <div class="install-code">AXIOM-IDE-Setup-6.0.0.exe
+# from GitHub Releases</div>
+      <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE/releases" target="_blank" style="margin-top:12px;display:inline-flex">↓ Download .exe</a>
+    </div>
+    <div class="install-card">
+      <div class="install-os">🍎</div>
+      <div class="install-name">macOS</div>
+      <div class="install-desc">Universal DMG — runs on both Intel and Apple Silicon M1/M2/M3/M4.</div>
+      <div class="install-code">AXIOM-IDE-6.0.0.dmg
+# Intel + Apple Silicon</div>
+      <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE/releases" target="_blank" style="margin-top:12px;display:inline-flex">↓ Download .dmg</a>
+    </div>
+    <div class="install-card">
+      <div class="install-os">🐧</div>
+      <div class="install-name">Linux</div>
+      <div class="install-desc">AppImage (any distro), .deb (Ubuntu/Debian), .rpm (Fedora/RHEL).</div>
+      <div class="install-code">chmod +x AXIOM-IDE-*.AppImage
+./AXIOM-IDE-*.AppImage</div>
+      <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE/releases" target="_blank" style="margin-top:12px;display:inline-flex">↓ Download .AppImage</a>
+    </div>
+    <div class="install-card">
+      <div class="install-os">☁️</div>
+      <div class="install-name">Cloud (Railway)</div>
+      <div class="install-desc">Deploy to Railway in one click. Share a URL with your team — no local install needed.</div>
+      <div class="install-code">railway up
+# or connect GitHub →
+# Railway auto-deploys</div>
+    </div>
+    <div class="install-card">
+      <div class="install-os">🤖</div>
+      <div class="install-name">Offline AI (Ollama)</div>
+      <div class="install-desc">Free AI that runs locally. No API key needed — works without internet.</div>
+      <div class="install-code">ollama pull qwen2.5-coder:7b
+# Settings → AI Provider
+# → Ollama → Save</div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── CTA ── -->
+<section class="cta-section">
+  <h2 class="cta-title">Start building.<br/><em>Right now.</em></h2>
+  <p class="cta-sub">No signup, no credit card, no waiting. The IDE is ready the moment you open it.</p>
+  <div class="cta-btns">
+    <a class="btn btn-primary btn-lg" href="/app">🚀 Launch AXIOM IDE</a>
+    <a class="btn btn-ghost btn-lg" href="https://github.com/AXIOM-VIBECODER/IDE" target="_blank">⭐ Star on GitHub</a>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="footer-brand"><strong>AXIOM IDE</strong> · East Africa Edition · v6.0.0</div>
+  <div class="footer-links">
+    <a href="/app">Launch IDE</a>
+    <a href="https://github.com/AXIOM-VIBECODER/IDE" target="_blank">GitHub</a>
+    <a href="https://github.com/AXIOM-VIBECODER/IDE/releases" target="_blank">Releases</a>
+    <a href="https://github.com/AXIOM-VIBECODER/IDE/issues" target="_blank">Issues</a>
+  </div>
+  <div class="footer-ea">Built with <span>❤</span> in East Africa</div>
+</footer>
+
+<script>
+// Smooth scroll for nav links
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    const t = document.querySelector(a.getAttribute('href'));
+    if (t) { e.preventDefault(); t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  });
+});
+
+// Animate stats on scroll
+const stats = document.querySelectorAll('.stat-num');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const el = entry.target;
+      const target = parseInt(el.textContent) || 0;
+      if (!target) return;
+      let current = 0;
+      const step = Math.ceil(target / 30);
+      const timer = setInterval(() => {
+        current = Math.min(current + step, target);
+        el.textContent = current.toLocaleString() + (el.textContent.includes('+') ? '+' : '');
+        if (current >= target) clearInterval(timer);
+      }, 40);
+      observer.unobserve(el);
+    }
+  });
+}, { threshold: 0.5 });
+stats.forEach(s => observer.observe(s));
+
+// PWA install prompt
+let _pwaPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _pwaPrompt = e;
+  const btn = document.createElement('a');
+  btn.className = 'btn btn-ghost';
+  btn.textContent = '⬇ Install App';
+  btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:999';
+  btn.onclick = () => { _pwaPrompt.prompt(); _pwaPrompt.userChoice.then(() => btn.remove()); };
+  document.body.appendChild(btn);
+});
+
+// Register SW for offline landing page caching
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+}
+</script>
+</body>
+</html>

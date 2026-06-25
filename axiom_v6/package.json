@@ -14,7 +14,8 @@
     "web": "node src/server.js",
     "electron": "electron . --no-sandbox",
     "electron:dev": "NODE_ENV=development electron . --dev",
-    "build": "electron-builder --publish never",
+    "build": "echo 'Web server — no build step needed'",
+    "build:electron": "electron-builder --publish never",
     "build:win": "electron-builder --win --publish never",
     "build:mac": "electron-builder --mac --publish never",
     "build:linux": "electron-builder --linux --publish never",
@@ -24,7 +25,7 @@
     "migrate": "node scripts/migrate.js",
     "lint": "node -c src/server.js && node scripts/lint-check.js",
     "icons": "node scripts/generate-icons.js",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "node -e \"if(process.env.ELECTRON_MODE||process.env.npm_lifecycle_event==='electron')require('child_process').execSync('electron-builder install-app-deps',{stdio:'inherit'})\""
   },
   "keywords": [
     "ide",

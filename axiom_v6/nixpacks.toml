@@ -2,10 +2,10 @@
 nixPkgs = ["nodejs_20", "git", "python3"]
 
 [phases.install]
-cmds = ["npm ci --production"]
+cmds = ["npm install --production --ignore-scripts"]
 
 [phases.build]
-cmds = []
+cmds = ["echo 'No build step — Node.js web server'"]
 
 [start]
 cmd = "node src/server.js"

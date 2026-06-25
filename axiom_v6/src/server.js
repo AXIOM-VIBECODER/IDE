@@ -1333,7 +1333,11 @@ const server=http.createServer(async(req,res)=>{
       const isAdm=adminTok===CFG.token||(payload&&payload.admin);
       // Admin page itself handles login — serve it, the JS will require credentials
     }
-    let fp=route==='/'?path.join(pub,'index.html'):route==='/admin'||route==='/admin/'?path.join(pub,'admin.html'):path.join(pub,route.slice(1));
+    // Serve landing page at / for browser visitors; Electron sends X-Electron-App header
+    const isElectron=req.headers['x-electron-app']==='1';
+    const wantsIDE=route==='/app'||route==='/app/'||isElectron;
+    const landingExists=fs.existsSync(path.join(pub,'landing.html'));
+    let fp=route==='/'&&!wantsIDE&&landingExists?path.join(pub,'landing.html'):route==='/'||wantsIDE?path.join(pub,'index.html'):route==='/admin'||route==='/admin/'?path.join(pub,'admin.html'):path.join(pub,route.slice(1));
     const rfp=path.resolve(fp);
     if(!rfp.startsWith(path.resolve(pub))){res.writeHead(403);res.end('Forbidden');return;}
     if(fs.existsSync(rfp)&&fs.statSync(rfp).isFile()){const mime={'.html':'text/html','.js':'application/javascript','.mjs':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.json':'application/json','.webmanifest':'application/manifest+json','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf'};const isSW=route==='/sw.js';res.writeHead(200,{'Content-Type':mime[path.extname(rfp)]||'text/plain','Cache-Control':isSW?'no-store':'public, max-age=3600'});res.end(fs.readFileSync(rfp));return;}
