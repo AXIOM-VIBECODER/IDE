@@ -1,8 +1,7 @@
 // AXIOM IDE — Service Worker
-// Caches the app shell so the IDE loads instantly and works offline for the UI
-const CACHE = 'axiom-v6-shell-v1';
+// Version bump forces all browsers to discard old cached files
+const CACHE = 'axiom-v6-shell-v7';
 const SHELL = [
-  '/',
   '/manifest.json',
   '/icons/icon.svg',
   'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js',
@@ -19,6 +18,7 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
+  // Delete ALL old caches (any key that isn't the current one)
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
@@ -37,16 +37,16 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Network-first for navigation (always get fresh index.html when online)
+  // Network-first for ALL navigation — always get fresh HTML when online
   if (e.request.mode === 'navigate') {
     e.respondWith(
       fetch(e.request)
-        .catch(() => caches.match('/'))
+        .catch(() => caches.match('/') || new Response('Offline', { status: 503 }))
     );
     return;
   }
 
-  // Cache-first for static assets and CDN resources
+  // Cache-first for static assets (images, fonts, CDN JS/CSS)
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
@@ -61,7 +61,6 @@ self.addEventListener('fetch', e => {
   );
 });
 
-// Background sync — notify clients when connectivity restores
 self.addEventListener('sync', e => {
   if (e.tag === 'axiom-reconnect') {
     self.clients.matchAll().then(clients =>
