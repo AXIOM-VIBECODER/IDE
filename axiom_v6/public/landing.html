@@ -460,27 +460,27 @@ render deploy  # or: vercel</div>
     <div class="install-card">
       <div class="install-os">🌐</div>
       <div class="install-name">Browser (Fastest)</div>
-      <div class="install-desc">Clone and run in 30 seconds. Open in Chrome, Edge, Firefox, or Safari.</div>
-      <div class="install-code">git clone https://github.com/AXIOM-VIBECODER/IDE
+      <div class="install-desc">No install — open directly in Chrome, Edge, Firefox, or Safari. Works on any device.</div>
+      <div class="install-code" id="browser-url-code">git clone https://github.com/AXIOM-VIBECODER/IDE
 cd IDE/axiom_v6 &amp;&amp; npm install
-npm start
-# → http://localhost:5000</div>
+npm start  # → http://localhost:8080</div>
+      <a class="btn btn-primary" id="browser-open-btn" href="/app" style="margin-top:12px;display:inline-flex">🚀 Open IDE Now</a>
     </div>
     <div class="install-card">
       <div class="install-os">🪟</div>
       <div class="install-name">Windows</div>
       <div class="install-desc">Download the NSIS installer — double click, next next finish. Creates a Start Menu shortcut.</div>
       <div class="install-code">AXIOM-IDE-Setup-6.0.0.exe
-# from GitHub Releases</div>
-      <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE/releases" target="_blank" style="margin-top:12px;display:inline-flex">↓ Download .exe</a>
+# Double-click to install</div>
+      <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE/releases/download/v6.0.0/AXIOM-IDE-Setup-6.0.0.exe" target="_blank" style="margin-top:12px;display:inline-flex">↓ Download .exe</a>
     </div>
     <div class="install-card">
       <div class="install-os">🍎</div>
       <div class="install-name">macOS</div>
       <div class="install-desc">Universal DMG — runs on both Intel and Apple Silicon M1/M2/M3/M4.</div>
       <div class="install-code">AXIOM-IDE-6.0.0.dmg
-# Intel + Apple Silicon</div>
-      <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE/releases" target="_blank" style="margin-top:12px;display:inline-flex">↓ Download .dmg</a>
+# Drag to Applications</div>
+      <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE/releases/download/v6.0.0/AXIOM-IDE-6.0.0.dmg" target="_blank" style="margin-top:12px;display:inline-flex">↓ Download .dmg</a>
     </div>
     <div class="install-card">
       <div class="install-os">🐧</div>
@@ -488,15 +488,16 @@ npm start
       <div class="install-desc">AppImage (any distro), .deb (Ubuntu/Debian), .rpm (Fedora/RHEL).</div>
       <div class="install-code">chmod +x AXIOM-IDE-*.AppImage
 ./AXIOM-IDE-*.AppImage</div>
-      <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE/releases" target="_blank" style="margin-top:12px;display:inline-flex">↓ Download .AppImage</a>
+      <a class="btn btn-ghost" href="https://github.com/AXIOM-VIBECODER/IDE/releases/download/v6.0.0/AXIOM-IDE-6.0.0.AppImage" target="_blank" style="margin-top:12px;display:inline-flex">↓ Download .AppImage</a>
     </div>
     <div class="install-card">
       <div class="install-os">☁️</div>
       <div class="install-name">Cloud (Railway)</div>
-      <div class="install-desc">Deploy to Railway in one click. Share a URL with your team — no local install needed.</div>
-      <div class="install-code">railway up
-# or connect GitHub →
-# Railway auto-deploys</div>
+      <div class="install-desc">Deploy your own instance in one click. Get a public URL — no local install needed.</div>
+      <div class="install-code">Connect GitHub repo →
+Railway auto-deploys on
+every git push</div>
+      <a class="btn btn-ghost" href="https://railway.app/new/template?template=https://github.com/AXIOM-VIBECODER/IDE" target="_blank" style="margin-top:12px;display:inline-flex">🚂 Deploy to Railway</a>
     </div>
     <div class="install-card">
       <div class="install-os">🤖</div>
@@ -505,6 +506,7 @@ npm start
       <div class="install-code">ollama pull qwen2.5-coder:7b
 # Settings → AI Provider
 # → Ollama → Save</div>
+      <a class="btn btn-ghost" href="https://ollama.com/download" target="_blank" style="margin-top:12px;display:inline-flex">↓ Get Ollama</a>
     </div>
   </div>
 </section>
@@ -580,6 +582,18 @@ window.addEventListener('beforeinstallprompt', e => {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
 }
+
+// Browser card: show the live URL so users know where to go
+(function() {
+  const origin = window.location.origin;
+  const isLocal = origin.includes('localhost') || origin.includes('127.0.0.1');
+  const code = document.getElementById('browser-url-code');
+  const btn = document.getElementById('browser-open-btn');
+  if (!isLocal && code) {
+    code.textContent = `# Open directly — no install needed\n${origin}/app`;
+    if (btn) { btn.textContent = '🚀 Open IDE Now'; btn.href = '/app'; }
+  }
+})();
 </script>
 </body>
 </html>
