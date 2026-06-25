@@ -1,0 +1,176 @@
+name: Release Desktop Apps
+
+# Triggers: manually, or when you push a version tag (e.g. v6.1.0)
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g. v6.1.0)"
+        required: false
+        default: "v6.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Build on each OS ──────────────────────────────────────────────
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-22.04
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.platform }}
+
+    defaults:
+      run:
+        working-directory: axiom_v6
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: axiom_v6/package-lock.json
+
+      # Linux: native build tools + fuse for AppImage
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3 make g++ \
+            libsecret-1-dev \
+            libx11-dev libxkbfile-dev \
+            rpm libfuse2
+
+      # macOS: python-setuptools for node-gyp
+      - name: Install macOS dependencies
+        if: matrix.os == 'macos-latest'
+        run: brew install python-setuptools || true
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # Rebuild native modules (node-pty) for the current Electron version
+      - name: Rebuild native modules
+        run: npx electron-builder install-app-deps
+
+      # Generate proper icons from the SVG (sharp is an optionalDependency)
+      - name: Generate icons
+        run: node scripts/generate-icons.js
+
+      # ── Platform builds ───────────────────────────────────────────
+
+      - name: Build Windows installer
+        if: matrix.platform == 'win'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:win
+
+      - name: Build macOS DMG
+        if: matrix.platform == 'mac'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run build:mac
+
+      - name: Build Linux packages
+        if: matrix.platform == 'linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:linux
+
+      - name: List dist output
+        shell: bash
+        run: ls -lh dist/ || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: axiom-${{ matrix.platform }}
+          path: |
+            axiom_v6/dist/*.exe
+            axiom_v6/dist/*.zip
+            axiom_v6/dist/*.dmg
+            axiom_v6/dist/*.AppImage
+            axiom_v6/dist/*.deb
+            axiom_v6/dist/*.rpm
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ── Create GitHub Release ─────────────────────────────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    name: Publish Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: find release-assets -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.version }}
+          name: "AXIOM IDE ${{ github.ref_name || inputs.version }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## AXIOM IDE — East Africa Edition
+
+            Download the installer for your platform below.
+
+            | Platform | File | Notes |
+            |---|---|---|
+            | **Windows** | `AXIOM-IDE-Setup-*.exe` | NSIS installer (recommended) |
+            | **Windows** | `AXIOM-IDE-*.exe` (Portable) | No install needed — just run |
+            | **macOS** | `AXIOM-IDE-*.dmg` | Intel + Apple Silicon universal |
+            | **Linux** | `AXIOM-IDE-*.AppImage` | Any distro, runs anywhere |
+            | **Linux** | `axiom-ide_*.deb` | Ubuntu / Debian / Mint |
+            | **Linux** | `axiom-ide-*.rpm` | Fedora / RHEL / openSUSE |
+
+            ### Quick start after installing
+            1. Launch AXIOM — it opens its own window
+            2. Go to **⚙ Settings → AI Provider** and paste your Anthropic API key
+            3. (Optional) **Settings → Database** to connect MySQL
+            4. Click **🎼** in the toolbar to run the AI Orchestra
+
+            ### macOS — first launch
+            If Gatekeeper blocks it: **System Settings → Privacy & Security → Open Anyway**
+
+            ### Linux AppImage
+            ```bash
+            chmod +x AXIOM-IDE-*.AppImage
+            ./AXIOM-IDE-*.AppImage
+            ```
+
+            ---
+            Built with ❤️ in East Africa · [GitHub](https://github.com/AXIOM-VIBECODER/IDE) · [Issues](https://github.com/AXIOM-VIBECODER/IDE/issues)
+          files: release-assets/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
