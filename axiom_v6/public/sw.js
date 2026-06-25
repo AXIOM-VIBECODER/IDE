@@ -1,6 +1,6 @@
 // AXIOM IDE — Service Worker
 // Version bump forces all browsers to discard old cached files
-const CACHE = 'axiom-v6-shell-v7';
+const CACHE = 'axiom-v6-shell-v8';
 const SHELL = [
   '/manifest.json',
   '/icons/icon.svg',
