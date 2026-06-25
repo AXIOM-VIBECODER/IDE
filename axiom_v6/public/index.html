@@ -6039,8 +6039,13 @@ function openBillingPage(){
   if(!el) return;
   el.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+  // Reset payment section when reopening
+  const methods = document.getElementById('billing-pay-methods');
+  if (methods) methods.style.display = 'none';
+  selectedPlan = null; window.selectedPlan = null;
+  document.querySelectorAll('.billing-plan-card').forEach(c => c.classList.remove('selected'));
   try { if(typeof loadMpesaTxns==='function') loadMpesaTxns(); } catch(e){}
-  try { if(typeof loadBillingPlans==='function') loadBillingPlans(); } catch(e){}
+  try { renderBillingPlans(); } catch(e){ console.error('[billing]', e); }
 }
 function closeBillingPage(){
   const el = document.getElementById('billing-page');
@@ -12475,21 +12480,32 @@ function replLoadFile() {
 // BILLING PANEL (Paystack + M-Pesa)
 // ═══════════════════════════════════════════════════════
 let selectedPlan = null;
-const PLAN_PRICES = { starter: { USD: 9, KES: 1170, TZS: 23850, UGX: 34200 }, pro: { USD: 19, KES: 2470, TZS: 50350, UGX: 72200 }, team: { USD: 49, KES: 6370, TZS: 129850, UGX: 186200 } };
+// PLAN_PRICES is populated dynamically from /api/plans — do not hardcode
+let PLAN_PRICES = {};
 
 function selectBillingPlan(plan, el) {
   selectedPlan = plan;
+  window.selectedPlan = plan; // also set on window for Paystack inline override
   document.querySelectorAll('.billing-plan-card').forEach(c => c.classList.remove('selected'));
   if (el) el.classList.add('selected');
   const methods = document.getElementById('billing-pay-methods');
-  if (plan === 'free') { if (methods) methods.style.display = 'none'; return; }
+  if (plan === 'free') {
+    if (methods) methods.style.display = 'none';
+    notif('You are on the Free plan — select Starter, Pro, or Team to upgrade', 'info');
+    return;
+  }
   if (methods) methods.style.display = 'block';
   const label = plan.charAt(0).toUpperCase() + plan.slice(1);
-  const el1 = document.getElementById('mpesa-plan-name'); if (el1) el1.textContent = label;
-  const el2 = document.getElementById('paystack-plan-name'); if (el2) el2.textContent = label;
+  const el1 = document.getElementById('mpesa-plan-name'); if (el1) el1.textContent = label + ' Plan';
+  const el2 = document.getElementById('paystack-plan-name'); if (el2) el2.textContent = label + ' Plan';
   const el3 = document.getElementById('paystack-amount');
   if (el3) el3.textContent = 'KES ' + (PLAN_PRICES[plan]?.KES || 0).toLocaleString();
+  // Reset status messages
+  const ps = document.getElementById('paystack-status'); if (ps) { ps.textContent = ''; }
+  const ms = document.getElementById('mpesa-status'); if (ms) { ms.textContent = ''; }
   updateMpesaPrice();
+  // Scroll payment form into view
+  setTimeout(() => methods?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
 }
 
 function switchPayTab(tab) {
@@ -12511,30 +12527,38 @@ function switchPayTab(tab) {
 }
 
 async function initPaystackPay() {
-  if (!selectedPlan) return notif('Select a plan first', 'warn');
-  const status = document.getElementById('paystack-status');
-  status.textContent = 'Initializing payment...';
-  status.style.color = 'var(--ac)';
+  // window.initPaystackPay (inline popup override) takes priority if loaded
+  if (window.initPaystackPay && window.initPaystackPay !== initPaystackPay) {
+    return window.initPaystackPay();
+  }
+  const plan = selectedPlan || window.selectedPlan;
+  if (!plan) return notif('Select a plan first', 'warn');
+  const statusEl = document.getElementById('paystack-status');
+  if (statusEl) { statusEl.textContent = 'Initializing payment…'; statusEl.style.color = 'var(--ac)'; }
   try {
+    // Check Paystack is configured
+    const cfg = await api('GET', '/api/billing/paystack/config');
+    if (!cfg.configured || !cfg.public_key) {
+      if (statusEl) { statusEl.textContent = 'Paystack keys not configured'; statusEl.style.color = 'var(--yellow)'; }
+      notif('Add your Paystack keys first — click "Paystack keys" button', 'warn');
+      showPaystackConfig();
+      return;
+    }
     const r = await api('POST', '/api/billing/paystack/initialize', {
-      plan: selectedPlan,
+      plan,
       callback_url: window.location.origin + '/?paystack_verify=1'
     });
     if (r.ok && r.authorization_url) {
-      status.textContent = 'Redirecting to Paystack...';
-      status.style.color = 'var(--green)';
+      if (statusEl) { statusEl.textContent = 'Opening Paystack checkout…'; statusEl.style.color = 'var(--green)'; }
       window.open(r.authorization_url, '_blank');
-      notif('Complete payment in the new tab, then return here', 'info');
-      // Poll for verification
+      notif('Complete payment in the new tab — this page will auto-update', 'info');
       if (r.reference) pollPaystackVerify(r.reference);
     } else {
-      status.textContent = r.error || 'Payment initialization failed';
-      status.style.color = 'var(--red)';
+      if (statusEl) { statusEl.textContent = r.error || 'Initialization failed'; statusEl.style.color = 'var(--red)'; }
       notif(r.error || 'Paystack initialization failed', 'err');
     }
   } catch (e) {
-    status.textContent = 'Error: ' + e.message;
-    status.style.color = 'var(--red)';
+    if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.color = 'var(--red)'; }
   }
 }
 
@@ -12542,19 +12566,30 @@ async function pollPaystackVerify(ref) {
   let attempts = 0;
   const poll = setInterval(async () => {
     attempts++;
-    if (attempts > 60) { clearInterval(poll); return; } // Stop after 5 minutes
+    if (attempts > 72) { // Stop after 6 minutes
+      clearInterval(poll);
+      const s = document.getElementById('paystack-status');
+      if (s && s.textContent.includes('Opening')) { s.textContent = 'Timed out — if you paid, contact support'; s.style.color = 'var(--tx3)'; }
+      return;
+    }
     try {
       const r = await api('GET', '/api/billing/paystack/verify?reference=' + encodeURIComponent(ref));
       if (r.ok && r.plan) {
         clearInterval(poll);
-        USER.plan = r.plan;
-        notif('Payment successful! You are now on the ' + r.plan.charAt(0).toUpperCase() + r.plan.slice(1) + ' plan.', 'ok');
-        document.getElementById('paystack-status').textContent = 'Payment confirmed!';
-        document.getElementById('paystack-status').style.color = 'var(--green)';
-        loadMpesaTxns(); // Refresh billing panel
-        renderUserAvatar();
-        const banner = document.getElementById('trial-banner');
-        if (banner) banner.remove();
+        if (USER) USER.plan = r.plan;
+        window.USER = USER;
+        const planName = r.plan.charAt(0).toUpperCase() + r.plan.slice(1);
+        notif('🎉 Payment confirmed! You are now on ' + planName + ' plan', 'ok');
+        const s = document.getElementById('paystack-status');
+        if (s) { s.textContent = '✓ Payment confirmed — ' + planName + ' plan active!'; s.style.color = 'var(--green)'; }
+        // Refresh billing display
+        try { loadMpesaTxns(); } catch(e) {}
+        try { renderUserAvatar(); } catch(e) {}
+        // Remove trial banners
+        document.getElementById('trial-banner')?.remove();
+        document.getElementById('token-warn-banner')?.remove();
+        // Re-render plans to show new current plan
+        setTimeout(() => { try { renderBillingPlans(); } catch(e) {} }, 500);
       }
     } catch (e) { /* keep polling */ }
   }, 5000);
@@ -12578,32 +12613,59 @@ function checkPaystackReturn() {
   }
 }
 
-// Fetch /api/plans and render all four subscription tiers as cards.
+// Fetch /api/plans, populate PLAN_PRICES, and render subscription tier cards.
 async function renderBillingPlans() {
   const host = document.getElementById('billing-plans');
   if (!host) return;
+  host.innerHTML = '<div style="color:var(--tx3);padding:16px;font-size:12px">Loading plans…</div>';
   let plans;
   try {
-    const r = await fetch('/api/plans', { headers: TOK ? {'X-Axiom-Token': TOK} : {} });
-    const d = await r.json();
-    plans = d.plans || {};
-  } catch (e) { plans = {}; }
+    const r = await api('GET', '/api/plans');
+    plans = r.plans || {};
+  } catch (e) {
+    host.innerHTML = '<div style="color:var(--red);padding:16px;font-size:12px">Failed to load plans — is the server running?</div>';
+    return;
+  }
+
+  // Populate PLAN_PRICES from live server data (exchange rates: 1 USD ≈ 130 KES, 2670 TZS, 3815 UGX)
+  PLAN_PRICES = {};
+  Object.entries(plans).forEach(([k, p]) => {
+    if (k === 'free') return;
+    PLAN_PRICES[k] = {
+      USD: p.price || 0,
+      KES: p.kes || Math.round((p.price || 0) * 130),
+      TZS: Math.round((p.price || 0) * 2670),
+      UGX: Math.round((p.price || 0) * 3815)
+    };
+  });
+
   const order = ['free','starter','pro','team'];
-  const accent = { free:'var(--tx2)', starter:'var(--green)', pro:'var(--ac)', team:'var(--purple)' };
+  const accent = { free:'var(--tx3)', starter:'var(--green)', pro:'var(--ac)', team:'#a78bfa' };
   const currentPlan = (USER && USER.plan) || 'free';
+
   host.innerHTML = order.filter(k => plans[k]).map(k => {
     const p = plans[k];
-    const feats = (p.features||[]).map(f => '<div class="bpc-feat">• ' + esc(f) + '</div>').join('');
+    const isCurrent = currentPlan === k;
+    const feats = (p.features || []).map(f =>
+      '<div style="font-size:11px;color:var(--tx2);padding:2px 0">✓ ' + esc(f) + '</div>'
+    ).join('');
     const priceLine = k === 'free'
-      ? '<div class="bpc-price" style="color:var(--tx)">Free forever</div><div class="bpc-usd">No card required</div>'
-      : '<div class="bpc-price">KES ' + (p.kes||0).toLocaleString() + '/mo</div><div class="bpc-usd">~$' + (p.price||0) + ' USD</div>';
-    const badge = currentPlan === k ? '<span style="font-size:10px;color:var(--green);margin-left:6px">• current</span>' : '';
+      ? '<div style="font-size:20px;font-weight:700;color:var(--tx);margin:6px 0">Free</div><div style="font-size:10px;color:var(--tx3)">No card required</div>'
+      : '<div style="font-size:20px;font-weight:700;color:var(--tx);margin:6px 0">KES ' + (p.kes||0).toLocaleString() + '<span style="font-size:12px;font-weight:400;color:var(--tx3)">/mo</span></div><div style="font-size:10px;color:var(--tx3)">~$' + (p.price||0) + ' USD · ' + ((p.tokens_month||0)/1000).toFixed(0) + 'K tokens</div>';
+    const btnLabel = isCurrent ? '✓ Current plan' : (k === 'free' ? 'Downgrade' : 'Select ' + p.name);
+    const btnStyle = isCurrent
+      ? 'background:var(--surface);border:1px solid var(--green);color:var(--green);cursor:default'
+      : 'background:' + accent[k] + ';border:none;color:' + (k==='pro'?'#000':'#fff') + ';cursor:pointer';
     return (
-      '<div class="billing-plan-card" data-plan="' + k + '" onclick="selectBillingPlan(\'' + k + '\',this)">' +
-        '<div class="bpc-name" style="color:' + accent[k] + '">' + esc(p.name) + badge + '</div>' +
-        (p.tagline ? '<div class="bpc-usd" style="margin-bottom:4px">' + esc(p.tagline) + '</div>' : '') +
+      '<div class="billing-plan-card' + (isCurrent ? ' selected' : '') + '" data-plan="' + k + '" onclick="selectBillingPlan(\'' + k + '\',this)" style="border-color:' + (isCurrent ? accent[k] : 'var(--border)') + '">' +
+        '<div style="font-size:13px;font-weight:700;color:' + accent[k] + ';letter-spacing:.5px">' + esc(p.name).toUpperCase() + '</div>' +
+        (p.tagline ? '<div style="font-size:10px;color:var(--tx3);margin:2px 0 4px">' + esc(p.tagline) + '</div>' : '') +
         priceLine +
-        '<div style="margin-top:6px">' + feats + '</div>' +
+        '<div style="margin:8px 0;border-top:1px solid var(--border);padding-top:8px">' + feats + '</div>' +
+        '<button style="width:100%;padding:7px;border-radius:6px;font-size:12px;font-weight:600;margin-top:4px;' + btnStyle + '"' +
+          (isCurrent ? ' disabled' : '') + ' onclick="event.stopPropagation();selectBillingPlan(\'' + k + '\',this.closest(\'.billing-plan-card\'))">' +
+          btnLabel +
+        '</button>' +
       '</div>'
     );
   }).join('');
@@ -12617,28 +12679,47 @@ function updateMpesaPrice() {
 }
 
 async function initMpesaPay() {
-  if (!selectedPlan) return notif('Select a plan first', 'warn');
-  const phone = document.getElementById('mpesa-phone').value.trim();
-  if (!phone) return notif('Enter your phone number', 'warn');
-  const cur = document.getElementById('mpesa-currency').value || 'KES';
-  const amount = PLAN_PRICES[selectedPlan]?.[cur] || 0;
-  const status = document.getElementById('mpesa-status');
-  status.textContent = 'Sending STK push to ' + phone + '…';
-  status.style.color = 'var(--ac)';
+  const plan = selectedPlan || window.selectedPlan;
+  if (!plan) return notif('Select a plan first', 'warn');
+  const phone = document.getElementById('mpesa-phone')?.value.trim();
+  if (!phone) return notif('Enter your M-Pesa phone number (e.g. 0712345678)', 'warn');
+  const cur = document.getElementById('mpesa-currency')?.value || 'KES';
+  const amount = PLAN_PRICES[plan]?.[cur] || 0;
+  if (!amount) return notif('Could not determine amount — try refreshing plans', 'warn');
+  const statusEl = document.getElementById('mpesa-status');
+  if (statusEl) { statusEl.textContent = 'Sending STK push to ' + phone + '…'; statusEl.style.color = 'var(--ac)'; }
   try {
-    const r = await api('POST', '/api/billing/mpesa/stk-push', { phone, amount, plan: selectedPlan });
+    const r = await api('POST', '/api/billing/mpesa/stk-push', { phone, amount, plan });
     if (r.ok) {
-      status.textContent = 'Check your phone for M-Pesa prompt!';
-      status.style.color = 'var(--green)';
-      notif('M-Pesa STK push sent — check your phone', 'ok');
+      if (statusEl) { statusEl.textContent = '📱 Check your phone — enter M-Pesa PIN to complete'; statusEl.style.color = 'var(--green)'; }
+      notif('M-Pesa STK push sent to ' + phone, 'ok');
+      // Poll transactions list to detect when payment lands
+      let polls = 0;
+      const pollMpesa = setInterval(async () => {
+        polls++;
+        if (polls > 24) { clearInterval(pollMpesa); return; } // 2 min
+        try {
+          const txns = (await api('GET', '/api/billing/mpesa/transactions')).transactions || [];
+          const latest = txns[0];
+          if (latest && latest.ResultCode === 0 && latest.plan === plan) {
+            clearInterval(pollMpesa);
+            if (USER) USER.plan = plan;
+            const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+            notif('🎉 M-Pesa payment confirmed! ' + planName + ' plan active', 'ok');
+            if (statusEl) { statusEl.textContent = '✓ Payment confirmed — ' + planName + ' plan active!'; statusEl.style.color = 'var(--green)'; }
+            loadMpesaTxns();
+            try { renderUserAvatar(); } catch(e) {}
+            document.getElementById('trial-banner')?.remove();
+            setTimeout(() => { try { renderBillingPlans(); } catch(e) {} }, 500);
+          }
+        } catch(e) {}
+      }, 5000);
     } else {
-      status.textContent = r.error || 'Payment failed';
-      status.style.color = 'var(--red)';
+      if (statusEl) { statusEl.textContent = r.error || 'Payment failed'; statusEl.style.color = 'var(--red)'; }
       notif(r.error || 'M-Pesa payment failed', 'err');
     }
   } catch (e) {
-    status.textContent = 'Error: ' + e.message;
-    status.style.color = 'var(--red)';
+    if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.color = 'var(--red)'; }
   }
 }
 
@@ -12719,31 +12800,81 @@ async function saveMpesaConfig() {
 }
 
 function showPaystackConfig() {
-  const html = `<div id="paystack-config-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">
-    <div style="background:var(--panel);border:1px solid var(--border2);border-radius:12px;padding:20px;width:380px;max-width:90vw">
-      <div style="font-size:15px;font-weight:600;margin-bottom:12px">Paystack API Configuration</div>
-      <div style="font-size:11px;color:var(--tx2);margin-bottom:12px">Get credentials from <a href="https://dashboard.paystack.com/#/settings/developers" target="_blank" style="color:var(--ac)">dashboard.paystack.com</a></div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <input type="text" id="ps-pubkey" class="sinp" placeholder="Public Key (pk_...)" style="padding:8px"/>
-        <input type="text" id="ps-seckey" class="sinp" placeholder="Secret Key (sk_...)" style="padding:8px"/>
-        <button onclick="savePaystackConfig()" style="padding:10px;background:#58a6ff;border:none;border-radius:6px;color:#000;font-weight:600;font-size:13px">Save Configuration</button>
+  document.getElementById('paystack-config-modal')?.remove(); // prevent duplicates
+  const html = `<div id="paystack-config-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">
+    <div style="background:var(--panel);border:1px solid var(--border2);border-radius:12px;padding:22px;width:420px;max-width:92vw">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:15px;font-weight:700">Paystack Configuration</div>
+        <button onclick="this.closest('#paystack-config-modal').remove()" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:18px">×</button>
+      </div>
+      <div style="font-size:11px;color:var(--tx3);margin-bottom:14px">
+        Get keys from <a href="https://dashboard.paystack.com/#/settings/developers" target="_blank" style="color:var(--ac)">dashboard.paystack.com</a>
+        → Settings → API Keys &amp; Webhooks
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div>
+          <label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">PUBLIC KEY (starts with pk_live_ or pk_test_)</label>
+          <input type="text" id="ps-pubkey" class="sinp" placeholder="Paste your Paystack public key here" style="padding:8px;width:100%;box-sizing:border-box"/>
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">SECRET KEY (starts with sk_live_ or sk_test_) — never share this</label>
+          <input type="password" id="ps-seckey" class="sinp" placeholder="Paste your Paystack secret key here" style="padding:8px;width:100%;box-sizing:border-box"/>
+        </div>
+        <div id="ps-status" style="font-size:11px;min-height:16px"></div>
+        <div style="display:flex;gap:8px">
+          <button onclick="savePaystackConfig()" style="flex:1;padding:10px;background:var(--ac);border:none;border-radius:6px;color:#000;font-weight:700;font-size:13px;cursor:pointer">Save Keys</button>
+          <button onclick="testPaystackConfig()" style="padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--tx);font-size:12px;cursor:pointer">Test</button>
+        </div>
+        <div style="font-size:10px;color:var(--tx3);border-top:1px solid var(--border);padding-top:8px">
+          🔒 Keys are encrypted before storage in ~/.axiom/paystack.json — never sent anywhere else.
+        </div>
       </div>
     </div>
   </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
-  // Pre-fill if already configured
+  // Pre-fill public key if already configured
   api('GET', '/api/billing/paystack/config').then(r => {
-    if (r.public_key) document.getElementById('ps-pubkey').value = r.public_key;
-  });
+    if (r.configured && r.public_key) {
+      const el = document.getElementById('ps-pubkey');
+      if (el) { el.value = r.public_key; }
+      const st = document.getElementById('ps-status');
+      if (st) { st.textContent = '✓ Paystack is configured'; st.style.color = 'var(--green)'; }
+    }
+  }).catch(() => {});
+}
+
+async function testPaystackConfig() {
+  const st = document.getElementById('ps-status');
+  if (st) { st.textContent = 'Testing…'; st.style.color = 'var(--ac)'; }
+  try {
+    const r = await api('GET', '/api/billing/paystack/config');
+    if (r.configured && r.public_key && r.public_key.length > 10) {
+      if (st) { st.textContent = '✓ Paystack configured — key starts with ' + r.public_key.slice(0, 10) + '…'; st.style.color = 'var(--green)'; }
+    } else {
+      if (st) { st.textContent = '✗ No Paystack key saved yet'; st.style.color = 'var(--red)'; }
+    }
+  } catch(e) {
+    if (st) { st.textContent = '✗ Error: ' + e.message; st.style.color = 'var(--red)'; }
+  }
 }
 
 async function savePaystackConfig() {
-  const r = await api('POST', '/api/billing/paystack/config', {
-    public_key: document.getElementById('ps-pubkey').value.trim(),
-    secret_key: document.getElementById('ps-seckey').value.trim()
-  });
-  if (r.ok) { notif('Paystack configured', 'ok'); document.getElementById('paystack-config-modal')?.remove(); }
-  else notif(r.error || 'Config failed', 'err');
+  const pub = document.getElementById('ps-pubkey')?.value.trim();
+  const sec = document.getElementById('ps-seckey')?.value.trim();
+  if (!pub || !sec) { notif('Enter both public and secret keys', 'warn'); return; }
+  if (!pub.startsWith('pk_')) { notif('Public key should start with pk_test_ or pk_live_', 'warn'); return; }
+  if (!sec.startsWith('sk_')) { notif('Secret key should start with sk_test_ or sk_live_', 'warn'); return; }
+  const st = document.getElementById('ps-status');
+  if (st) { st.textContent = 'Saving…'; st.style.color = 'var(--ac)'; }
+  const r = await api('POST', '/api/billing/paystack/config', { public_key: pub, secret_key: sec });
+  if (r.ok) {
+    if (st) { st.textContent = '✓ Saved successfully'; st.style.color = 'var(--green)'; }
+    notif('Paystack keys saved', 'ok');
+    setTimeout(() => document.getElementById('paystack-config-modal')?.remove(), 800);
+  } else {
+    if (st) { st.textContent = r.error || 'Save failed'; st.style.color = 'var(--red)'; }
+    notif(r.error || 'Config failed', 'err');
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -16718,10 +16849,11 @@ function switchProfile(name){
 })();
 
 // ─── Paystack Inline Popup (replaces redirect) ──────────────
-// Override the existing initPaystackPay to use inline iframe popup.
-// Falls back to redirect if PaystackPop SDK not loaded yet.
+// Uses PaystackPop inline SDK when available; falls back to redirect.
 window.initPaystackPay = async function() {
-  if (!window.selectedPlan) return (typeof notif==='function' ? notif('Select a plan first','warn') : alert('Select a plan first'));
+  const plan = window.selectedPlan || (typeof selectedPlan !== 'undefined' ? selectedPlan : null);
+  if (!plan) return (typeof notif==='function' ? notif('Select a plan first','warn') : alert('Select a plan first'));
+  window.selectedPlan = plan; // ensure both are in sync
   const statusEl = document.getElementById('paystack-status');
   if (statusEl) { statusEl.textContent = 'Initializing…'; statusEl.style.color = 'var(--ac)'; }
 
@@ -16736,11 +16868,12 @@ window.initPaystackPay = async function() {
 
     // Initialize payment on server (gets reference + amount)
     const r = await (typeof api==='function'
-      ? api('POST','/api/billing/paystack/initialize', { plan: window.selectedPlan, callback_url: window.location.origin + '/?paystack_verify=1' })
-      : fetch('/api/billing/paystack/initialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:window.selectedPlan})}).then(x=>x.json())
+      ? api('POST','/api/billing/paystack/initialize', { plan, callback_url: window.location.origin + '/?paystack_verify=1' })
+      : fetch('/api/billing/paystack/initialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan, callback_url: window.location.origin+'/?paystack_verify=1'})}).then(x=>x.json())
     );
     if (!r.ok || !r.reference) {
-      if (statusEl) { statusEl.textContent = r.error || 'Init failed'; statusEl.style.color = 'var(--red)'; }
+      if (statusEl) { statusEl.textContent = r.error || 'Initialization failed — check your Paystack keys'; statusEl.style.color = 'var(--red)'; }
+      if (typeof notif==='function') notif(r.error || 'Paystack error', 'err');
       return;
     }
 
@@ -16748,12 +16881,12 @@ window.initPaystackPay = async function() {
     if (typeof PaystackPop !== 'undefined') {
       const handler = PaystackPop.setup({
         key:      pubKey,
-        email:    window.USER?.email || prompt('Enter your email for receipt:',''),
-        amount:   r.amount_kobo || (r.amount * 100),
+        email:    window.USER?.email || (typeof swalPrompt==='function' ? await swalPrompt('Enter your email for receipt:', '') : prompt('Email:','')),
+        amount:   r.amount_kobo || Math.round(r.amount * 100),
         currency: r.currency || 'KES',
         ref:      r.reference,
-        label:    'AXIOM IDE — ' + (window.selectedPlan || ''),
-        metadata: { plan: window.selectedPlan, user_id: window.USER?.id },
+        label:    'AXIOM IDE — ' + plan.charAt(0).toUpperCase() + plan.slice(1) + ' Plan',
+        metadata: { plan, user_id: window.USER?.id },
         callback: async function(response) {
           if (statusEl) { statusEl.textContent = 'Verifying…'; statusEl.style.color = 'var(--ac)'; }
           const vr = await (typeof api==='function'

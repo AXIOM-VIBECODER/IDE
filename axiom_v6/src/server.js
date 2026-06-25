@@ -2136,29 +2136,80 @@ const server=http.createServer(async(req,res)=>{
     return sendJson(res,{ok:true});
   }
   if(route==='/api/billing/mpesa/stk-push'&&req.method==='POST'){
-    let mpCfg;try{mpCfg=JSON.parse(fs.readFileSync(MPESA_FILE,'utf8'));}catch(e){return sendJson(res,{error:'M-Pesa not configured. Add credentials in Settings.'},400);}
-    const phone=(data.phone||'').replace(/^0/,'254').replace(/^\+/,'');
-    const amount=Math.round(+data.amount||0);
-    if(!phone||phone.length<10)return sendJson(res,{error:'Invalid phone number'},400);
-    if(!amount||amount<1)return sendJson(res,{error:'Amount must be at least 1 KES'},400);
+    let mpCfg;try{mpCfg=JSON.parse(fs.readFileSync(MPESA_FILE,'utf8'));}catch(e){return sendJson(res,{error:'M-Pesa not configured — add credentials via "M-Pesa keys" in billing'},400);}
+    if(!mpCfg.consumer_key||!mpCfg.consumer_secret)return sendJson(res,{error:'M-Pesa credentials incomplete — add consumer key and secret'},400);
+    const u=getReqUser(req);
+    const phone=(data.phone||'').replace(/\s/g,'').replace(/^\+/,'').replace(/^0/,'254');
+    if(!/^254\d{9}$/.test(phone))return sendJson(res,{error:'Invalid phone number — use format 0712345678 or 254712345678'},400);
+    const plan=data.plan;
+    if(!plan||!PLANS[plan]||plan==='free')return sendJson(res,{error:'Invalid plan — choose Starter, Pro, or Team'},400);
+    const amount=Math.round(+data.amount||PLANS[plan].kes||0);
+    if(amount<1)return sendJson(res,{error:'Invalid amount'},400);
     const baseUrl=mpCfg.env==='production'?'https://api.safaricom.co.ke':'https://sandbox.safaricom.co.ke';
     try{
       const authStr=Buffer.from(mpCfg.consumer_key+':'+mpCfg.consumer_secret).toString('base64');
-      const authRes=await new Promise((resolve,reject)=>{const r=https.request(baseUrl+'/oauth/v1/generate?grant_type=client_credentials',{method:'GET',headers:{Authorization:'Basic '+authStr}},(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.end();});
-      if(!authRes.access_token)return sendJson(res,{error:'M-Pesa auth failed: '+(authRes.errorMessage||'check credentials')},400);
-      const ts=new Date().toISOString().replace(/[-T:.Z]/g,'').slice(0,14);
-      const pw=Buffer.from(mpCfg.shortcode+mpCfg.passkey+ts).toString('base64');
-      const stkBody=JSON.stringify({BusinessShortCode:mpCfg.shortcode,Password:pw,Timestamp:ts,TransactionType:'CustomerPayBillOnline',Amount:amount,PartyA:phone,PartyB:mpCfg.shortcode,PhoneNumber:phone,CallBackURL:mpCfg.callback_url,AccountReference:'AXIOM-'+Date.now(),TransactionDesc:'AXIOM IDE subscription'});
-      const stkRes=await new Promise((resolve,reject)=>{const r=https.request(baseUrl+'/mpesa/stkpush/v1/processrequest',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authRes.access_token,'Content-Length':Buffer.byteLength(stkBody)}},(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});r.on('error',reject);r.write(stkBody);r.end();});
-      if(stkRes.ResponseCode==='0')return sendJson(res,{ok:true,checkoutRequestID:stkRes.CheckoutRequestID,msg:'Check your phone for M-Pesa prompt'});
-      return sendJson(res,{error:stkRes.errorMessage||stkRes.ResponseDescription||'STK push failed'},400);
+      const authRes=await new Promise((resolve,reject)=>{
+        const r=https.request(baseUrl+'/oauth/v1/generate?grant_type=client_credentials',{method:'GET',headers:{Authorization:'Basic '+authStr}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+        r.on('error',reject);r.end();
+      });
+      if(!authRes.access_token)return sendJson(res,{error:'M-Pesa auth failed: '+(authRes.errorMessage||JSON.stringify(authRes).slice(0,100))},400);
+      const ts=new Date().toISOString().replace(/[^0-9]/g,'').slice(0,14);
+      const pw=Buffer.from((mpCfg.shortcode||'174379')+mpCfg.passkey+ts).toString('base64');
+      const acctRef='AX-'+plan.slice(0,2).toUpperCase()+'-'+(u?.id||'anon').slice(0,8);
+      const stkBody=JSON.stringify({
+        BusinessShortCode:mpCfg.shortcode||'174379',Password:pw,Timestamp:ts,
+        TransactionType:'CustomerPayBillOnline',Amount:amount,
+        PartyA:phone,PartyB:mpCfg.shortcode||'174379',PhoneNumber:phone,
+        CallBackURL:mpCfg.callback_url,AccountReference:acctRef,
+        TransactionDesc:'AXIOM '+plan.charAt(0).toUpperCase()+plan.slice(1)+' Plan'
+      });
+      const stkRes=await new Promise((resolve,reject)=>{
+        const r=https.request(baseUrl+'/mpesa/stkpush/v1/processrequest',{method:'POST',
+          headers:{'Content-Type':'application/json',Authorization:'Bearer '+authRes.access_token,'Content-Length':Buffer.byteLength(stkBody)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+        r.on('error',reject);r.write(stkBody);r.end();
+      });
+      if(stkRes.ResponseCode==='0'){
+        // Store pending transaction so callback can look up plan + user
+        const pendingFile=path.join(DATA,'mpesa_pending.json');
+        let pending={};try{pending=JSON.parse(fs.readFileSync(pendingFile,'utf8'));}catch(e){}
+        pending[stkRes.CheckoutRequestID]={plan,user_id:u?.id||null,email:u?.email||'',phone,amount,initiated:new Date().toISOString()};
+        atomicWriteSync(pendingFile,JSON.stringify(pending,null,2));
+        return sendJson(res,{ok:true,checkoutRequestID:stkRes.CheckoutRequestID,message:'STK push sent — check your phone for M-Pesa prompt'});
+      }
+      return sendJson(res,{error:stkRes.errorMessage||stkRes.ResponseDescription||'STK push failed — check shortcode and passkey'},400);
     }catch(e){return sendJson(res,{error:'M-Pesa request failed: '+e.message},500);}
   }
   if(route==='/api/billing/mpesa/callback'&&req.method==='POST'){
     const cb=data.Body?.stkCallback;
-    if(cb){const items=cb.CallbackMetadata?.Item||[];const txn={CheckoutRequestID:cb.CheckoutRequestID,ResultCode:cb.ResultCode,ResultDesc:cb.ResultDesc};items.forEach(i=>{txn[i.Name]=i.Value;});const mpLog=path.join(DATA,'mpesa_transactions.json');let txns=[];try{txns=JSON.parse(fs.readFileSync(mpLog,'utf8'));}catch(e){}txns.unshift({...txn,received:new Date().toISOString()});atomicWriteSync(mpLog,JSON.stringify(txns.slice(0,500),null,2),{mode:0o600});
-    if(cb.ResultCode===0&&txn.Amount){await DB.recordPayment({user_id:'mpesa',email:txn.PhoneNumber||'',name:'M-Pesa',plan:'pro',amount:txn.Amount/130,status:'succeeded',type:'mpesa',mpesa_receipt:txn.MpesaReceiptNumber});}
-    }return sendJson(res,{ok:true});
+    if(cb){
+      const items=cb.CallbackMetadata?.Item||[];
+      const txn={CheckoutRequestID:cb.CheckoutRequestID,ResultCode:cb.ResultCode,ResultDesc:cb.ResultDesc};
+      items.forEach(i=>{txn[i.Name]=i.Value;});
+      // Look up pending transaction to get plan + user
+      const pendingFile=path.join(DATA,'mpesa_pending.json');
+      let pending={};try{pending=JSON.parse(fs.readFileSync(pendingFile,'utf8'));}catch(e){}
+      const pend=pending[cb.CheckoutRequestID]||{};
+      const plan=pend.plan||'starter';
+      const userId=pend.user_id;
+      // Log transaction
+      const mpLog=path.join(DATA,'mpesa_transactions.json');
+      let txns=[];try{txns=JSON.parse(fs.readFileSync(mpLog,'utf8'));}catch(e){}
+      txns.unshift({...txn,plan,user_id:userId||null,received:new Date().toISOString()});
+      atomicWriteSync(mpLog,JSON.stringify(txns.slice(0,500),null,2));
+      // On success: upgrade user plan
+      if(cb.ResultCode===0){
+        if(userId){
+          const d=UsersDB.load();const u=d.users.find(x=>x.id===userId);
+          if(u){u.plan=plan;u.tokens_used_month=0;u.month_reset_at=new Date().toISOString();UsersDB.save(d);}
+          if(dbPool)dbPool.query('UPDATE users SET plan=?,tokens_used_month=0,month_reset_at=NOW() WHERE id=?',[plan,userId]).catch(()=>{});
+        }
+        await DB.recordPayment({user_id:userId||'mpesa',email:pend.email||txn.PhoneNumber||'',name:'M-Pesa',plan,amount:txn.Amount||pend.amount||0,status:'succeeded',type:'mpesa',stripe_id:txn.MpesaReceiptNumber||''});
+        // Clean up pending entry
+        delete pending[cb.CheckoutRequestID];
+        atomicWriteSync(pendingFile,JSON.stringify(pending,null,2));
+      }
+    }
+    return sendJson(res,{ok:true});
   }
   if(route==='/api/billing/mpesa/transactions'&&req.method==='GET'){
     const mpLog=path.join(DATA,'mpesa_transactions.json');
@@ -2173,31 +2224,38 @@ const server=http.createServer(async(req,res)=>{
   // Initialize a Paystack transaction
   if(route==='/api/billing/paystack/initialize'&&req.method==='POST'){
     const ps=getPaystackKey();
-    if(!ps||!ps.secret_key)return sendJson(res,{error:'Paystack not configured. Add keys in Settings.'},400);
+    if(!ps||!ps.secret_key)return sendJson(res,{error:'Paystack not configured — add your Paystack secret key in Settings → Paystack keys'},400);
     const u=getReqUser(req);
-    if(!u)return sendJson(res,{error:'Authentication required'},401);
-    const plan=data.plan;if(!plan||!PLANS[plan]||plan==='free')return sendJson(res,{error:'Invalid plan'},400);
-    const amountKobo=Math.round((PLANS[plan].kes||PLANS[plan].price*130)*100); // Convert to kobo/pesewas
+    if(!u)return sendJson(res,{error:'You must be logged in to make a payment'},401);
+    if(!u.email)return sendJson(res,{error:'Account has no email address — please update your profile'},400);
+    const plan=data.plan;
+    if(!plan||!PLANS[plan]||plan==='free')return sendJson(res,{error:'Invalid plan selected. Choose Starter, Pro, or Team.'},400);
+    // Paystack supports: NGN, GHS, USD, ZAR, KES (for East Africa)
+    // Use NGN kobo equivalent via USD if KES not accepted, but try KES first (Paystack Africa supports it)
+    const amountKobo=Math.round((PLANS[plan].kes||PLANS[plan].price*130)*100);
+    const callbackUrl=data.callback_url||(req.headers.origin||`http://localhost:${PORT}`)+'/?paystack_verify=1';
     const payload=JSON.stringify({
       email:u.email,
       amount:amountKobo,
       currency:'KES',
-      callback_url:data.callback_url||(req.headers.origin||`http://localhost:${PORT}`),
-      metadata:JSON.stringify({user_id:u.id,plan,user_email:u.email})
+      callback_url:callbackUrl,
+      channels:['card','bank','ussd','bank_transfer','mobile_money'],
+      metadata:JSON.stringify({user_id:u.id,plan,user_email:u.email,product:'axiom_subscription'})
     });
     try{
       const result=await new Promise((resolve,reject)=>{
         const r=https.request({hostname:'api.paystack.co',path:'/transaction/initialize',method:'POST',
           headers:{'Authorization':'Bearer '+ps.secret_key,'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}
-        },(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
+        },(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
         r.on('error',reject);r.write(payload);r.end();
       });
       if(result.status&&result.data){
-        auditLog('paystack_init',{email:u.email,plan,ref:result.data.reference},req);
+        auditLog('paystack_init',{email:u.email,plan,ref:result.data.reference,amount:amountKobo/100},req);
         return sendJson(res,{ok:true,authorization_url:result.data.authorization_url,reference:result.data.reference,access_code:result.data.access_code,amount_kobo:amountKobo,amount:amountKobo/100,currency:'KES'});
       }
-      return sendJson(res,{error:result.message||'Paystack initialization failed'},400);
-    }catch(e){return sendJson(res,{error:'Paystack error: '+e.message},500);}
+      // Paystack returned an error — surface its message clearly
+      return sendJson(res,{error:result.message||'Paystack initialization failed. Check your secret key and try again.'},400);
+    }catch(e){return sendJson(res,{error:'Paystack connection error: '+e.message},500);}
   }
 
   // Verify a Paystack transaction
