@@ -3864,7 +3864,7 @@ body[data-t="dark"]{
     <div class="um-item" onclick="openModal('profile');closeUserMenu()">👤 Profile &amp; Settings</div>
     <div class="um-item" onclick="openModal('settings');closeUserMenu()">⚙ IDE Settings</div>
     <div class="um-item" onclick="openModal('memory');closeUserMenu()">🧠 Memory</div>
-    <div class="um-item" onclick="window.open('/admin','_blank')">📊 Admin Dashboard</div>
+    <div class="um-item" id="um-admin-link" style="display:none" onclick="window.open('/admin','_blank')">📊 Admin Dashboard</div>
     <div class="um-item" onclick="exportMem()">↗ Export Memory</div>
     <div class="um-item danger" onclick="signOut()">Sign Out</div>
   </div>
@@ -4930,7 +4930,7 @@ body[data-t="dark"]{
                     <div class="dash-action-icon">⌘</div>
                     <div><div class="dash-action-text">Command Palette</div><div class="dash-action-hint">Ctrl+Shift+P</div></div>
                   </div>
-                  <div class="dash-action" onclick="window.open('/admin','_blank')">
+                  <div class="dash-action" id="dash-admin-link" style="display:none" onclick="window.open('/admin','_blank')">
                     <div class="dash-action-icon">📊</div>
                     <div><div class="dash-action-text">Admin Dashboard</div><div class="dash-action-hint">/admin</div></div>
                   </div>
@@ -5450,6 +5450,10 @@ function renderUserAvatar() {
   // Collab name
   document.getElementById('collab-me-name').textContent = USER.name || 'You';
   document.getElementById('collab-me-avatar').textContent = (USER.name||'U')[0].toUpperCase();
+  // Admin-only links: only visible to users with role=admin
+  const isAdmin = USER.role === 'admin';
+  const adminEls = ['um-admin-link','dash-admin-link'];
+  adminEls.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isAdmin ? '' : 'none'; });
 }
 
 function toggleUserMenu() {
@@ -10569,7 +10573,7 @@ function buildPalCmds(){palCmds=[
   {ic:'🧪',n:'Test Runner',fn:showTestRunnerModal},
   {ic:'🗄️',n:'Database Manager',fn:showDbManagerModal},
   {ic:'💻',n:'New Terminal',k:'Ctrl+`',fn:newTermTab},
-  {ic:'📊',n:'Open Admin Dashboard',fn:()=>window.open('/admin','_blank')},
+  {ic:'📊',n:'Open Admin Dashboard',fn:()=>window.open('/admin','_blank'),adminOnly:true},
   {ic:'🌑',n:'Theme: AXIOM Dark',fn:()=>{document.getElementById('s-theme').value='dark';applyTheme();}},
   {ic:'🌑',n:'Theme: Zed Light',fn:()=>{document.getElementById('s-theme').value='zed-light';applyTheme();}},
   {ic:'🌑',n:'Theme: Windsurf Blue',fn:()=>{document.getElementById('s-theme').value='windsurf';applyTheme();}},
@@ -10604,7 +10608,7 @@ function buildPalCmds(){palCmds=[
 ];}
 function openPalette(){if(!palCmds.length)buildPalCmds();document.getElementById('pal').classList.add('on');document.getElementById('pal-q').value='';filterPal();document.getElementById('pal-q').focus();}
 function closePal(){document.getElementById('pal').classList.remove('on');}
-function filterPal(){const q=document.getElementById('pal-q').value.toLowerCase();palFiltered=q?palCmds.filter(c=>c.n.toLowerCase().includes(q)):palCmds;palSel=0;renderPal();}
+function filterPal(){const q=document.getElementById('pal-q').value.toLowerCase();const isAdmin=USER&&USER.role==='admin';const visible=palCmds.filter(c=>!c.adminOnly||isAdmin);palFiltered=q?visible.filter(c=>c.n.toLowerCase().includes(q)):visible;palSel=0;renderPal();}
 function renderPal(){const el=document.getElementById('pal-res');if(!palFiltered.length){el.innerHTML='<div class="pi-empty">No commands found</div>';return;}el.innerHTML=palFiltered.map((c,i)=>`<div class="pi${i===palSel?' on':''}" onclick="runPal(${i})"><span class="pi-ic">${c.ic}</span><span class="pi-name">${esc(c.n)}</span>${c.k?`<span class="pi-key">${c.k}</span>`:''}</div>`).join('');}
 function palKey(e){if(e.key==='ArrowDown'){palSel=Math.min(palSel+1,palFiltered.length-1);renderPal();}else if(e.key==='ArrowUp'){palSel=Math.max(palSel-1,0);renderPal();}else if(e.key==='Enter'){runPal(palSel);}else if(e.key==='Escape'){closePal();}}
 function runPal(i){if(palFiltered[i]){closePal();palFiltered[i].fn();}}

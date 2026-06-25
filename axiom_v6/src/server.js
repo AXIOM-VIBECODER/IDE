@@ -2100,10 +2100,23 @@ const server=http.createServer(async(req,res)=>{
   }
   // Kick off GitHub OAuth authorization flow.
   if(route==='/api/auth/github/start'&&req.method==='GET'){
-    if(!process.env.GITHUB_CLIENT_ID||!process.env.GITHUB_CLIENT_SECRET)
-      return sendJson(res,{error:'GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.'},501);
+    if(!process.env.GITHUB_CLIENT_ID||!process.env.GITHUB_CLIENT_SECRET){
+      const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>GitHub OAuth not configured</title>
+      <style>body{font-family:system-ui;background:#050a12;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+      .box{max-width:500px;padding:32px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:16px;text-align:center}
+      h2{color:#22d3ee;margin-top:0}code{background:rgba(34,211,238,.1);color:#22d3ee;padding:2px 8px;border-radius:4px;font-size:13px}
+      a{color:#22d3ee}</style></head><body><div class="box">
+      <h2>GitHub Login Not Configured</h2>
+      <p>To enable GitHub login, add these variables in Railway → Variables:</p>
+      <p><code>GITHUB_CLIENT_ID</code> and <code>GITHUB_CLIENT_SECRET</code></p>
+      <p style="font-size:12px;color:rgba(255,255,255,.4)">Create an OAuth App at <a href="https://github.com/settings/developers" target="_blank">github.com/settings/developers</a><br>
+      Set callback URL to: <code>${req.headers['x-forwarded-proto']||'https'}://${req.headers.host}/api/auth/github/callback</code></p>
+      <p><a href="/app">← Back to IDE</a></p></div></body></html>`;
+      res.writeHead(501,{'Content-Type':'text/html'});res.end(html);return;
+    }
     const state=OAuth.makeState('github');
     const redirect=OAuth.redirectUri('github',req);
+    console.log('[OAuth] GitHub redirect_uri:',redirect);
     const url='https://github.com/login/oauth/authorize?'+urlMod.format({query:{
       client_id:process.env.GITHUB_CLIENT_ID,redirect_uri:redirect,scope:'read:user user:email',state,allow_signup:'true'
     }}).slice(1);
