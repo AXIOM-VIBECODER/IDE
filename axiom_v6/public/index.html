@@ -3779,12 +3779,17 @@ body[data-t="dark"]{
       <div id="auth-token" style="display:none">
         <div class="auth-field">
           <label class="auth-label">Server Token</label>
-          <input type="password" class="auth-inp" id="tok-val" placeholder="Paste token from start.sh…" onkeydown="if(event.key==='Enter')saveServerToken()"/>
+          <div style="position:relative">
+            <input type="password" class="auth-inp" id="tok-val" placeholder="Paste your server token…" onkeydown="if(event.key==='Enter')saveServerToken()" style="padding-right:44px"/>
+            <button onclick="const i=document.getElementById('tok-val');i.type=i.type==='password'?'text':'password'" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:13px">👁</button>
+          </div>
         </div>
-        <p style="font-size:11px;color:var(--tx3);margin-bottom:12px;line-height:1.6">
-          Run <code style="color:var(--ac);font-family:JetBrains Mono,monospace">bash start.sh</code> and copy the token shown.<br>
-          You only need to do this once.
-        </p>
+        <div style="font-size:11px;color:rgba(255,255,255,.35);margin-bottom:14px;line-height:1.7;padding:10px;background:rgba(255,255,255,.03);border-radius:8px;border:1px solid rgba(255,255,255,.06)">
+          <b style="color:rgba(255,255,255,.6)">Where to find your token:</b><br>
+          • <b>Railway</b> → Deploy Logs → look for <code style="color:#22d3ee;font-size:10px">Token: abc123…</code><br>
+          • <b>Local</b> → run <code style="color:#22d3ee;font-size:10px">bash start.sh</code> in terminal<br>
+          <span style="color:rgba(255,255,255,.25)">Tip: set <code style="font-size:10px">AXIOM_TOKEN</code> in Railway Variables for a permanent stable token.</span>
+        </div>
         <button class="auth-btn" onclick="saveServerToken()">Save Token →</button>
         <div class="auth-err" id="tok-err"></div>
         <div class="auth-footer">After saving, <a onclick="switchAuthTab('signin')">sign in with your account</a></div>

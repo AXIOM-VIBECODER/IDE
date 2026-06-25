@@ -493,9 +493,17 @@ function unwatchDirectory(dir){
 }
 
 // ── Config ──────────────────────────────────────────────────────
-function loadCfg(){try{return JSON.parse(fs.readFileSync(CFG_FILE,'utf8'));}catch(e){}
-  const c={token:crypto.randomBytes(32).toString('hex'),created:new Date().toISOString()};
-  atomicWriteSync(CFG_FILE,JSON.stringify(c,null,2),{mode:0o600});return c;}
+function loadCfg(){
+  // AXIOM_TOKEN env var = stable token across Railway restarts/redeploys
+  const envToken=process.env.AXIOM_TOKEN;
+  try{
+    const c=JSON.parse(fs.readFileSync(CFG_FILE,'utf8'));
+    if(envToken&&c.token!==envToken){c.token=envToken;atomicWriteSync(CFG_FILE,JSON.stringify(c,null,2),{mode:0o600});}
+    return c;
+  }catch(e){}
+  const c={token:envToken||crypto.randomBytes(32).toString('hex'),created:new Date().toISOString()};
+  atomicWriteSync(CFG_FILE,JSON.stringify(c,null,2),{mode:0o600});return c;
+}
 const CFG=loadCfg();
 
 // ── Rate limiter ─────────────────────────────────────────────────
