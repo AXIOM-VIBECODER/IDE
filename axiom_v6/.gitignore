@@ -27,9 +27,14 @@ Desktop.ini
 # Linux
 *~
 
-# Build output
+# Build output (electron-builder output)
 dist/
 build/
+# Keep source assets in build/
+!build/icon.png
+!build/icon.ico
+!build/icon.icns
+!build/entitlements.mac.plist
 
 # Test coverage
 coverage/

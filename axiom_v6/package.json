@@ -23,6 +23,7 @@
     "test": "node --test tests/basic.test.js",
     "migrate": "node scripts/migrate.js",
     "lint": "node -c src/server.js && node scripts/lint-check.js",
+    "icons": "node scripts/generate-icons.js",
     "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
@@ -196,5 +197,8 @@
         "repo": "axiom"
       }
     ]
+  },
+  "optionalDependencies": {
+    "sharp": "^0.35.2"
   }
 }
