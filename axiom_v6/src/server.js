@@ -676,10 +676,12 @@ function initDbPool(cfg){
   try{
     if(dbPool){try{dbPool.end();}catch(e){}}
     const c=cfg||loadDbConfig();
-    dbPool=mysql.createPool({host:c.host,user:c.user,password:c.password,database:c.database,port:c.port||3306,waitForConnections:true,connectionLimit:10,queueLimit:0,timezone:'+00:00',decimalNumbers:true});
+    dbPool=mysql.createPool({host:c.host,user:c.user,password:c.password,database:c.database,port:c.port||3306,waitForConnections:true,connectionLimit:5,queueLimit:0,timezone:'+00:00',decimalNumbers:true,connectTimeout:5000,acquireTimeout:5000});
+    // Prevent unhandled 'error' events from crashing the process when MySQL is unavailable
+    dbPool.on('error',e=>{dbAvailable=false;dbLastError=e.message;console.warn('[DB] Pool error (MySQL offline):',e.message);});
     dbPool.getConnection().then(conn=>{
       dbAvailable=true;dbLastError='';
-      console.log('[DB] Connected to MySQL at '+c.host+':'+( c.port||3306)+'/'+c.database);
+      console.log('[DB] Connected to MySQL at '+c.host+':'+(c.port||3306)+'/'+c.database);
       initDbSchema().catch(e=>console.warn('[DB] Schema init:',e.message));
       conn.release();
     }).catch(e=>{dbAvailable=false;dbLastError=e.message;console.warn('[DB] MySQL not available:',e.message);});
@@ -3748,9 +3750,9 @@ process.on('unhandledRejection',(reason)=>{logError('Unhandled rejection: '+reas
 
 // ── Start ────────────────────────────────────────────────────────
 const BIND_HOST=process.env.NODE_ENV==='production'?'0.0.0.0':'127.0.0.1';
-server.listen(PORT,BIND_HOST,async ()=>{
+server.listen(PORT,BIND_HOST,async ()=>{try{
   // Test DB connectivity
-  if(dbPool){try{await dbPool.query('SELECT 1');dbAvailable=true;}catch(e){console.warn('[DB] MySQL not available:',e.message);dbAvailable=false;}}
+  if(dbPool){try{const c=await Promise.race([dbPool.query('SELECT 1'),new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),3000))]);void c;dbAvailable=true;}catch(e){console.warn('[DB] MySQL not available:',e.message);dbAvailable=false;}}
   if(dbAvailable)await DB.seedDemo();
   const mem=Mem.startSession();const hasKey=!!getKey();
   console.log('\n  ╔══════════════════════════════════════════════════════════════╗');
@@ -3770,6 +3772,7 @@ server.listen(PORT,BIND_HOST,async ()=>{
     const open=process.platform==='darwin'?'open':process.platform==='win32'?'start':'xdg-open';
     require('child_process').exec(`${open} http://localhost:${PORT}`);
   }
+}catch(e){console.error('[STARTUP ERROR]',e.message,e.stack);}
 });
 
 // ════ USER AUTH — Sign in like Cursor/Windsurf/Zed ════
