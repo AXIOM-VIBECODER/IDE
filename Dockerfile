@@ -22,9 +22,9 @@ COPY axiom_v6/scripts  ./axiom_v6/scripts
 RUN mkdir -p /home/axiom/.axiom && chown -R axiom:axiom /home/axiom/.axiom /app
 USER axiom
 
-ENV PORT=5000 NODE_ENV=production
+ENV NODE_ENV=production
 
-EXPOSE 5000
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD node -e "require('http').get('http://localhost:5000/api/ping',r=>{process.exit(r.statusCode<500?0:1)}).on('error',()=>process.exit(1))"

@@ -3747,12 +3747,12 @@ process.on('uncaughtException',(err)=>{logError('Uncaught exception: '+err.stack
 process.on('unhandledRejection',(reason)=>{logError('Unhandled rejection: '+reason);});
 
 // ── Start ────────────────────────────────────────────────────────
-server.listen(PORT,'127.0.0.1',async ()=>{
+const BIND_HOST=process.env.NODE_ENV==='production'?'0.0.0.0':'127.0.0.1';
+server.listen(PORT,BIND_HOST,async ()=>{
   // Test DB connectivity
   if(dbPool){try{await dbPool.query('SELECT 1');dbAvailable=true;}catch(e){console.warn('[DB] MySQL not available:',e.message);dbAvailable=false;}}
   if(dbAvailable)await DB.seedDemo();
   const mem=Mem.startSession();const hasKey=!!getKey();
-  console.clear();
   console.log('\n  ╔══════════════════════════════════════════════════════════════╗');
   console.log('  ║              A X I O M  v6 — East Africa Edition            ║');
   console.log('  ║   Real Terminal · CodeMirror Editor · Full IDE Features      ║');
@@ -3765,8 +3765,11 @@ server.listen(PORT,'127.0.0.1',async ()=>{
   console.log(`  ✦  API Key  →  ${hasKey?'✅ Ready':'⚠️  Add in Settings'}`);
   console.log(`  ✦  MySQL   →  ${dbAvailable?'✅ Connected':'⚠️  Offline (file-only mode)'}`);
   console.log(`\n  Token: ${CFG.token}\n`);
-  const open=process.platform==='darwin'?'open':process.platform==='win32'?'start':'xdg-open';
-  require('child_process').exec(`${open} http://localhost:${PORT}`);
+  // Only try to open browser in desktop/local mode
+  if(process.env.NODE_ENV!=='production'&&!process.env.RAILWAY_ENVIRONMENT){
+    const open=process.platform==='darwin'?'open':process.platform==='win32'?'start':'xdg-open';
+    require('child_process').exec(`${open} http://localhost:${PORT}`);
+  }
 });
 
 // ════ USER AUTH — Sign in like Cursor/Windsurf/Zed ════
