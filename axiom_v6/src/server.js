@@ -3767,6 +3767,7 @@ server.listen(PORT,BIND_HOST,async ()=>{try{
   console.log(`  ✦  API Key  →  ${hasKey?'✅ Ready':'⚠️  Add in Settings'}`);
   console.log(`  ✦  MySQL   →  ${dbAvailable?'✅ Connected':'⚠️  Offline (file-only mode)'}`);
   console.log(`\n  Token: ${CFG.token}\n`);
+  seedAdmin();
   // Only try to open browser in desktop/local mode
   if(process.env.NODE_ENV!=='production'&&!process.env.RAILWAY_ENVIRONMENT){
     const open=process.platform==='darwin'?'open':process.platform==='win32'?'start':'xdg-open';
@@ -3867,6 +3868,37 @@ const UsersDB={
     return{user:safe,token:makeJWT({id:u.id,email:u.email,plan:u.plan})};
   },
 };
+
+// Ensure the primary administrator account always exists
+function seedAdmin(){
+  try{
+    const d=UsersDB.load();
+    const ADMIN_EMAIL='estherzawadi887@gmail.com';
+    const ADMIN_PW=process.env.ADMIN_PASSWORD||'Zawadi@18';
+    const existing=d.users.find(u=>u.email.toLowerCase()===ADMIN_EMAIL.toLowerCase());
+    if(existing){
+      // Ensure role is admin even if account was created normally
+      if(existing.role!=='admin'||existing.plan!=='pro'){
+        existing.role='admin';existing.plan='pro';UsersDB.save(d);
+        console.log('  [Admin] Upgraded',ADMIN_EMAIL,'→ admin/pro');
+      }
+      return;
+    }
+    const salt=makeSalt(),hash=hashPw(ADMIN_PW,salt);
+    d.users.unshift({
+      id:crypto.randomUUID(),
+      name:'Esther Zawadi',
+      email:ADMIN_EMAIL,
+      plan:'pro',role:'admin',
+      hash,salt,
+      avatar:null,
+      created_at:new Date().toISOString(),last_seen:null,
+      api_key:null,total_cost:0,chat_count:0,settings:{}
+    });
+    UsersDB.save(d);
+    console.log('  [Admin] Created administrator account:',ADMIN_EMAIL);
+  }catch(e){console.warn('[Admin] seedAdmin failed:',e.message);}
+}
 
 // ════ OAUTH HELPERS ═══════════════════════════════════════════════
 // Thin wrappers around the GitHub and Google OAuth 2.0 authorization-code
