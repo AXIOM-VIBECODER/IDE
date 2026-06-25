@@ -946,7 +946,7 @@ Always write production-ready code: error handling, types, imports, edge cases. 
 
 // ── Helpers ──────────────────────────────────────────────────────
 function getKey(k){if(k)return k;if(process.env.ANTHROPIC_API_KEY)return process.env.ANTHROPIC_API_KEY;try{return fs.readFileSync(KEY_FILE,'utf8').trim();}catch(e){return'';}}
-function getAIProvider(){try{return JSON.parse(fs.readFileSync(AI_PROVIDER_FILE,'utf8'));}catch(e){return{provider:'anthropic',model:'claude-sonnet-4-20250514',baseUrl:''};}}
+function getAIProvider(){try{return JSON.parse(fs.readFileSync(AI_PROVIDER_FILE,'utf8'));}catch(e){return{provider:'anthropic',model:'claude-sonnet-4-6',baseUrl:''};}}
 function saveAIProvider(cfg){atomicWriteSync(AI_PROVIDER_FILE,JSON.stringify(cfg,null,2));}
 
 // ══════════════════════════════════════════════════════════════
@@ -958,7 +958,7 @@ const ORCHESTRA_FILE=path.join(DATA,'ai_orchestra.json');
 const ORCHESTRA_DEFAULTS={
   architect:{provider:'anthropic',model:'claude-opus-4-8',baseUrl:'',
     systemPrompt:'You are a senior software architect. Analyze requirements and produce a clear, structured implementation plan. Output only the plan — numbered steps, component names, data flow, edge cases. No code yet.'},
-  coder:{provider:'anthropic',model:'claude-sonnet-4-20250514',baseUrl:'',
+  coder:{provider:'anthropic',model:'claude-sonnet-4-6',baseUrl:'',
     systemPrompt:'You are an expert software engineer. Given an architecture plan, implement clean, production-ready code. Output only the code with minimal inline comments. No explanations.'},
   documenter:{provider:'anthropic',model:'claude-haiku-4-5-20251001',baseUrl:'',
     systemPrompt:'You are a technical writer. Given code, produce concise, clear documentation: a JSDoc/docstring header, a short usage example, and a brief API table if relevant. Output markdown.'}
@@ -977,7 +977,7 @@ async function aiCallRole(role,system,messages,{max_tokens=4096}={}){
   const prov={...getAIProvider(),...roleCfg};
   if(prov.provider==='anthropic'){
     const key=getKey();if(!key)throw new Error('No Anthropic key — add in Settings ⚙');
-    const model=prov.model||'claude-sonnet-4-20250514';
+    const model=prov.model||'claude-sonnet-4-6';
     const rb=JSON.stringify({model,max_tokens,system:system||roleCfg.systemPrompt,messages});
     const result=await new Promise((resolve,reject)=>{
       const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
@@ -1005,7 +1005,7 @@ async function aiCall(system,messages,{apiKey,max_tokens=4096}={}){
   const prov=getAIProvider();
   if(prov.provider==='anthropic'){
     const key=apiKey||getKey();if(!key)throw new Error('No API key — add in Settings ⚙');
-    const model=prov.model||'claude-sonnet-4-20250514';
+    const model=prov.model||'claude-sonnet-4-6';
     const rb=JSON.stringify({model,max_tokens,system,messages});
     const result=await new Promise((resolve,reject)=>{
       const r=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(resp)=>{let d='';resp.on('data',c=>d+=c);resp.on('end',()=>{try{resolve(JSON.parse(d));}catch(e){reject(e);}});});
@@ -1036,7 +1036,7 @@ function aiStream(system,messages,{apiKey,max_tokens=8192}={},httpRes){
   if(prov.provider==='anthropic'){
     const key=apiKey||getKey();
     if(!key){httpRes.end('data: {"type":"error","error":{"message":"No API key — add in Settings"}}\n\n');return;}
-    const model=prov.model||'claude-sonnet-4-20250514';
+    const model=prov.model||'claude-sonnet-4-6';
     const rb=JSON.stringify({model,max_tokens,stream:true,system,messages});
     const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},(apiRes)=>{apiRes.on('data',chunk=>httpRes.write(chunk));apiRes.on('end',()=>httpRes.end());});
     apiReq.on('error',e=>{httpRes.end('data: {"type":"error","error":{"message":"'+e.message+'"}}\n\n');});
@@ -1387,7 +1387,7 @@ const server=http.createServer(async(req,res)=>{
   if(route==='/api/ai/models'&&req.method==='GET'){
     const prov=getAIProvider();
     if(prov.provider==='anthropic'){
-      return sendJson(res,{models:['claude-opus-4-8','claude-sonnet-4-6','claude-sonnet-4-20250514','claude-haiku-4-5-20251001'],provider:'anthropic'});
+      return sendJson(res,{models:['claude-opus-4-8','claude-sonnet-4-6','claude-haiku-4-5-20251001'],provider:'anthropic'});
     }
     const baseUrl=prov.baseUrl||(prov.provider==='lmstudio'?'http://localhost:1234':'http://localhost:11434');
     try{
@@ -1806,7 +1806,7 @@ const server=http.createServer(async(req,res)=>{
     res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','Access-Control-Allow-Origin':'*','X-Accel-Buffering':'no'});
     const prov=getAIProvider();
     if(prov.provider==='anthropic'){
-      const rb=JSON.stringify({model:prov.model||'claude-sonnet-4-20250514',max_tokens:8192,stream:true,system:sysPrompt(projCtx+fileCtx+relCtx),messages:msgs});
+      const rb=JSON.stringify({model:prov.model||'claude-sonnet-4-6',max_tokens:8192,stream:true,system:sysPrompt(projCtx+fileCtx+relCtx),messages:msgs});
       const inputTokens=Math.ceil(Buffer.byteLength(rb)/4);
       const apiReq=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(rb)}},apiRes=>{
         let full='';let outputTokens=0;
