@@ -1362,8 +1362,18 @@ const server=http.createServer(async(req,res)=>{
   if(route==='/api/plans')return sendJson(res,{plans:PLANS});
 
   // API key
-  if(route==='/api/key'&&req.method==='GET'){const k=getKey();return sendJson(res,{hasKey:!!k,masked:k?k.slice(0,14)+'••••':''});}
-  if(route==='/api/key'&&req.method==='POST'){if(!(data.key||'').startsWith('sk-ant-'))return sendJson(res,{error:'Invalid key'},400);atomicWriteSync(KEY_FILE,data.key,{mode:0o600});return sendJson(res,{ok:true});}
+  if(route==='/api/key'&&req.method==='GET'){
+    const k=getKey();
+    const fromEnv=!!(process.env.ANTHROPIC_API_KEY);
+    return sendJson(res,{hasKey:!!k,masked:k?k.slice(0,14)+'••••':'',fromEnv});
+  }
+  if(route==='/api/key'&&req.method==='POST'){
+    const k=(data.key||'').trim();
+    if(!k)return sendJson(res,{error:'Paste your Anthropic API key (starts with sk-ant-)'},400);
+    if(!k.startsWith('sk-ant-'))return sendJson(res,{error:'Key must start with sk-ant- (get yours at console.anthropic.com)'},400);
+    atomicWriteSync(KEY_FILE,k,{mode:0o600});
+    return sendJson(res,{ok:true});
+  }
 
   // ── AI Provider config (Anthropic / Ollama / LM Studio) ──────────
   if(route==='/api/ai/provider'&&req.method==='GET'){return sendJson(res,getAIProvider());}

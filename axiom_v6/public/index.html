@@ -18289,12 +18289,19 @@ function buildSettingsFP() {
       </div>
       <div class="sfp-section">
         <div class="sfp-section-title">Anthropic API Key</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="password" class="sfp-input" id="sfp-ant-key" placeholder="sk-ant-…" style="flex:1"/>
-          <button class="sfp-btn" onclick="sfpSaveKey()">Save</button>
+        <div id="sfp-key-env-notice" style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.2);border-radius:8px;font-size:11px;color:#22d3ee">
+          ✅ Key loaded from <code>ANTHROPIC_API_KEY</code> environment variable — permanently active.
         </div>
-        <div id="sfp-key-status" class="sfp-status"></div>
-        <div style="font-size:10px;color:var(--tx3);margin-top:8px">Get your key at <a href="https://console.anthropic.com" target="_blank" style="color:var(--ac)">console.anthropic.com</a></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="password" class="sfp-input" id="sfp-ant-key" placeholder="sk-ant-api03-…" style="flex:1"/>
+          <button onclick="const i=document.getElementById('sfp-ant-key');i.type=i.type==='password'?'text':'password'" style="padding:8px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:6px;color:var(--tx3);cursor:pointer">👁</button>
+          <button class="sfp-btn" onclick="sfpSaveKey()">Save Key</button>
+        </div>
+        <div id="sfp-key-status" class="sfp-status" style="margin-top:8px"></div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:8px;line-height:1.7">
+          Get your key at <a href="https://console.anthropic.com" target="_blank" style="color:var(--ac)">console.anthropic.com</a> → API Keys<br>
+          <span style="color:rgba(255,255,255,.25)">⚡ <b>Production tip:</b> set <code style="color:var(--ac)">ANTHROPIC_API_KEY</code> in Railway Variables — survives restarts &amp; redeploys.</span>
+        </div>
       </div>
     </div>
 
@@ -18554,12 +18561,22 @@ window.sfpTestAI = async function() {
 
 window.sfpLoadAI = async function() {
   try {
-    const r = await api('GET', '/api/ai/provider');
+    const [r, kr] = await Promise.all([api('GET', '/api/ai/provider'), api('GET', '/api/key')]);
     const p=document.getElementById('sfp-ai-prov'); if(p)p.value=r.provider||'anthropic';
     sfpProvChange();
     await sfpFetchModels();
     const m=document.getElementById('sfp-ai-model'); if(m&&r.model){const opt=[...m.options].find(o=>o.value===r.model);if(opt)opt.selected=true;}
     const u=document.getElementById('sfp-ai-url'); if(u)u.value=r.baseUrl||'';
+    // Show status about API key
+    const envNotice = document.getElementById('sfp-key-env-notice');
+    const st = document.getElementById('sfp-key-status');
+    if (kr.fromEnv) {
+      if (envNotice) envNotice.style.display = '';
+    } else if (kr.hasKey) {
+      if (st) { st.className='sfp-status ok'; st.textContent='✓ Key active: '+kr.masked; }
+    } else {
+      if (st) { st.className='sfp-status err'; st.textContent='⚠ No API key — paste your sk-ant- key above'; }
+    }
   } catch(e) {}
 };
 
