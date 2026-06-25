@@ -1,0 +1,15 @@
+# AXIOM IDE — Railway/Nixpacks build config
+# App code lives in axiom_v6/ — this file tells Railway how to build and start it
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "git", "python3"]
+
+[phases.install]
+# Install production deps from axiom_v6/package.json into axiom_v6/node_modules
+cmds = ["npm install --prefix axiom_v6 --production"]
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "node axiom_v6/src/server.js"

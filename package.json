@@ -1,0 +1,12 @@
+{
+  "name": "axiom-ide",
+  "version": "6.0.0",
+  "description": "AXIOM IDE v6 — AI-Powered IDE, East Africa Edition",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "npm install --prefix axiom_v6 --production",
+    "start": "node axiom_v6/src/server.js"
+  }
+}
