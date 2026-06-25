@@ -650,21 +650,54 @@ const TOKEN_TOPUP_PRICES=[
 // ── MySQL Database ───────────────────────────────────────────────
 const DB_PASS=process.env.DB_PASS;
 if(!DB_PASS&&process.env.NODE_ENV==='production'){console.error('FATAL: DB_PASS environment variable is required in production');process.exit(1);}
+const DB_CONFIG_FILE=path.join(DATA,'db_config.json');
+
+function loadDbConfig(){
+  // Priority: env vars → ~/.axiom/db_config.json → defaults
+  try{
+    const saved=JSON.parse(fs.readFileSync(DB_CONFIG_FILE,'utf8'));
+    return{
+      host:process.env.DB_HOST||saved.host||'localhost',
+      user:process.env.DB_USER||saved.user||'root',
+      password:process.env.DB_PASS||saved.password||'',
+      database:process.env.DB_NAME||saved.database||'axiom',
+      port:+(process.env.DB_PORT||saved.port||3306)
+    };
+  }catch(e){
+    return{host:process.env.DB_HOST||'localhost',user:process.env.DB_USER||'root',password:process.env.DB_PASS||DB_PASS||'',database:process.env.DB_NAME||'axiom',port:+(process.env.DB_PORT||3306)};
+  }
+}
+
 let dbPool=null;
 let dbAvailable=false;
-try{
-  dbPool=mysql.createPool({
-    host:process.env.DB_HOST||'localhost',
-    user:process.env.DB_USER||'root',
-    password:DB_PASS||'',
-    database:process.env.DB_NAME||'axiom',
-    waitForConnections:true,
-    connectionLimit:10,
-    queueLimit:0,
-    timezone:'+00:00',
-    decimalNumbers:true
-  });
-}catch(e){console.warn('[DB] MySQL pool creation failed:',e.message);}
+let dbLastError='';
+
+function initDbPool(cfg){
+  try{
+    if(dbPool){try{dbPool.end();}catch(e){}}
+    const c=cfg||loadDbConfig();
+    dbPool=mysql.createPool({host:c.host,user:c.user,password:c.password,database:c.database,port:c.port||3306,waitForConnections:true,connectionLimit:10,queueLimit:0,timezone:'+00:00',decimalNumbers:true});
+    dbPool.getConnection().then(conn=>{
+      dbAvailable=true;dbLastError='';
+      console.log('[DB] Connected to MySQL at '+c.host+':'+( c.port||3306)+'/'+c.database);
+      initDbSchema().catch(e=>console.warn('[DB] Schema init:',e.message));
+      conn.release();
+    }).catch(e=>{dbAvailable=false;dbLastError=e.message;console.warn('[DB] MySQL not available:',e.message);});
+  }catch(e){dbAvailable=false;dbLastError=e.message;console.warn('[DB] MySQL pool creation failed:',e.message);}
+}
+
+async function initDbSchema(){
+  if(!dbPool||!dbAvailable)return;
+  const ddl=[
+    `CREATE TABLE IF NOT EXISTS users (id VARCHAR(36) PRIMARY KEY, name VARCHAR(255), email VARCHAR(255) UNIQUE, plan VARCHAR(50) DEFAULT 'free', role VARCHAR(50) DEFAULT 'user', status VARCHAR(50) DEFAULT 'active', total_paid DECIMAL(10,2) DEFAULT 0, total_cost DECIMAL(10,4) DEFAULT 0, chat_count INT DEFAULT 0, tokens_in BIGINT DEFAULT 0, tokens_out BIGINT DEFAULT 0, tokens_used_month BIGINT DEFAULT 0, bonus_tokens BIGINT DEFAULT 0, month_reset_at DATETIME, last_seen DATETIME, avatar_url VARCHAR(500), github_id VARCHAR(100), google_id VARCHAR(100), created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+    `CREATE TABLE IF NOT EXISTS payments (id VARCHAR(36) PRIMARY KEY, user_id VARCHAR(36), email VARCHAR(255), name VARCHAR(255), plan VARCHAR(50), amount DECIMAL(10,2), status VARCHAR(50), type VARCHAR(50), stripe_id VARCHAR(255), created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+    `CREATE TABLE IF NOT EXISTS usage_log (id VARCHAR(36) PRIMARY KEY, user_id VARCHAR(36), action VARCHAR(100), tokens_in INT DEFAULT 0, tokens_out INT DEFAULT 0, cost DECIMAL(10,6) DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+    `CREATE TABLE IF NOT EXISTS audit_log (id INT AUTO_INCREMENT PRIMARY KEY, user_id VARCHAR(36), action VARCHAR(100), resource VARCHAR(255), details TEXT, ip_address VARCHAR(50), created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`
+  ];
+  for(const sql of ddl){try{await dbPool.query(sql);}catch(e){console.warn('[DB] DDL:',e.message);}}
+}
+
+initDbPool();
 
 const DB={
   async createUser(o){
@@ -1272,7 +1305,8 @@ const server=http.createServer(async(req,res)=>{
     '/api/auth/register','/api/auth/login','/api/auth/providers',
     '/api/auth/github/start','/api/auth/github/callback',
     '/api/auth/google/start','/api/auth/google/callback',
-    '/api/admin/login','/api/billing/paystack/webhook'];
+    '/api/admin/login','/api/billing/paystack/webhook',
+    '/api/db/status','/api/db/config','/api/db/init-schema'];
   if(route.startsWith('/api/')&&!PUBLIC.includes(route)){
     const tok=req.headers['x-axiom-token']||q.token||'';
     if(tok!==CFG.token){
@@ -2333,6 +2367,48 @@ const server=http.createServer(async(req,res)=>{
     atomicWriteSync(PAYSTACK_FILE,JSON.stringify(c,null,2),{mode:0o600});
     auditLog('paystack_config_update',{},req);
     return sendJson(res,{ok:true});
+  }
+
+  // ── Database config + health ──────────────────────────────────
+  if(route==='/api/db/status'&&req.method==='GET'){
+    if(!dbPool)return sendJson(res,{connected:false,error:'No database pool — configure MySQL in Settings'});
+    try{
+      const conn=await dbPool.getConnection();
+      const [[row]]=await conn.query('SELECT VERSION() AS v');
+      conn.release();
+      dbAvailable=true;dbLastError='';
+      const cfg=loadDbConfig();
+      return sendJson(res,{connected:true,version:row.v,host:cfg.host,port:cfg.port||3306,database:cfg.database,user:cfg.user});
+    }catch(e){dbAvailable=false;dbLastError=e.message;return sendJson(res,{connected:false,error:e.message});}
+  }
+  if(route==='/api/db/config'&&req.method==='GET'){
+    try{
+      const c=JSON.parse(fs.readFileSync(DB_CONFIG_FILE,'utf8'));
+      return sendJson(res,{configured:true,host:c.host||'',user:c.user||'',database:c.database||'',port:c.port||3306,hasPassword:!!(c.password)});
+    }catch(e){
+      return sendJson(res,{configured:false,host:process.env.DB_HOST||'localhost',user:process.env.DB_USER||'root',database:process.env.DB_NAME||'axiom',port:+(process.env.DB_PORT||3306),hasPassword:!!(process.env.DB_PASS||DB_PASS)});
+    }
+  }
+  if(route==='/api/db/config'&&req.method==='POST'){
+    const{host='localhost',user='root',password='',database='axiom',port=3306}=data;
+    if(!host||!user||!database)return sendJson(res,{error:'host, user, and database are required'},400);
+    const cfg={host,user,password,database,port:+port||3306,updated:new Date().toISOString()};
+    // Test connection before saving
+    try{
+      const testPool=mysql.createPool({host,user,password,database,port:+port||3306,connectionLimit:1});
+      const conn=await testPool.getConnection();
+      const[[row]]=await conn.query('SELECT VERSION() AS v');
+      conn.release();await testPool.end();
+      atomicWriteSync(DB_CONFIG_FILE,JSON.stringify(cfg,null,2),{mode:0o600});
+      initDbPool(cfg); // reinit live pool
+      auditLog('db_config_update',{host,user,database},req);
+      return sendJson(res,{ok:true,version:row.v,message:'Connected to '+database+' on '+host});
+    }catch(e){return sendJson(res,{error:'Connection failed: '+e.message},400);}
+  }
+  if(route==='/api/db/init-schema'&&req.method==='POST'){
+    if(!dbPool||!dbAvailable)return sendJson(res,{error:'Database not connected'},503);
+    try{await initDbSchema();return sendJson(res,{ok:true,message:'Schema initialized'});}
+    catch(e){return sendJson(res,{error:e.message},500);}
   }
 
   // Collaboration management API

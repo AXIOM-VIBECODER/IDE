@@ -4087,7 +4087,7 @@ body[data-t="dark"]{
       <button class="ab-btn" id="ab-ext" onclick="abClick('ext')" title="Extensions (Ctrl+Shift+X)">⧉</button>
       <div class="ab-spacer"></div>
       <button class="ab-btn" id="ab-mem" onclick="abClick('mem')" title="Memory">⧫</button>
-      <button class="ab-btn" id="ab-set" onclick="abClick('set')" title="Settings (Ctrl+,)">⚙</button>
+      <button class="ab-btn" id="ab-set" onclick="openSettingsFullPage()" title="Settings (Ctrl+,)">⚙</button>
     </div>
 
     <!-- PROJECT PANEL -->
@@ -10302,9 +10302,8 @@ function applyExternalSettings(s){
   if(s.autosaveDelay!=null&&!isNaN(+s.autosaveDelay))window.AUTOSAVE_DELAY=+s.autosaveDelay;
   try{applyPrefs();}catch(e){}
 }
-function openSettingsPage(){
-  const w=window.open('/settings.html','axiom-settings','width=960,height=760,menubar=no,toolbar=no,location=no');
-  if(!w){notif('Pop-up blocked — opening in current tab','warn');location.href='/settings.html';}
+function openSettingsPage(section){
+  if(typeof openSettingsFullPage==='function') openSettingsFullPage(section);
 }
 // Listen for live changes from the standalone Settings page
 try{
@@ -18086,6 +18085,554 @@ window.openImagePreview = openImagePreview;
 if (window._monacoLoaded && typeof monaco !== 'undefined') {
   requestAnimationFrame(() => initMonacoEditors());
 }
+
+// ══════════════════════════════════════════════════════════════
+// FULL-PAGE SETTINGS
+// ══════════════════════════════════════════════════════════════
+(function() {
+const SETTINGS_NAV = [
+  { id:'general',    icon:'⚡', label:'General' },
+  { id:'appearance', icon:'🎨', label:'Appearance' },
+  { id:'ai',         icon:'🤖', label:'AI Provider' },
+  { id:'orchestra',  icon:'🎼', label:'AI Orchestra' },
+  { id:'keys',       icon:'🔑', label:'API Keys' },
+  { id:'database',   icon:'🗄️', label:'Database' },
+  { id:'features',   icon:'🧩', label:'Features' },
+  { id:'keyboard',   icon:'⌨️', label:'Keyboard' },
+];
+
+let _sfpOpen = false;
+let _sfpSection = 'general';
+
+function buildSettingsFP() {
+  if (document.getElementById('sfp-ov')) return;
+  const el = document.createElement('div');
+  el.id = 'sfp-ov';
+  el.innerHTML = `
+<style>
+#sfp-ov{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9000;display:none;align-items:stretch;justify-content:center;backdrop-filter:blur(4px)}
+#sfp-wrap{display:flex;width:min(900px,96vw);height:min(700px,92vh);background:var(--panel);border:1px solid var(--border2);border-radius:14px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.6);margin:auto}
+#sfp-nav{width:200px;flex-shrink:0;background:var(--bg);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 0}
+#sfp-nav-title{font-size:13px;font-weight:700;color:var(--tx);padding:0 16px 12px;border-bottom:1px solid var(--border);margin-bottom:8px;letter-spacing:.3px}
+.sfp-nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;font-size:12px;color:var(--tx2);border-left:2px solid transparent;transition:all .1s}
+.sfp-nav-item:hover{background:var(--surface);color:var(--tx)}
+.sfp-nav-item.active{background:var(--ac4);color:var(--ac);border-left-color:var(--ac);font-weight:600}
+.sfp-nav-item .sfp-ni{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+#sfp-content{flex:1;overflow-y:auto;padding:28px 32px}
+#sfp-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+#sfp-title{font-size:18px;font-weight:700;color:var(--tx)}
+#sfp-close{background:none;border:none;color:var(--tx3);cursor:pointer;font-size:20px;padding:4px 8px;border-radius:4px}
+#sfp-close:hover{background:var(--surface);color:var(--tx)}
+.sfp-page{display:none}
+.sfp-page.active{display:block}
+.sfp-section{margin-bottom:28px}
+.sfp-section-title{font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.sfp-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}
+.sfp-row:last-child{border-bottom:none}
+.sfp-label{font-size:12px;color:var(--tx);flex:1}
+.sfp-desc{font-size:10px;color:var(--tx3);margin-top:1px}
+.sfp-ctrl{flex-shrink:0;margin-left:16px}
+.sfp-select{background:var(--surface);border:1px solid var(--border2);border-radius:5px;color:var(--tx);font-size:11px;padding:4px 8px;min-width:120px}
+.sfp-input{background:var(--surface);border:1px solid var(--border2);border-radius:5px;color:var(--tx);font-size:11px;padding:5px 8px;width:100%;box-sizing:border-box}
+.sfp-btn{padding:7px 16px;background:var(--ac);border:none;border-radius:6px;color:#000;font-size:12px;font-weight:600;cursor:pointer}
+.sfp-btn.sec{background:var(--surface);border:1px solid var(--border);color:var(--tx)}
+.sfp-btn.danger{background:var(--red);color:#fff}
+.sfp-toggle{position:relative;display:inline-block;width:36px;height:20px}
+.sfp-toggle input{opacity:0;width:0;height:0}
+.sfp-slider{position:absolute;inset:0;background:var(--surface);border:1px solid var(--border2);border-radius:20px;cursor:pointer;transition:.2s}
+.sfp-slider:before{content:'';position:absolute;width:14px;height:14px;left:2px;top:2px;background:var(--tx3);border-radius:50%;transition:.2s}
+.sfp-toggle input:checked + .sfp-slider{background:var(--ac);border-color:var(--ac)}
+.sfp-toggle input:checked + .sfp-slider:before{transform:translateX(16px);background:#000}
+.sfp-status{font-size:11px;padding:6px 10px;border-radius:5px;margin-top:8px;display:none}
+.sfp-status.ok{background:rgba(141,190,110,.15);color:var(--green);border:1px solid rgba(141,190,110,.3);display:block}
+.sfp-status.err{background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.2);display:block}
+.sfp-status.info{background:var(--ac4);color:var(--ac);border:1px solid var(--ac);display:block}
+.kb-grid{display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center}
+.kb-key{font-size:11px;color:var(--tx);padding:3px 0}
+.kb-badge{font-size:10px;font-family:'JetBrains Mono',monospace;background:var(--surface);border:1px solid var(--border2);border-radius:3px;padding:2px 6px;color:var(--tx2)}
+</style>
+<div id="sfp-wrap">
+  <nav id="sfp-nav">
+    <div id="sfp-nav-title">⚙ Settings</div>
+    ${SETTINGS_NAV.map(n=>`<div class="sfp-nav-item" data-sec="${n.id}" onclick="sfpGo('${n.id}')"><span class="sfp-ni">${n.icon}</span>${n.label}</div>`).join('')}
+    <div style="margin-top:auto;padding:12px 16px;border-top:1px solid var(--border)">
+      <div style="font-size:10px;color:var(--tx3)">AXIOM IDE v6</div>
+      <div style="font-size:10px;color:var(--tx3);margin-top:2px">East Africa Edition</div>
+    </div>
+  </nav>
+  <div id="sfp-content">
+    <div id="sfp-hdr">
+      <div id="sfp-title">General</div>
+      <button id="sfp-close" onclick="closeSettingsFP()" title="Close (Esc)">✕</button>
+    </div>
+
+    <!-- GENERAL -->
+    <div class="sfp-page active" id="sfp-page-general">
+      <div class="sfp-section">
+        <div class="sfp-section-title">Editor</div>
+        <div class="sfp-row"><div><div class="sfp-label">Font Size</div></div><div class="sfp-ctrl"><select class="sfp-select" id="sfp-fs" onchange="sfpApply()"><option value="12">12px</option><option value="13">13px</option><option value="14" selected>14px</option><option value="15">15px</option><option value="16">16px</option><option value="18">18px</option></select></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Tab Size</div></div><div class="sfp-ctrl"><select class="sfp-select" id="sfp-ts" onchange="sfpApply()"><option value="2">2 spaces</option><option value="4" selected>4 spaces</option><option value="8">8 spaces</option></select></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Word Wrap</div><div class="sfp-desc">Wrap long lines in the editor</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-wrap" onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Minimap</div><div class="sfp-desc">Code overview on the right</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-minimap" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Auto Save</div><div class="sfp-desc">Save files automatically on edit</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-autosave" onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Indent Guides</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-indent" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Bracket Match</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-bracket" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Auto Lint</div><div class="sfp-desc">Show problems in real time</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-lint" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+      </div>
+      <div class="sfp-section">
+        <div class="sfp-section-title">Terminal</div>
+        <div class="sfp-row"><div><div class="sfp-label">Default Shell</div></div><div class="sfp-ctrl"><select class="sfp-select" id="sfp-shell"><option value="bash">bash</option><option value="zsh">zsh</option><option value="fish">fish</option><option value="sh">sh</option></select></div></div>
+      </div>
+    </div>
+
+    <!-- APPEARANCE -->
+    <div class="sfp-page" id="sfp-page-appearance">
+      <div class="sfp-section">
+        <div class="sfp-section-title">Theme</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:4px" id="sfp-theme-grid">
+          ${[['dark','AXIOM Dark','#0d0d0d','#f5c518'],['vscode-dark','VS Code Dark+','#1e1e1e','#569cd6'],['zed-light','Zed Light','#f5f5f0','#5500ff'],['windsurf','Windsurf Blue','#0a0f1e','#22d3ee'],['monokai','Monokai','#272822','#a6e22e'],['github','GitHub Dark','#0d1117','#58a6ff'],['dracula','Dracula','#282a36','#bd93f9'],['savanna','Savanna Sunset','#1a1208','#e8a020'],['kilimanjaro','Kilimanjaro','#1a1a2e','#00d4ff'],['maasai','Maasai Red','#1a0505','#e63946'],['ocean','Indian Ocean','#0a1628','#00b4d8']].map(([v,n,bg,ac])=>`
+          <div onclick="sfpSetTheme('${v}')" data-theme="${v}" style="padding:12px;background:${bg};border-radius:8px;cursor:pointer;border:2px solid transparent;transition:border-color .15s" class="sfp-theme-opt">
+            <div style="font-size:11px;font-weight:600;color:${ac}">${n}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.4);margin-top:2px">${bg}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="sfp-section">
+        <div class="sfp-section-title">Advanced</div>
+        <div class="sfp-row"><div><div class="sfp-label">Sticky Scroll</div><div class="sfp-desc">Freeze current scope header while scrolling</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-sticky" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Show Whitespace</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-whitespace" onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Scroll Past End</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-scrollpast" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+      </div>
+    </div>
+
+    <!-- AI PROVIDER -->
+    <div class="sfp-page" id="sfp-page-ai">
+      <div class="sfp-section">
+        <div class="sfp-section-title">AI Provider</div>
+        <div class="sfp-row"><div><div class="sfp-label">Provider</div><div class="sfp-desc">Which AI backend to use</div></div><div class="sfp-ctrl"><select class="sfp-select" id="sfp-ai-prov" onchange="sfpProvChange()"><option value="anthropic">Anthropic (Claude)</option><option value="ollama">Ollama (local)</option><option value="lmstudio">LM Studio (local)</option></select></div></div>
+        <div class="sfp-row" id="sfp-ai-model-row"><div><div class="sfp-label">Model</div></div><div class="sfp-ctrl" style="display:flex;gap:6px"><select class="sfp-select" id="sfp-ai-model" style="min-width:200px"></select><button class="sfp-btn sec" onclick="sfpFetchModels()" style="padding:4px 10px">↺</button></div></div>
+        <div class="sfp-row" id="sfp-ai-url-row" style="display:none"><div><div class="sfp-label">Base URL</div></div><div class="sfp-ctrl"><input class="sfp-input" id="sfp-ai-url" placeholder="http://localhost:11434" style="width:220px"/></div></div>
+        <div id="sfp-ai-status" class="sfp-status"></div>
+        <div style="margin-top:16px;display:flex;gap:8px">
+          <button class="sfp-btn" onclick="sfpSaveAI()">Save Provider</button>
+          <button class="sfp-btn sec" onclick="sfpTestAI()">Test Connection</button>
+        </div>
+      </div>
+      <div class="sfp-section">
+        <div class="sfp-section-title">Anthropic API Key</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="password" class="sfp-input" id="sfp-ant-key" placeholder="sk-ant-…" style="flex:1"/>
+          <button class="sfp-btn" onclick="sfpSaveKey()">Save</button>
+        </div>
+        <div id="sfp-key-status" class="sfp-status"></div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:8px">Get your key at <a href="https://console.anthropic.com" target="_blank" style="color:var(--ac)">console.anthropic.com</a></div>
+      </div>
+    </div>
+
+    <!-- AI ORCHESTRA -->
+    <div class="sfp-page" id="sfp-page-orchestra">
+      <div class="sfp-section">
+        <div class="sfp-section-title">Orchestra Roles</div>
+        <div style="font-size:11px;color:var(--tx3);margin-bottom:14px">Each agent can use a different model. Pipeline: Architect → Coder → Documenter</div>
+        ${['architect','coder','documenter'].map((r,i)=>`
+        <div style="border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <span style="font-size:18px">${['🏗','⌨️','📝'][i]}</span>
+            <div>
+              <div style="font-size:12px;font-weight:700;color:var(--tx)">${r.charAt(0).toUpperCase()+r.slice(1)}</div>
+              <div style="font-size:10px;color:var(--tx3)">${['Plans structure & architecture','Writes production code','Generates documentation'][i]}</div>
+            </div>
+          </div>
+          <div class="sfp-row" style="padding:4px 0"><div class="sfp-label">Provider</div><select class="sfp-select orch-prov" data-role="${r}" onchange="onOrchProviderChange('${r}')"><option value="anthropic">Anthropic</option><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></div>
+          <div class="sfp-row" style="padding:4px 0"><div class="sfp-label">Model</div><input class="sfp-input orch-model" data-role="${r}" placeholder="${['claude-opus-4-8','claude-sonnet-4-20250514','claude-haiku-4-5-20251001'][i]}" style="width:auto;flex:1;margin-left:16px"/></div>
+          <div class="sfp-row orch-url-row" data-role="${r}" style="padding:4px 0;display:none"><div class="sfp-label">Base URL</div><input class="sfp-input orch-url" data-role="${r}" placeholder="http://localhost:11434" style="width:auto;flex:1;margin-left:16px"/></div>
+        </div>`).join('')}
+        <button class="sfp-btn" onclick="saveOrchestra();notif('Orchestra saved','ok')">Save Orchestra</button>
+        <button class="sfp-btn sec" onclick="runOrchestra()" style="margin-left:8px">▶ Run Orchestra</button>
+      </div>
+    </div>
+
+    <!-- API KEYS -->
+    <div class="sfp-page" id="sfp-page-keys">
+      <div class="sfp-section">
+        <div class="sfp-section-title">Paystack</div>
+        <div style="font-size:11px;color:var(--tx3);margin-bottom:10px">Get keys from <a href="https://dashboard.paystack.com/#/settings/developers" target="_blank" style="color:var(--ac)">dashboard.paystack.com</a> → Settings → API Keys</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">PUBLIC KEY (pk_live_ or pk_test_)</label><input type="text" class="sfp-input" id="sfp-ps-pub" placeholder="Paste your Paystack public key"/></div>
+          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">SECRET KEY — never share this</label><input type="password" class="sfp-input" id="sfp-ps-sec" placeholder="Paste your Paystack secret key"/></div>
+          <div style="display:flex;gap:8px"><button class="sfp-btn" onclick="sfpSavePaystack()">Save Paystack Keys</button><button class="sfp-btn sec" onclick="sfpTestPaystack()">Test</button></div>
+          <div id="sfp-ps-status" class="sfp-status"></div>
+        </div>
+      </div>
+      <div class="sfp-section">
+        <div class="sfp-section-title">M-Pesa (Safaricom Daraja)</div>
+        <div style="font-size:11px;color:var(--tx3);margin-bottom:10px">Get credentials from <a href="https://developer.safaricom.co.ke" target="_blank" style="color:var(--ac)">developer.safaricom.co.ke</a></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">CONSUMER KEY</label><input type="text" class="sfp-input" id="sfp-mp-key" placeholder="Consumer Key"/></div>
+            <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">CONSUMER SECRET</label><input type="password" class="sfp-input" id="sfp-mp-sec" placeholder="Consumer Secret"/></div>
+            <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">SHORTCODE</label><input type="text" class="sfp-input" id="sfp-mp-code" placeholder="174379 (sandbox)"/></div>
+            <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">PASSKEY</label><input type="password" class="sfp-input" id="sfp-mp-pass" placeholder="Passkey"/></div>
+          </div>
+          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">ENVIRONMENT</label><select class="sfp-select" id="sfp-mp-env" style="width:100%"><option value="sandbox">Sandbox (Testing)</option><option value="production">Production (Live)</option></select></div>
+          <button class="sfp-btn" onclick="sfpSaveMpesa()">Save M-Pesa Config</button>
+          <div id="sfp-mp-status" class="sfp-status"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DATABASE -->
+    <div class="sfp-page" id="sfp-page-database">
+      <div class="sfp-section">
+        <div class="sfp-section-title">MySQL Connection</div>
+        <div id="sfp-db-connected" class="sfp-status"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">HOST</label><input type="text" class="sfp-input" id="sfp-db-host" placeholder="localhost"/></div>
+          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">PORT</label><input type="number" class="sfp-input" id="sfp-db-port" placeholder="3306" value="3306"/></div>
+          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">DATABASE NAME</label><input type="text" class="sfp-input" id="sfp-db-name" placeholder="axiom"/></div>
+          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">USER</label><input type="text" class="sfp-input" id="sfp-db-user" placeholder="root"/></div>
+          <div style="grid-column:1/-1"><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">PASSWORD</label><input type="password" class="sfp-input" id="sfp-db-pass" placeholder="(leave blank if none)"/></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="sfp-btn" onclick="sfpSaveDb()">Save &amp; Connect</button>
+          <button class="sfp-btn sec" onclick="sfpTestDb()">Test Connection</button>
+          <button class="sfp-btn sec" onclick="sfpInitSchema()" title="Create tables if they don't exist">Init Schema</button>
+        </div>
+        <div id="sfp-db-status" class="sfp-status" style="margin-top:10px"></div>
+      </div>
+      <div class="sfp-section">
+        <div class="sfp-section-title">Tips</div>
+        <div style="font-size:11px;color:var(--tx3);line-height:1.7">
+          • AXIOM works without a database — it falls back to JSON files in ~/.axiom/<br>
+          • MySQL is used for multi-user analytics, payments, and the admin dashboard<br>
+          • Create the database first: <code style="color:var(--ac)">CREATE DATABASE axiom;</code><br>
+          • Then click <strong style="color:var(--tx)">Init Schema</strong> to create tables automatically<br>
+          • You can also set DB_HOST / DB_USER / DB_PASS / DB_NAME env vars
+        </div>
+      </div>
+    </div>
+
+    <!-- FEATURES -->
+    <div class="sfp-page" id="sfp-page-features">
+      <div class="sfp-section">
+        <div class="sfp-section-title">Editor Features</div>
+        <div class="sfp-row"><div><div class="sfp-label">Vim Mode</div><div class="sfp-desc">Vim keybindings in the editor</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-vim" onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Zen Mode</div><div class="sfp-desc">Full screen distraction-free editing</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-zen" onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Inline Squiggles</div><div class="sfp-desc">Underline errors and warnings</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-squiggles" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+      </div>
+      <div class="sfp-section">
+        <div class="sfp-section-title">AI Features</div>
+        <div class="sfp-row"><div><div class="sfp-label">Ghost Text Completion</div><div class="sfp-desc">AI suggests code as you type</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-ghost" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Lightbulb Actions</div><div class="sfp-desc">Quick-fix suggestions on errors</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-bulb" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+      </div>
+      <div class="sfp-section">
+        <div class="sfp-section-title">Memory &amp; Data</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="sfp-btn sec" onclick="exportMem()">Export Memory</button>
+          <button class="sfp-btn danger" onclick="if(confirm('Clear all AI memory?'))clearMem()">Clear Memory</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- KEYBOARD -->
+    <div class="sfp-page" id="sfp-page-keyboard">
+      <div class="sfp-section">
+        <div class="sfp-section-title">Keyboard Shortcuts</div>
+        <div class="kb-grid">
+          ${[['Command Palette','Ctrl+Shift+P'],['File Picker','Ctrl+P'],['Save','Ctrl+S'],['Find','Ctrl+F'],['Find in Files','Ctrl+Shift+F'],['Toggle Sidebar','Ctrl+B'],['Toggle Panel','Ctrl+J'],['New Terminal','Ctrl+`'],['Split Editor','Ctrl+\\'],['AI Complete','Ctrl+Space'],['Close Tab','Ctrl+W'],['Go to Definition','F12'],['Find References','Shift+F12'],['Rename Symbol','F2'],['Go to Line','Ctrl+G'],['Run File','F5'],['AI Chat','Ctrl+Shift+A'],['Zen Mode','Ctrl+Shift+Z'],['AI Orchestra','🎼 toolbar button'],['Git Panel','Ctrl+Shift+G'],['Recent Workspaces','Ctrl+R']].map(([n,k])=>`<div class="kb-key">${n}</div><div class="kb-badge">${k}</div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>`;
+  document.body.appendChild(el);
+}
+
+window.openSettingsFullPage = function(section) {
+  buildSettingsFP();
+  const ov = document.getElementById('sfp-ov');
+  if (!ov) return;
+  ov.style.display = 'flex';
+  _sfpOpen = true;
+  sfpGo(section || _sfpSection || 'general');
+  sfpLoadAll();
+};
+
+window.closeSettingsFP = function() {
+  const ov = document.getElementById('sfp-ov');
+  if (ov) ov.style.display = 'none';
+  _sfpOpen = false;
+};
+
+// Also make the old openSettings work
+window.openSettings = window.openSettingsFullPage;
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _sfpOpen) { window.closeSettingsFP(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === ',' && !e.shiftKey) { e.preventDefault(); window.openSettingsFullPage(); }
+});
+
+window.sfpGo = function(sec) {
+  _sfpSection = sec;
+  document.querySelectorAll('.sfp-nav-item').forEach(n => n.classList.toggle('active', n.dataset.sec === sec));
+  document.querySelectorAll('.sfp-page').forEach(p => p.classList.toggle('active', p.id === 'sfp-page-'+sec));
+  const names = {general:'General',appearance:'Appearance',ai:'AI Provider',orchestra:'AI Orchestra',keys:'API Keys',database:'Database',features:'Features',keyboard:'Keyboard Shortcuts'};
+  const t = document.getElementById('sfp-title'); if (t) t.textContent = names[sec] || sec;
+  if (sec === 'database') sfpLoadDb();
+  if (sec === 'ai') sfpLoadAI();
+  if (sec === 'orchestra') { try { loadOrchestra(); } catch(e) {} }
+  if (sec === 'keys') sfpLoadKeys();
+};
+
+window.sfpSetTheme = function(v) {
+  document.querySelectorAll('.sfp-theme-opt').forEach(el => {
+    el.style.borderColor = el.dataset.theme === v ? 'var(--ac)' : 'transparent';
+  });
+  // Map to existing theme values
+  const map = {'vscode-dark':'vscode-dark','zed-light':'zed-light','windsurf':'windsurf','monokai':'monokai','github':'github','dracula':'dracula','savanna':'savanna','kilimanjaro':'kilimanjaro','maasai':'maasai','ocean':'ocean','dark':'dark'};
+  const t = document.getElementById('s-theme'); if (t) { t.value = map[v]||v; applyTheme(); }
+};
+
+window.sfpApply = function() {
+  const get = id => document.getElementById(id);
+  const fs = get('sfp-fs'); if (fs) { const t=get('s-fs'); if(t){t.value=fs.value;} }
+  const ts = get('sfp-ts'); if (ts) { const t=get('s-ts'); if(t){t.value=ts.value;} }
+  const wrap = get('sfp-wrap'); if (wrap) { const t=get('s-wrap'); if(t){t.value=wrap.checked?'on':'off';} }
+  const mm = get('sfp-minimap'); if (mm) { const t=get('s-minimap'); if(t){t.value=mm.checked?'on':'off';} }
+  const as = get('sfp-autosave'); if (as) { const t=get('s-autosave'); if(t){t.value=as.checked?'on':'off';} }
+  const ig = get('sfp-indent'); if (ig) { const t=get('s-indent'); if(t){t.value=ig.checked?'on':'off';} }
+  const bm = get('sfp-bracket'); if (bm) { const t=get('s-bracket'); if(t){t.value=bm.checked?'on':'off';} }
+  const ln = get('sfp-lint'); if (ln) { const t=get('s-lint'); if(t){t.value=ln.checked?'on':'off';} }
+  const vim = get('sfp-vim'); if (vim) { const t=get('s-vim'); if(t){t.value=vim.checked?'on':'off';} }
+  const zen = get('sfp-zen'); if (zen) { const t=get('s-zen'); if(t){t.value=zen.checked?'on':'off';} }
+  try { applyPrefs(); } catch(e) {}
+};
+
+function sfpLoadAll() {
+  const get = id => document.getElementById(id);
+  const sync = (sfpId, srcId, isCheck=false) => {
+    const s = get(srcId); const d = get(sfpId);
+    if (!s || !d) return;
+    if (isCheck) d.checked = s.value === 'on' || s.checked;
+    else d.value = s.value;
+  };
+  sync('sfp-fs','s-fs'); sync('sfp-ts','s-ts');
+  sync('sfp-wrap','s-wrap',true); sync('sfp-minimap','s-minimap',true);
+  sync('sfp-autosave','s-autosave',true); sync('sfp-indent','s-indent',true);
+  sync('sfp-bracket','s-bracket',true); sync('sfp-lint','s-lint',true);
+  sync('sfp-vim','s-vim',true); sync('sfp-zen','s-zen',true);
+  // Theme highlight
+  const cur = get('s-theme')?.value;
+  document.querySelectorAll('.sfp-theme-opt').forEach(el => {
+    el.style.borderColor = el.dataset.theme === cur ? 'var(--ac)' : 'transparent';
+  });
+}
+
+// AI Provider in settings page
+window.sfpProvChange = function() {
+  const prov = document.getElementById('sfp-ai-prov')?.value;
+  const urlRow = document.getElementById('sfp-ai-url-row');
+  if (urlRow) urlRow.style.display = (prov==='ollama'||prov==='lmstudio') ? '' : 'none';
+  const urlEl = document.getElementById('sfp-ai-url');
+  if (urlEl && !urlEl.value) urlEl.placeholder = prov==='lmstudio' ? 'http://localhost:1234' : 'http://localhost:11434';
+};
+
+window.sfpFetchModels = async function() {
+  const st = document.getElementById('sfp-ai-status');
+  if (st) { st.className='sfp-status info'; st.textContent='Fetching models…'; }
+  try {
+    const r = await api('GET', '/api/ai/models');
+    const sel = document.getElementById('sfp-ai-model');
+    if (sel) sel.innerHTML = (r.models||[]).map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
+    if (st) { st.className='sfp-status ok'; st.textContent=(r.models||[]).length+' models available'; }
+  } catch(e) {
+    if (st) { st.className='sfp-status err'; st.textContent='Error: '+e.message; }
+  }
+};
+
+window.sfpSaveAI = async function() {
+  const prov = document.getElementById('sfp-ai-prov')?.value||'anthropic';
+  const model = document.getElementById('sfp-ai-model')?.value||'';
+  const url = document.getElementById('sfp-ai-url')?.value.trim()||'';
+  const st = document.getElementById('sfp-ai-status');
+  const r = await api('POST', '/api/ai/provider', { provider:prov, model, baseUrl:url });
+  if (r.ok) {
+    if (st) { st.className='sfp-status ok'; st.textContent='Saved — '+prov+(model?'/'+model:''); }
+    // sync sidebar
+    const s1=document.getElementById('s-ai-provider'); if(s1)s1.value=prov;
+    const s2=document.getElementById('s-ai-baseurl'); if(s2)s2.value=url;
+    notif('AI provider saved','ok');
+  } else {
+    if (st) { st.className='sfp-status err'; st.textContent=r.error||'Save failed'; }
+  }
+};
+
+window.sfpTestAI = async function() {
+  const st = document.getElementById('sfp-ai-status');
+  if (st) { st.className='sfp-status info'; st.textContent='Testing…'; }
+  try {
+    const r = await api('GET', '/api/ai/models');
+    if (r.models?.length) {
+      if (st) { st.className='sfp-status ok'; st.textContent='✓ Connected — '+r.models.length+' models'; }
+    } else {
+      if (st) { st.className='sfp-status err'; st.textContent=r.error||'No models returned'; }
+    }
+  } catch(e) {
+    if (st) { st.className='sfp-status err'; st.textContent='Connection failed: '+e.message; }
+  }
+};
+
+window.sfpLoadAI = async function() {
+  try {
+    const r = await api('GET', '/api/ai/provider');
+    const p=document.getElementById('sfp-ai-prov'); if(p)p.value=r.provider||'anthropic';
+    sfpProvChange();
+    await sfpFetchModels();
+    const m=document.getElementById('sfp-ai-model'); if(m&&r.model){const opt=[...m.options].find(o=>o.value===r.model);if(opt)opt.selected=true;}
+    const u=document.getElementById('sfp-ai-url'); if(u)u.value=r.baseUrl||'';
+  } catch(e) {}
+};
+
+window.sfpSaveKey = async function() {
+  const key = document.getElementById('sfp-ant-key')?.value.trim();
+  if (!key) return;
+  const st = document.getElementById('sfp-key-status');
+  const r = await api('POST', '/api/key', { key });
+  if (r.ok) {
+    if (st) { st.className='sfp-status ok'; st.textContent='✓ Key saved'; }
+    const s=document.getElementById('s-key'); if(s)s.value=key;
+    notif('API key saved','ok');
+  } else {
+    if (st) { st.className='sfp-status err'; st.textContent=r.error||'Invalid key'; }
+  }
+};
+
+// Database
+window.sfpLoadDb = async function() {
+  const st = document.getElementById('sfp-db-connected');
+  if (st) { st.className='sfp-status info'; st.textContent='Checking connection…'; }
+  try {
+    const r = await api('GET', '/api/db/status');
+    if (r.connected) {
+      if (st) { st.className='sfp-status ok'; st.textContent='✓ Connected to MySQL '+r.version+' on '+r.host+'/'+r.database; }
+    } else {
+      if (st) { st.className='sfp-status err'; st.textContent='✗ Not connected — '+r.error; }
+    }
+    // Load config
+    const cfg = await api('GET', '/api/db/config');
+    const set = (id,v) => { const el=document.getElementById(id); if(el)el.value=v||''; };
+    set('sfp-db-host', cfg.host||'localhost');
+    set('sfp-db-port', cfg.port||3306);
+    set('sfp-db-name', cfg.database||'axiom');
+    set('sfp-db-user', cfg.user||'root');
+  } catch(e) {
+    if (st) { st.className='sfp-status err'; st.textContent='Error checking DB: '+e.message; }
+  }
+};
+
+window.sfpTestDb = async function() {
+  const st = document.getElementById('sfp-db-status');
+  if (st) { st.className='sfp-status info'; st.textContent='Testing…'; }
+  try {
+    const r = await api('GET', '/api/db/status');
+    if (r.connected) {
+      if (st) { st.className='sfp-status ok'; st.textContent='✓ MySQL '+r.version+' on '+r.host+':'+r.port+'/'+r.database; }
+    } else {
+      if (st) { st.className='sfp-status err'; st.textContent='✗ '+r.error; }
+    }
+  } catch(e) {
+    if (st) { st.className='sfp-status err'; st.textContent='Error: '+e.message; }
+  }
+};
+
+window.sfpSaveDb = async function() {
+  const get = id => document.getElementById(id)?.value.trim()||'';
+  const st = document.getElementById('sfp-db-status');
+  if (st) { st.className='sfp-status info'; st.textContent='Connecting…'; }
+  try {
+    const r = await api('POST', '/api/db/config', {
+      host: get('sfp-db-host')||'localhost',
+      port: +(get('sfp-db-port')||3306),
+      database: get('sfp-db-name')||'axiom',
+      user: get('sfp-db-user')||'root',
+      password: get('sfp-db-pass')
+    });
+    if (r.ok) {
+      if (st) { st.className='sfp-status ok'; st.textContent='✓ '+r.message; }
+      notif('Database connected — '+r.message, 'ok');
+      sfpLoadDb();
+    } else {
+      if (st) { st.className='sfp-status err'; st.textContent='✗ '+r.error; }
+      notif(r.error||'DB config failed', 'err');
+    }
+  } catch(e) {
+    if (st) { st.className='sfp-status err'; st.textContent='Error: '+e.message; }
+  }
+};
+
+window.sfpInitSchema = async function() {
+  const st = document.getElementById('sfp-db-status');
+  if (st) { st.className='sfp-status info'; st.textContent='Initializing schema…'; }
+  try {
+    const r = await api('POST', '/api/db/init-schema', {});
+    if (r.ok) {
+      if (st) { st.className='sfp-status ok'; st.textContent='✓ '+r.message; }
+      notif('Schema initialized — tables created', 'ok');
+    } else {
+      if (st) { st.className='sfp-status err'; st.textContent='✗ '+r.error; }
+    }
+  } catch(e) {
+    if (st) { st.className='sfp-status err'; st.textContent='Error: '+e.message; }
+  }
+};
+
+// Keys page
+window.sfpLoadKeys = async function() {
+  try {
+    const r = await api('GET', '/api/billing/paystack/config');
+    if (r.configured && r.public_key) {
+      const el = document.getElementById('sfp-ps-pub'); if(el)el.value=r.public_key;
+      const st = document.getElementById('sfp-ps-status');
+      if (st) { st.className='sfp-status ok'; st.textContent='✓ Paystack configured'; }
+    }
+  } catch(e) {}
+};
+
+window.sfpSavePaystack = async function() {
+  const pub = document.getElementById('sfp-ps-pub')?.value.trim();
+  const sec = document.getElementById('sfp-ps-sec')?.value.trim();
+  const st = document.getElementById('sfp-ps-status');
+  if (!pub||!sec) { notif('Enter both keys','warn'); return; }
+  const r = await api('POST', '/api/billing/paystack/config', { public_key:pub, secret_key:sec });
+  if (r.ok) { if(st){st.className='sfp-status ok';st.textContent='✓ Paystack keys saved';} notif('Paystack keys saved','ok'); }
+  else { if(st){st.className='sfp-status err';st.textContent=r.error||'Failed';} }
+};
+
+window.sfpTestPaystack = async function() {
+  const st = document.getElementById('sfp-ps-status');
+  if(st){st.className='sfp-status info';st.textContent='Testing…';}
+  const r = await api('GET', '/api/billing/paystack/config');
+  if (r.configured && r.public_key) {
+    if(st){st.className='sfp-status ok';st.textContent='✓ Configured — key: '+r.public_key.slice(0,12)+'…';}
+  } else {
+    if(st){st.className='sfp-status err';st.textContent='✗ Not configured';}
+  }
+};
+
+window.sfpSaveMpesa = async function() {
+  const get = id => document.getElementById(id)?.value.trim()||'';
+  const st = document.getElementById('sfp-mp-status');
+  const r = await api('POST', '/api/billing/mpesa/config', {
+    consumer_key: get('sfp-mp-key'), consumer_secret: get('sfp-mp-sec'),
+    shortcode: get('sfp-mp-code')||'174379', passkey: get('sfp-mp-pass'),
+    env: document.getElementById('sfp-mp-env')?.value||'sandbox'
+  });
+  if (r.ok) { if(st){st.className='sfp-status ok';st.textContent='✓ M-Pesa config saved';} notif('M-Pesa configured','ok'); }
+  else { if(st){st.className='sfp-status err';st.textContent=r.error||'Failed';} }
+};
+
+})(); // end IIFE
 
 // ── PWA Service Worker ───────────────────────────────────────────
 if ('serviceWorker' in navigator) {
