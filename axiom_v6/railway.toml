@@ -1,6 +1,5 @@
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+builder = "NIXPACKS"
 
 [deploy]
 startCommand = "node src/server.js"
@@ -8,12 +7,3 @@ healthcheckPath = "/api/ping"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
-numReplicas = 1
-
-[[deploy.environmentVariables]]
-name = "PORT"
-value = "5000"
-
-[[deploy.environmentVariables]]
-name = "NODE_ENV"
-value = "production"
