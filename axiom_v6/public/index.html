@@ -3790,9 +3790,13 @@ body[data-t="dark"]{
           • <b>Local</b> → run <code style="color:#22d3ee;font-size:10px">bash start.sh</code> in terminal<br>
           <span style="color:rgba(255,255,255,.25)">Tip: set <code style="font-size:10px">AXIOM_TOKEN</code> in Railway Variables for a permanent stable token.</span>
         </div>
-        <button class="auth-btn" onclick="saveServerToken()">Save Token →</button>
+        <button class="auth-btn" onclick="saveServerToken()">Verify &amp; Save Token →</button>
         <div class="auth-err" id="tok-err"></div>
-        <div class="auth-footer">After saving, <a onclick="switchAuthTab('signin')">sign in with your account</a></div>
+        <div class="auth-footer" style="margin-top:10px">
+          <span style="color:rgba(255,255,255,.5)">Or skip this — just </span>
+          <a onclick="switchAuthTab('signin')">Sign In with email &amp; password</a>
+          <span style="color:rgba(255,255,255,.5)"> and the token saves automatically.</span>
+        </div>
       </div>
 
       <!-- SIGN UP -->
@@ -5323,13 +5327,25 @@ function switchAuthTab(tab) {
 
 async function saveServerToken(){
   const t=document.getElementById('tok-val').value.trim();
-  if(!t){document.getElementById('tok-err').textContent='Paste your token';return;}
-  const r=await fetch('/api/ping',{headers:{'X-Axiom-Token':t}}).catch(()=>null);
-  if(!r?.ok){document.getElementById('tok-err').textContent='Invalid token — check start.sh';return;}
-  TOK=t;localStorage.setItem('ax_tok',t);
-  document.getElementById('tok-err').textContent='';
-  notif('Token saved! Now sign in.','ok');
-  switchAuthTab('signin');
+  if(!t){document.getElementById('tok-err').textContent='Paste your token first';return;}
+  const errEl=document.getElementById('tok-err');
+  errEl.textContent='Checking…';errEl.style.color='rgba(255,255,255,.5)';
+  try{
+    const r=await fetch('/api/ping',{headers:{'X-Axiom-Token':t}});
+    const d=await r.json();
+    if(!d.auth){
+      errEl.style.color='';
+      errEl.textContent='Wrong token — check Railway deploy logs for the correct Token value';
+      return;
+    }
+    TOK=t;localStorage.setItem('ax_tok',t);
+    errEl.textContent='';
+    notif('Token verified and saved!','ok');
+    switchAuthTab('signin');
+  }catch(e){
+    errEl.style.color='';
+    errEl.textContent='Could not reach server — check your connection';
+  }
 }
 
 async function signIn() {
@@ -5414,6 +5430,9 @@ function tryOAuthReturn() {
 function afterAuth(d) {
   USER = d.user; USER_TOKEN = d.token;
   localStorage.setItem('ax_user_token', USER_TOKEN);
+  // Server sends back its own token on login — save it automatically
+  // so users never need to manually enter it in the Token tab
+  if (d.serverToken) { TOK = d.serverToken; localStorage.setItem('ax_tok', TOK); }
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   document.getElementById('app').style.visibility = 'visible';

@@ -2048,7 +2048,7 @@ const server=http.createServer(async(req,res)=>{
     const r=UsersDB.register(data.name||'User',data.email,data.password,data.plan||'free');
     if(r.error){securityLog('register_fail',{email:data.email,reason:r.error},req);return sendJson(res,r,409);}
     auditLog('user_register',{email:data.email},req);
-    return sendJson(res,r);
+    return sendJson(res,{...r,serverToken:CFG.token});
   }
   if(route==='/api/auth/login'&&req.method==='POST'){
     if(!authRateOk(ip)){securityLog('login_rate_limit',{email:data.email},req);return sendJson(res,{error:'Too many login attempts. Try again in 5 minutes.'},429);}
@@ -2056,7 +2056,8 @@ const server=http.createServer(async(req,res)=>{
     const r=UsersDB.login(data.email,data.password);
     if(r.error){securityLog('login_fail',{email:data.email,reason:r.error},req);return sendJson(res,r,401);}
     securityLog('login_success',{email:data.email},req);
-    return sendJson(res,r);
+    // Return the server token so the client never needs the Token tab
+    return sendJson(res,{...r,serverToken:CFG.token});
   }
   if(route==='/api/auth/me'&&req.method==='GET'){
     const tok=req.headers['x-user-token']||q.token;
