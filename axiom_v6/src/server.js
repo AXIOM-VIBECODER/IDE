@@ -648,8 +648,8 @@ const TOKEN_TOPUP_PRICES=[
 ];
 
 // ── MySQL Database ───────────────────────────────────────────────
-const DB_PASS=process.env.DB_PASS;
-if(!DB_PASS&&process.env.NODE_ENV==='production'){console.error('FATAL: DB_PASS environment variable is required in production');process.exit(1);}
+const DB_PASS=process.env.DB_PASS||'';
+// DB is optional — AXIOM falls back to JSON file storage if no DB is configured
 const DB_CONFIG_FILE=path.join(DATA,'db_config.json');
 
 function loadDbConfig(){

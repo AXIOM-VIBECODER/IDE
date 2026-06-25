@@ -10,7 +10,8 @@ WORKDIR /app
 
 # Install deps first (layer cache)
 COPY axiom_v6/package.json axiom_v6/package-lock.json* ./axiom_v6/
-RUN cd axiom_v6 && npm install --omit=dev --ignore-scripts
+# node-pty requires native compile (python3 + make + g++ above)
+RUN cd axiom_v6 && npm install --omit=dev
 
 # Copy app
 COPY axiom_v6/src      ./axiom_v6/src

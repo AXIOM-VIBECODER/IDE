@@ -1,11 +1,11 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "git", "python3"]
+nixPkgs = ["nodejs_20", "git", "python3", "nodePackages.node-gyp"]
 
 [phases.install]
-cmds = ["npm install --production --ignore-scripts"]
+cmds = ["npm install --omit=dev"]
 
 [phases.build]
-cmds = ["echo 'No build step — Node.js web server'"]
+cmds = ["echo 'No build step'"]
 
 [start]
 cmd = "node src/server.js"
