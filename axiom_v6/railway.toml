@@ -8,9 +8,12 @@ healthcheckPath = "/api/ping"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
+numReplicas = 1
 
-[[services]]
-name = "axiom-ide"
+[[deploy.environmentVariables]]
+name = "PORT"
+value = "5000"
 
-[services.networking]
-internalPort = 5000
+[[deploy.environmentVariables]]
+name = "NODE_ENV"
+value = "production"
