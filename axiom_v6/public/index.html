@@ -3874,7 +3874,7 @@ body[data-t="dark"]{
     <div class="um-item" onclick="openModal('profile');closeUserMenu()">👤 Profile &amp; Settings</div>
     <div class="um-item" onclick="openModal('settings');closeUserMenu()">⚙ IDE Settings</div>
     <div class="um-item" onclick="openModal('memory');closeUserMenu()">🧠 Memory</div>
-    <div class="um-item" id="um-admin-link" style="display:none" onclick="window.open('/admin','_blank')">📊 Admin Dashboard</div>
+    <div class="um-item" id="um-admin-link" style="display:none" onclick="window.open('/admin?tok='+encodeURIComponent(localStorage.getItem('ax_tok')||''),'_blank')">📊 Admin Dashboard</div>
     <div class="um-item" onclick="exportMem()">↗ Export Memory</div>
     <div class="um-item danger" onclick="signOut()">Sign Out</div>
   </div>
@@ -4695,7 +4695,7 @@ body[data-t="dark"]{
             <div class="ss-hdr">Editor</div>
             <div class="sr"><label>Font size</label><select id="s-fs" onchange="applyPrefs()"><option value="12">12px</option><option value="13" selected>13px</option><option value="14">14px</option><option value="15">15px</option></select></div>
             <div class="sr"><label>Tab size</label><select id="s-ts" onchange="applyPrefs()"><option value="2" selected>2 spaces</option><option value="4">4 spaces</option></select></div>
-            <div class="sr"><label>Word wrap</label><select id="s-wrap" onchange="applyPrefs()"><option value="off" selected>Off</option><option value="on">On</option></select></div>
+            <div class="sr"><label>Word wrap</label><select id="s-wrap" onchange="applyPrefs()"><option value="off">Off</option><option value="on" selected>On</option></select></div>
             <div class="sr"><label>Minimap</label><select id="s-minimap" onchange="applyPrefs()"><option value="on" selected>On</option><option value="off">Off</option></select></div>
             <div class="sr"><label>Indent guides</label><select id="s-indent" onchange="applyPrefs()"><option value="on" selected>On</option><option value="off">Off</option></select></div>
             <div class="sr"><label>Bracket match</label><select id="s-bracket" onchange="applyPrefs()"><option value="on" selected>On</option><option value="off">Off</option></select></div>
@@ -4944,9 +4944,9 @@ body[data-t="dark"]{
                     <div class="dash-action-icon">⌘</div>
                     <div><div class="dash-action-text">Command Palette</div><div class="dash-action-hint">Ctrl+Shift+P</div></div>
                   </div>
-                  <div class="dash-action" id="dash-admin-link" style="display:none" onclick="window.open('/admin','_blank')">
+                  <div class="dash-action" id="dash-admin-link" style="display:none" onclick="window.open('/admin?tok='+encodeURIComponent(localStorage.getItem('ax_tok')||''),'_blank')">
                     <div class="dash-action-icon">📊</div>
-                    <div><div class="dash-action-text">Admin Dashboard</div><div class="dash-action-hint">/admin</div></div>
+                    <div><div class="dash-action-text">Admin Dashboard</div><div class="dash-action-hint">View all users & activity</div></div>
                   </div>
                 </div>
               </div>
@@ -18323,7 +18323,7 @@ function buildSettingsFP() {
         <div class="sfp-section-title">Editor</div>
         <div class="sfp-row"><div><div class="sfp-label">Font Size</div></div><div class="sfp-ctrl"><select class="sfp-select" id="sfp-fs" onchange="sfpApply()"><option value="12">12px</option><option value="13">13px</option><option value="14" selected>14px</option><option value="15">15px</option><option value="16">16px</option><option value="18">18px</option></select></div></div>
         <div class="sfp-row"><div><div class="sfp-label">Tab Size</div></div><div class="sfp-ctrl"><select class="sfp-select" id="sfp-ts" onchange="sfpApply()"><option value="2">2 spaces</option><option value="4" selected>4 spaces</option><option value="8">8 spaces</option></select></div></div>
-        <div class="sfp-row"><div><div class="sfp-label">Word Wrap</div><div class="sfp-desc">Wrap long lines in the editor</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-wrap" onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
+        <div class="sfp-row"><div><div class="sfp-label">Word Wrap</div><div class="sfp-desc">Wrap long lines in the editor</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-wrap" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
         <div class="sfp-row"><div><div class="sfp-label">Minimap</div><div class="sfp-desc">Code overview on the right</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-minimap" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
         <div class="sfp-row"><div><div class="sfp-label">Auto Save</div><div class="sfp-desc">Save files automatically on edit</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-autosave" onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>
         <div class="sfp-row"><div><div class="sfp-label">Indent Guides</div></div><div class="sfp-ctrl"><label class="sfp-toggle"><input type="checkbox" id="sfp-indent" checked onchange="sfpApply()"><span class="sfp-slider"></span></label></div></div>

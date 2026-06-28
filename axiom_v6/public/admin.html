@@ -883,6 +883,9 @@ body::after{
 'use strict';
 
 // ════════════ STATE ════════════
+// Accept server token from IDE via ?tok= URL param — auto-login without manual password entry
+const _urlTok = new URLSearchParams(window.location.search).get('tok');
+if (_urlTok) { window.history.replaceState({}, '', '/admin'); }
 let TOKEN = localStorage.getItem('axiom_admin_token') || '';
 let adminUser = null;
 let chatHistory = [];
@@ -936,13 +939,30 @@ async function doLogin() {
   $loginBtn.textContent = 'Sign In';
 }
 
-// Auto-login if token exists
+// Auto-login if token exists or if IDE passed server token via URL
 (async () => {
+  // If IDE sent raw server token via ?tok=, use it directly as X-Axiom-Token
+  if (_urlTok) {
+    try {
+      const r = await fetch('/api/admin/analytics', { headers: { 'X-Axiom-Token': _urlTok } });
+      if (r.ok) {
+        // Store server token; subsequent API calls will use X-Axiom-Token
+        TOKEN = _urlTok;
+        localStorage.setItem('axiom_admin_token', TOKEN);
+        enterApp();
+        return;
+      }
+    } catch (e) { /* ignore */ }
+  }
   if (!TOKEN) return;
   try {
+    // Try as JWT first
     const r = await fetch('/api/admin/analytics', { headers: { 'X-Admin-Token': TOKEN } });
-    if (r.ok) enterApp();
-    else { TOKEN = ''; localStorage.removeItem('axiom_admin_token'); }
+    if (r.ok) { enterApp(); return; }
+    // Try as raw server token
+    const r2 = await fetch('/api/admin/analytics', { headers: { 'X-Axiom-Token': TOKEN } });
+    if (r2.ok) { enterApp(); return; }
+    TOKEN = ''; localStorage.removeItem('axiom_admin_token');
   } catch (e) { /* server not running */ }
 })();
 
@@ -960,11 +980,19 @@ function enterApp() {
 }
 
 // ════════════ API HELPER ════════════
+// Check if TOKEN is a raw server token (hex) vs JWT (contains dots)
+function _authHeaders() {
+  const isJWT = TOKEN.includes('.');
+  return isJWT
+    ? { 'Content-Type': 'application/json', 'X-Admin-Token': TOKEN }
+    : { 'Content-Type': 'application/json', 'X-Axiom-Token': TOKEN };
+}
+
 async function api(method, path, body) {
   try {
     const opts = {
       method,
-      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': TOKEN }
+      headers: _authHeaders()
     };
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(path, opts);
@@ -1354,7 +1382,7 @@ document.getElementById('au-submit').addEventListener('click', async () => {
 // Export
 document.getElementById('export-users-btn').addEventListener('click', async () => {
   try {
-    const r = await fetch('/api/admin/users/export', { headers: { 'X-Admin-Token': TOKEN } });
+    const r = await fetch('/api/admin/users/export', { headers: _authHeaders() });
     if (!r.ok) { toast('Export failed', 'err'); return; }
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
@@ -1507,7 +1535,7 @@ async function sendChat() {
   try {
     const res = await fetch('/api/admin/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': TOKEN },
+      headers: _authHeaders(),
       body: JSON.stringify({ messages: chatHistory })
     });
 

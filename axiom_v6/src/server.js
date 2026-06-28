@@ -2063,6 +2063,8 @@ const server=http.createServer(async(req,res)=>{
     const tok=req.headers['x-user-token']||q.token;
     const u=tok?UsersDB.getByToken(tok):null;
     if(!u)return sendJson(res,{error:'Not authenticated'},401);
+    // Update last_seen on every session restore so admin sees accurate activity
+    try{const d=UsersDB.load();const uu=d.users.find(x=>x.id===u.id);if(uu){uu.last_seen=new Date().toISOString();UsersDB.save(d);u.last_seen=uu.last_seen;}}catch(e){}
     const trialExpired=isTrialExpired(u);
     const created=new Date(u.created_at);
     const trialEnds=new Date(created.getTime()+FREE_TRIAL_DAYS*24*60*60*1000);
