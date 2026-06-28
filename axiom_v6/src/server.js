@@ -3909,11 +3909,14 @@ function seedAdmin(){
     const ADMIN_PW=process.env.ADMIN_PASSWORD||'Zawadi@18';
     const existing=d.users.find(u=>u.email.toLowerCase()===ADMIN_EMAIL.toLowerCase());
     if(existing){
-      // Ensure role is admin even if account was created normally
-      if(existing.role!=='admin'||existing.plan!=='pro'){
-        existing.role='admin';existing.plan='pro';UsersDB.save(d);
-        console.log('  [Admin] Upgraded',ADMIN_EMAIL,'→ admin/pro');
-      }
+      // Always sync role, plan, and password hash from the configured credential
+      const salt=makeSalt(),hash=hashPw(ADMIN_PW,salt);
+      let changed=false;
+      if(existing.role!=='admin'){existing.role='admin';changed=true;}
+      if(existing.plan!=='pro'){existing.plan='pro';changed=true;}
+      // Re-hash password on every startup so it always matches ADMIN_PASSWORD env/default
+      existing.salt=salt;existing.hash=hash;changed=true;
+      if(changed){UsersDB.save(d);console.log('  [Admin] Admin account synced:',ADMIN_EMAIL);}
       return;
     }
     const salt=makeSalt(),hash=hashPw(ADMIN_PW,salt);
