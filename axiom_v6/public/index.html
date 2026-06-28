@@ -5257,13 +5257,18 @@ body[data-t="dark"]{
 
         <!-- Paystack -->
         <div id="paystack-pay-form" class="bp-pay-form">
+          <div id="paystack-mode-banner" style="display:none;padding:6px 10px;border-radius:6px;font-size:11px;margin-bottom:10px"></div>
           <div class="bp-pay-row">
             <span id="paystack-amount" class="bp-amount">KES 0</span>
             <span id="paystack-plan-name" class="bp-plan-name"></span>
           </div>
           <button class="bp-pay-btn bp-pay-btn-primary" onclick="initPaystackPay()">Pay with Paystack →</button>
           <div id="paystack-status" class="bp-status"></div>
-          <div class="bp-hint">Visa · Mastercard · Bank Transfer · USSD</div>
+          <div id="paystack-checkout-link" style="display:none;margin-top:8px;font-size:11px;color:var(--tx3)">
+            Popup blocked? <a id="paystack-direct-link" href="#" target="_blank" style="color:var(--ac)">Click here to open checkout →</a>
+          </div>
+          <button id="paystack-verify-btn" onclick="manualVerifyPaystack()" style="display:none;margin-top:8px;width:100%;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--tx2);font-size:11px;cursor:pointer">✓ I've completed payment — verify now</button>
+          <div class="bp-hint">Visa · Mastercard · Bank Transfer · USSD · Mobile Money</div>
         </div>
 
         <!-- M-Pesa -->
@@ -12686,6 +12691,34 @@ async function pollPaystackVerify(ref) {
   }, 5000);
 }
 
+// Manual verify — user clicks "I've paid" button
+async function manualVerifyPaystack() {
+  const ref = window._paystackRef;
+  if (!ref) { notif('No pending payment reference', 'warn'); return; }
+  const btn = document.getElementById('paystack-verify-btn');
+  const statusEl = document.getElementById('paystack-status');
+  if (btn) btn.textContent = 'Checking…';
+  try {
+    const r = await api('GET', '/api/billing/paystack/verify?reference=' + encodeURIComponent(ref));
+    if (r.ok && r.plan) {
+      if (window.USER) window.USER.plan = r.plan;
+      if (statusEl) { statusEl.textContent = '✓ Payment confirmed! ' + r.plan + ' plan active'; statusEl.style.color = 'var(--green)'; }
+      if (btn) btn.style.display = 'none';
+      document.getElementById('paystack-checkout-link')?.remove();
+      document.getElementById('paystack-mode-banner')?.remove();
+      notif('Upgraded to ' + r.plan + ' plan!', 'ok');
+      try { renderUserAvatar(); } catch(e) {}
+      setTimeout(()=>{ try { renderBillingPlans(); } catch(e) {} }, 500);
+    } else {
+      if (statusEl) { statusEl.textContent = r.message || 'Payment not confirmed yet — try again in a moment'; statusEl.style.color = 'var(--yellow)'; }
+      if (btn) btn.textContent = '✓ I\'ve completed payment — verify now';
+    }
+  } catch(e) {
+    if (btn) btn.textContent = '✓ I\'ve completed payment — verify now';
+    notif('Verification error: ' + e.message, 'err');
+  }
+}
+
 // Check URL for Paystack callback on page load
 function checkPaystackReturn() {
   const params = new URLSearchParams(window.location.search);
@@ -16940,77 +16973,103 @@ function switchProfile(name){
 })();
 
 // ─── Paystack Inline Popup (replaces redirect) ──────────────
-// Uses PaystackPop inline SDK when available; falls back to redirect.
 window.initPaystackPay = async function() {
   const plan = window.selectedPlan || (typeof selectedPlan !== 'undefined' ? selectedPlan : null);
   if (!plan) return (typeof notif==='function' ? notif('Select a plan first','warn') : alert('Select a plan first'));
-  window.selectedPlan = plan; // ensure both are in sync
+  window.selectedPlan = plan;
   const statusEl = document.getElementById('paystack-status');
+  const linkEl   = document.getElementById('paystack-checkout-link');
+  const verifyBtn= document.getElementById('paystack-verify-btn');
+  const modeBanner=document.getElementById('paystack-mode-banner');
   if (statusEl) { statusEl.textContent = 'Initializing…'; statusEl.style.color = 'var(--ac)'; }
+  if (linkEl) linkEl.style.display = 'none';
+  if (verifyBtn) verifyBtn.style.display = 'none';
 
   try {
-    // Get public key from server config
     const cfg = await (typeof api==='function' ? api('GET','/api/billing/paystack/config') : fetch('/api/billing/paystack/config').then(r=>r.json()));
     const pubKey = cfg?.public_key || '';
     if (!pubKey || pubKey.length < 10) {
-      if (statusEl) { statusEl.textContent = 'Configure Paystack keys first'; statusEl.style.color = 'var(--yellow)'; }
-      return (typeof showPaystackConfig==='function' ? showPaystackConfig() : alert('Add your Paystack public key first (Paystack keys button)'));
+      if (statusEl) { statusEl.textContent = 'Paystack not configured — add your keys in Settings → API Keys'; statusEl.style.color = 'var(--yellow)'; }
+      return (typeof showPaystackConfig==='function' ? showPaystackConfig() : null);
     }
 
-    // Initialize payment on server (gets reference + amount)
+    // Show test/live mode indicator
+    const isTest = pubKey.startsWith('pk_test_');
+    if (modeBanner) {
+      modeBanner.style.display = '';
+      modeBanner.style.background = isTest ? 'rgba(245,197,24,.1)' : 'rgba(141,190,110,.1)';
+      modeBanner.style.border = isTest ? '1px solid rgba(245,197,24,.3)' : '1px solid rgba(141,190,110,.3)';
+      modeBanner.style.color = isTest ? '#f5c518' : 'var(--green)';
+      modeBanner.textContent = isTest
+        ? '⚠ Test mode — use card 4084 0840 8408 4081 · CVV: 408 · OTP: 408408. No real charge.'
+        : '✓ Live mode — real payment will be processed';
+    }
+
     const r = await (typeof api==='function'
       ? api('POST','/api/billing/paystack/initialize', { plan, callback_url: window.location.origin + '/?paystack_verify=1' })
       : fetch('/api/billing/paystack/initialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan, callback_url: window.location.origin+'/?paystack_verify=1'})}).then(x=>x.json())
     );
     if (!r.ok || !r.reference) {
-      if (statusEl) { statusEl.textContent = r.error || 'Initialization failed — check your Paystack keys'; statusEl.style.color = 'var(--red)'; }
+      if (statusEl) { statusEl.textContent = r.error || 'Initialization failed — check your Paystack secret key'; statusEl.style.color = 'var(--red)'; }
       if (typeof notif==='function') notif(r.error || 'Paystack error', 'err');
       return;
     }
 
-    // Use inline popup if PaystackPop is available
+    // Store reference so manual verify button works
+    window._paystackRef = r.reference;
+    if (verifyBtn) verifyBtn.style.display = '';
+
+    // Show direct link in case popup is blocked
+    const directLink = document.getElementById('paystack-direct-link');
+    if (directLink) { directLink.href = r.authorization_url; }
+    if (linkEl) linkEl.style.display = '';
+
     if (typeof PaystackPop !== 'undefined') {
       const handler = PaystackPop.setup({
         key:      pubKey,
-        email:    window.USER?.email || (typeof swalPrompt==='function' ? await swalPrompt('Enter your email for receipt:', '') : prompt('Email:','')),
+        email:    window.USER?.email || '',
         amount:   r.amount_kobo || Math.round(r.amount * 100),
         currency: r.currency || 'KES',
         ref:      r.reference,
         label:    'AXIOM IDE — ' + plan.charAt(0).toUpperCase() + plan.slice(1) + ' Plan',
         metadata: { plan, user_id: window.USER?.id },
         callback: async function(response) {
-          if (statusEl) { statusEl.textContent = 'Verifying…'; statusEl.style.color = 'var(--ac)'; }
+          if (statusEl) { statusEl.textContent = 'Verifying payment…'; statusEl.style.color = 'var(--ac)'; }
+          if (linkEl) linkEl.style.display = 'none';
           const vr = await (typeof api==='function'
             ? api('GET','/api/billing/paystack/verify?reference='+encodeURIComponent(response.reference))
             : fetch('/api/billing/paystack/verify?reference='+encodeURIComponent(response.reference)).then(x=>x.json())
           );
           if (vr.ok && vr.plan) {
             if (window.USER) window.USER.plan = vr.plan;
-            if (statusEl) { statusEl.textContent = '✓ Payment successful!'; statusEl.style.color = 'var(--green)'; }
-            if (typeof notif==='function') notif('Upgraded to ' + vr.plan.charAt(0).toUpperCase()+vr.plan.slice(1) + ' plan! 🎉','ok');
+            if (statusEl) { statusEl.textContent = '✓ Payment confirmed! ' + vr.plan.charAt(0).toUpperCase()+vr.plan.slice(1) + ' plan active'; statusEl.style.color = 'var(--green)'; }
+            if (verifyBtn) verifyBtn.style.display = 'none';
+            if (modeBanner) modeBanner.style.display = 'none';
+            if (typeof notif==='function') notif('Upgraded to ' + vr.plan.charAt(0).toUpperCase()+vr.plan.slice(1) + ' plan!','ok');
             if (typeof loadMpesaTxns==='function') loadMpesaTxns();
             if (typeof renderUserAvatar==='function') renderUserAvatar();
-            const b = document.getElementById('trial-banner'); if(b) b.remove();
+            document.getElementById('trial-banner')?.remove();
+            setTimeout(()=>{try{renderBillingPlans();}catch(e){}},500);
           } else {
-            if (statusEl) { statusEl.textContent = vr.error || 'Verification failed'; statusEl.style.color = 'var(--red)'; }
+            if (statusEl) { statusEl.textContent = vr.message || vr.error || 'Verification pending — check again shortly'; statusEl.style.color = 'var(--yellow)'; }
           }
         },
         onClose: function() {
-          if (statusEl && statusEl.textContent === 'Initializing…') {
-            statusEl.textContent = 'Payment cancelled'; statusEl.style.color = 'var(--tx3)';
+          if (statusEl && (statusEl.textContent === 'Initializing…' || statusEl.textContent === '')) {
+            statusEl.textContent = 'Checkout closed — click button to try again'; statusEl.style.color = 'var(--tx3)';
           }
         }
       });
       handler.openIframe();
+      if (statusEl) { statusEl.textContent = ''; }
     } else {
-      // Fallback: open Paystack in new tab / Electron window
-      if (statusEl) { statusEl.textContent = 'Opening Paystack…'; statusEl.style.color = 'var(--green)'; }
-      if (window.axiomElectron) {
-        window.axiomElectron.openExternal(r.authorization_url);
-      } else {
-        window.open(r.authorization_url, '_blank');
+      // No inline SDK — open in new tab
+      if (statusEl) { statusEl.textContent = 'Checkout opened in new tab — complete payment there'; statusEl.style.color = 'var(--green)'; }
+      const opened = window.open(r.authorization_url, '_blank');
+      if (!opened) {
+        if (statusEl) { statusEl.textContent = 'Popup blocked — use the link below to open checkout'; statusEl.style.color = 'var(--yellow)'; }
       }
-      if (typeof notif==='function') notif('Complete payment then return here','info');
+      if (typeof notif==='function') notif('Complete payment in the new tab','info');
       if (r.reference && typeof pollPaystackVerify==='function') pollPaystackVerify(r.reference);
     }
   } catch (e) {
@@ -18355,12 +18414,22 @@ function buildSettingsFP() {
     <div class="sfp-page" id="sfp-page-keys">
       <div class="sfp-section">
         <div class="sfp-section-title">Paystack</div>
-        <div style="font-size:11px;color:var(--tx3);margin-bottom:10px">Get keys from <a href="https://dashboard.paystack.com/#/settings/developers" target="_blank" style="color:var(--ac)">dashboard.paystack.com</a> → Settings → API Keys</div>
+        <div id="sfp-ps-mode" style="display:none;padding:6px 10px;border-radius:6px;font-size:11px;margin-bottom:10px"></div>
+        <div style="font-size:11px;color:var(--tx3);margin-bottom:10px">
+          Get keys from <a href="https://dashboard.paystack.com/#/settings/developers" target="_blank" style="color:var(--ac)">dashboard.paystack.com</a> → Settings → API Keys &amp; Webhooks<br>
+          <span style="color:rgba(255,255,255,.3)">Use <b>pk_live_</b> / <b>sk_live_</b> for real payments · <b>pk_test_</b> / <b>sk_test_</b> for testing only</span>
+        </div>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">PUBLIC KEY (pk_live_ or pk_test_)</label><input type="text" class="sfp-input" id="sfp-ps-pub" placeholder="Paste your Paystack public key"/></div>
-          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">SECRET KEY — never share this</label><input type="password" class="sfp-input" id="sfp-ps-sec" placeholder="Paste your Paystack secret key"/></div>
-          <div style="display:flex;gap:8px"><button class="sfp-btn" onclick="sfpSavePaystack()">Save Paystack Keys</button><button class="sfp-btn sec" onclick="sfpTestPaystack()">Test</button></div>
+          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">PUBLIC KEY</label><input type="text" class="sfp-input" id="sfp-ps-pub" placeholder="pk_live_… or pk_test_…"/></div>
+          <div><label style="font-size:10px;color:var(--tx3);display:block;margin-bottom:3px">SECRET KEY — never share this</label><input type="password" class="sfp-input" id="sfp-ps-sec" placeholder="sk_live_… or sk_test_…"/></div>
+          <div style="display:flex;gap:8px">
+            <button class="sfp-btn" onclick="sfpSavePaystack()">Save Keys</button>
+            <button class="sfp-btn sec" onclick="sfpTestPaystack()">Test Connection</button>
+          </div>
           <div id="sfp-ps-status" class="sfp-status"></div>
+          <div style="font-size:10px;color:rgba(255,255,255,.25);margin-top:4px">
+            Webhook URL for Paystack dashboard: <code style="color:var(--ac)" id="sfp-ps-webhook"></code>
+          </div>
         </div>
       </div>
       <div class="sfp-section">
@@ -18698,12 +18767,33 @@ window.sfpInitSchema = async function() {
 
 // Keys page
 window.sfpLoadKeys = async function() {
+  // Set webhook URL
+  const webhookEl = document.getElementById('sfp-ps-webhook');
+  if (webhookEl) webhookEl.textContent = window.location.origin + '/api/billing/paystack/webhook';
+
   try {
     const r = await api('GET', '/api/billing/paystack/config');
     if (r.configured && r.public_key) {
-      const el = document.getElementById('sfp-ps-pub'); if(el)el.value=r.public_key;
+      const el = document.getElementById('sfp-ps-pub'); if(el) el.value = r.public_key;
       const st = document.getElementById('sfp-ps-status');
-      if (st) { st.className='sfp-status ok'; st.textContent='✓ Paystack configured'; }
+      const mode = document.getElementById('sfp-ps-mode');
+      const isTest = r.public_key.startsWith('pk_test_');
+      if (mode) {
+        mode.style.display = '';
+        mode.style.background = isTest ? 'rgba(245,197,24,.1)' : 'rgba(141,190,110,.1)';
+        mode.style.border = isTest ? '1px solid rgba(245,197,24,.3)' : '1px solid rgba(141,190,110,.3)';
+        mode.style.color = isTest ? '#f5c518' : 'var(--green)';
+        mode.textContent = isTest
+          ? '⚠ Test mode — payments are simulated. Switch to pk_live_ / sk_live_ keys for real charges.'
+          : '✓ Live mode — real payments will be processed';
+      }
+      if (st) {
+        st.className = 'sfp-status ' + (isTest ? 'info' : 'ok');
+        st.textContent = (isTest ? '⚠ Test keys active' : '✓ Live keys active') + ' — key: ' + r.public_key.slice(0, 16) + '…';
+      }
+    } else {
+      const st = document.getElementById('sfp-ps-status');
+      if (st) { st.className='sfp-status err'; st.textContent='⚠ No Paystack keys — paste your keys above to enable payments'; }
     }
   } catch(e) {}
 };
